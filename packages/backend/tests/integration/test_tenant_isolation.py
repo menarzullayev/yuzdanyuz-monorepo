@@ -75,15 +75,30 @@ class TestTenantIsolation:
         assert Question.objects.for_org(org2).count() == 1
         assert Question.objects.for_org(org2).first() == q2
 
-    def test_no_context_returns_all(self, db, org, org2, subject):
-        """context=None → no filtering (admin/platform mode)."""
+    def test_no_context_returns_empty_fail_closed(self, db, org, org2, subject):
+        """
+        Fail-closed: context=None va explicit unscoped yo'q → bo'sh queryset.
+        (Lesson 11 — defense-in-depth, eski "no context = unfiltered" xavfli edi.)
+        """
+        from core.tenant import set_current_org, unscoped_context
+
+        # Org context bilan yaratamiz (TenantManager fail-closed bo'lsa create ishlamaydi)
+        set_current_org(org)
         q1 = Question.objects.create(
             organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
+        set_current_org(org2)
         q2 = Question.objects.create(
             organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         clear_current_org()
-        # No context = unfiltered
-        assert Question.objects.count() == 2
+        # Default fail-closed: no context → empty
+        assert Question.objects.count() == 0
+
+        # Explicit unscoped: barchasi ko'rinadi (admin/worker pattern)
+        with unscoped_context():
+            assert Question.objects.count() == 2
+
+        # global_objects ham barchasi ko'rinadi (eski escape hatch)
+        assert Question.global_objects.count() == 2

@@ -126,6 +126,25 @@
 
 ---
 
+## Lesson 11 — Middleware-set request attributes need integration tests
+
+**Mistake**: `RLSMiddleware` `request.org`'ni o'qigan, lekin **hech bir middleware uni set qilmagan**. `TenantMiddleware` faqat thread-local'ga `set_current_org()` chaqirgan. Natija: PostgreSQL RLS qatlami (L3 defense) **butunlay ishlamagan** — har doim `RESET app.current_org_id` chaqirilgan. 6 ta integration/security test mavjud edi, barchasi `set_current_org()` yoki `tenant_context()` orqali manual context o'rnatib, middleware zanjirini bypass qilgan.
+
+**Why it broke**: Unit testlar middleware'ning bir qismini izolyatsiyada tekshiradi. `test_auth_flows.py` Django `Client` bilan to'liq zanjirni ishlatadi, ammo tenant isolation'ni assert qilmaydi (faqat status code'larni). Hech bir test **request lifecycle butun zanjirini** ushlamagan.
+
+**Fix**:
+1. `TenantMiddleware.__call__`'da `request.org = org` qo'shish
+2. JWT `verify_exp=True` (defense-in-depth)
+3. `TenantManager` fail-closed (`org=None` → `.none()`) + `unscoped_context()` helper
+4. `RLSMiddleware` fail-closed (xato bo'lsa 500, swallow qilmasin)
+5. End-to-end test (`tests/integration/test_middleware_chain_e2e.py`) — Django Client orqali butun zanjirni ishlatib, response'da `request.org` va PostgreSQL `app.current_org_id` qiymatini assert qiladi
+
+**Pattern**: Har bir `request.X` attribute uchun **end-to-end test** kerak — Django `Client` orqali real HTTP request yuborib, view ichida (yoki test echo middleware'da) attribute mavjudligi va to'g'ri qiymatga egaligi assert qilinishi shart. Manual context setup (`set_current_org`, `tenant_context`) faqat **birlik testlari** uchun, middleware zanjiri uchun emas.
+
+**Caught by**: Manual code review (CLAUDE.md "Defense-in-Depth" audit, 2026-05-16).
+
+---
+
 ## Capture Template
 
 When the user corrects you, append:

@@ -35,18 +35,28 @@ class TestTenantManager:
         assert Question.objects.count() == 1
         assert Question.objects.first() == q2
 
-    def test_tenant_manager_no_filter_without_context(self, db, org, org2, subject):
-        """org=None context → unfiltered queryset."""
-        q1 = Question.objects.create(
-            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
-        )
-        q2 = Question.objects.create(
+    def test_tenant_manager_fail_closed_without_context(self, db, org, org2, subject):
+        """
+        Fail-closed: org=None context va explicit unscoped yo'q → bo'sh queryset.
+        (Lesson 11 — defense-in-depth, eski "no filter" xavfli edi.)
+        """
+        from core.tenant import set_current_org, unscoped_context
+
+        # Org context bilan create (TenantManager fail-closed bo'lsa create ishlamaydi)
+        set_current_org(org)
+        Question.objects.create(organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE)
+        set_current_org(org2)
+        Question.objects.create(
             organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         clear_current_org()
-        # No filtering when context is None
-        assert Question.objects.count() == 2
+        # Default fail-closed: no context → empty
+        assert Question.objects.count() == 0
+
+        # Explicit unscoped: barchasi (admin/worker uchun)
+        with unscoped_context():
+            assert Question.objects.count() == 2
 
     def test_global_manager_bypasses_filter(self, db, org, org2, subject):
         """global_objects always returns all regardless of context."""
