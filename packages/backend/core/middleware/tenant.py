@@ -2,6 +2,7 @@ import jwt
 from django.conf import settings
 from django.http import HttpResponseForbidden
 
+from ..membership_cache import is_active_member
 from ..tenant import (
     clear_current_org,
     set_current_org,
@@ -104,7 +105,7 @@ class TenantMiddleware:
         if request.user.is_superuser:
             return org
 
-        if not request.user.memberships.filter(organization=org, status='active').exists():
+        if not is_active_member(request.user, org):
             return request.user.primary_organization
 
         return org
