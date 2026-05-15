@@ -1,0 +1,85 @@
+{
+  // ─── Git ────────────────────────────────────────────────────────
+  // Faqat workspace ichidagi git repo'larini Source Control panel'da ko'rsat.
+  // "openEditors" — faqat ochiq editor'lar bo'lgan repo'lar
+  // "subFolders" — barcha sub-folder'lardagi git repo'lar (default, juda agressiv)
+  // false        — avtomat detection o'chirilgan
+  "git.autoRepositoryDetection": "openEditors",
+
+  // Submodule'larni avtomat detect qilmaslik
+  "git.detectSubmodules": false,
+
+  // ~/.cache/pre-commit kabi joylardan repo'larni e'tiborga olmaslik
+  "git.ignoreLimitWarning": true,
+
+  // ─── Files ──────────────────────────────────────────────────────
+  // Pycache va boshqa noise'larni Explorer'dan yashirish
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/*.pyc": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/htmlcov": true,
+    "**/*.tsbuildinfo": true
+  },
+
+  // Faqat ko'p fayl o'qilganda kuzatuv (file watcher) cheklash
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/__pycache__/**": true,
+    "**/node_modules/**": true,
+    "**/venv/**": true,
+    "**/.next/**": true,
+    "**/dist/**": true,
+    "**/.cache/**": true
+  },
+
+  // Search'da ko'rinmasin
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/htmlcov": true,
+    "**/staticfiles": true,
+    "**/*.tsbuildinfo": true
+  },
+
+  // ─── Python ─────────────────────────────────────────────────────
+  "python.defaultInterpreterPath": "${workspaceFolder}/packages/backend/venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["packages/backend/tests"],
+  "python.analysis.extraPaths": ["${workspaceFolder}/packages/backend"],
+
+  // ─── Ruff (Python lint + format) ───────────────────────────────
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  // ─── Editor ─────────────────────────────────────────────────────
+  "editor.rulers": [100],
+  "editor.renderWhitespace": "boundary",
+  "editor.bracketPairColorization.enabled": true,
+
+  // ─── Terminal ───────────────────────────────────────────────────
+  "terminal.integrated.cwd": "${workspaceFolder}",
+
+  // ─── TypeScript / Next.js ──────────────────────────────────────
+  "typescript.tsdk": "packages/frontend-web/node_modules/typescript/lib",
+  "typescript.preferences.importModuleSpecifier": "non-relative",
+
+  // ─── ESLint (frontend) ──────────────────────────────────────────
+  "eslint.workingDirectories": [
+    { "directory": "packages/frontend-web", "changeProcessCWD": true }
+  ]
+}

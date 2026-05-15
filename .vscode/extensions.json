@@ -1,0 +1,27 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "batisteo.vscode-django",
+
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "dsznajder.es7-react-js-snippets",
+
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+
+    "github.vscode-github-actions",
+    "github.copilot",
+
+    "eamodio.gitlens",
+    "mikestead.dotenv"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.flake8",
+    "ms-python.black-formatter",
+    "ms-python.isort"
+  ]
+}

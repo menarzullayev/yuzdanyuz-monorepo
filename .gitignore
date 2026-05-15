@@ -23,10 +23,16 @@ tsconfig.tsbuildinfo
 **/.env
 
 # IDE
-.vscode/
 .idea/
 *.swp
 .DS_Store
+
+# VS Code — share workspace settings, ignore personal data
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 
 # Logs
 *.log
