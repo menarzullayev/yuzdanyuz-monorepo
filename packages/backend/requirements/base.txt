@@ -15,7 +15,7 @@ django-celery-beat==2.8.1      # Task 9: Cron jobs (streak, league reset) — Dj
 django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — Django 5.2 support
 
 # ── Cache & Session ───────────────────────────────────────────────────────────
-redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
+redis==7.4.0                   # Task 2, 5: Device fingerprinting, leaderboard
 django-redis==5.4.0            # Task 2, 5: Django cache backend for Redis
 
 # ── Real-time ─────────────────────────────────────────────────────────────────
