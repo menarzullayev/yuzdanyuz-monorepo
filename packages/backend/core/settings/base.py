@@ -27,6 +27,8 @@ INSTALLED_APPS = [
     # Celery infrastructure (admin'da beat schedule + result tracking)
     'django_celery_beat',
     'django_celery_results',
+    # DRF — REST API
+    'rest_framework',
     # Local apps — Domain-Driven Design
     'apps.accounts',  # User, auth, device session
     'apps.organizations',  # Organization (tenant), membership, roles
@@ -80,6 +82,25 @@ CELERY_TIMEZONE = 'Asia/Tashkent'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 300  # 5 daqiqa hard limit
 CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 daqiqada SoftTimeLimitExceeded
+
+# ── Django REST Framework ─────────────────────────────────────
+# JWT cookie auth allaqachon JWTAuthMiddleware tomonidan handle qilinadi —
+# request.user view'ga yetib kelguncha autentifikatsiya qilingan bo'ladi.
+# DRF SessionAuthentication shu user'ni qabul qiladi.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
+}
 
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────
 # Multi-tenant isolation at database level (defense in depth)
