@@ -25,6 +25,8 @@ Read flow (apps/engagement/views.py):
 import logging
 
 import redis
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,7 @@ def record_attempt(user_id, score: float, *, mock_id, region_id=None, org_id=Non
 
     - Mock-specific ZSET: aynan shu attempt score
     - Global/region/tenant: faqat agar yangi score eski max'dan katta bo'lsa update
+    - Channels group push: subscribed clientlarga `leaderboard.updated` event
     """
     if score is None:
         logger.debug('record_attempt: score=None, skipping')
@@ -94,6 +97,38 @@ def record_attempt(user_id, score: float, *, mock_id, region_id=None, org_id=Non
     except redis.RedisError as e:
         logger.warning('leaderboard record_attempt failed: %s', e)
         # Leaderboard fail = analytics layer fail. Asosiy flow buzilmaydi.
+        return
+
+    # Real-time push (sync → async via async_to_sync) — har scope guruhiga
+    try:
+        _broadcast_update('global')
+        _broadcast_update('mock', mock_id)
+        if region_id is not None:
+            _broadcast_update('region', region_id)
+        if org_id is not None:
+            _broadcast_update('tenant', org_id)
+    except Exception as e:
+        # Channel layer fail (Redis down, no layer config, etc) — silent
+        logger.warning('leaderboard broadcast failed: %s', e)
+
+
+def _broadcast_update(scope_kind: str, scope_id=None) -> None:
+    """Channels group_send orqali subscribed clientlarni xabardor qilish."""
+    layer = get_channel_layer()
+    if layer is None:
+        return  # CHANNEL_LAYERS sozlanmagan — silent skip
+
+    if scope_id is None:
+        group_name = f'lb_{scope_kind}'
+        scope_label = scope_kind
+    else:
+        group_name = f'lb_{scope_kind}_{scope_id}'
+        scope_label = f'{scope_kind}:{scope_id}'
+
+    async_to_sync(layer.group_send)(
+        group_name,
+        {'type': 'lb.update', 'scope': scope_label, 'reason': 'new_score'},
+    )
 
 
 def _zadd_max(client: redis.Redis, key: str, member: str, score: float) -> None:
