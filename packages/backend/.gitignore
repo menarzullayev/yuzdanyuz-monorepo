@@ -36,12 +36,18 @@ coverage.xml
 .env.*.local
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+
+# VS Code — share team settings, ignore personal data
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 
 # Frontend leftovers (frontend yashaydi packages/frontend-web/)
 node_modules/
