@@ -25,11 +25,14 @@ class TenantManager(models.Manager):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # unscoped_context() barcha boshqa filter'larni bypass qiladi (admin/worker).
+        # Bu birinchi tekshiriladi: agar boshqa joyda set_current_org leak qilingan
+        # bo'lsa ham, explicit unscoped_context ishlatilganda barcha qatorlar ko'rinadi.
+        if is_unscoped_allowed():
+            return qs
         org = get_current_org()
         if org is not None:
             return qs.filter(organization=org)
-        if is_unscoped_allowed():
-            return qs
         return qs.none()
 
     def for_org(self, org):
