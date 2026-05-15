@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import leaderboard
+from .models import LeaderboardSnapshot
 from .serializers import LeaderboardResponseSerializer
 
 User = get_user_model()
@@ -223,3 +224,60 @@ class MyLeaderboardRankView(APIView):
             )
 
         return Response(_me_payload(scope_key, request.user))
+
+
+# ─── History (snapshot) ──────────────────────────────────────────────────────
+
+
+class LeaderboardHistoryView(APIView):
+    """
+    GET /api/leaderboard/history/?period=weekly&scope_kind=global&period_key=2026-W19
+                                                         &scope_id=<id>
+
+    Tarixiy snapshot — Celery archive_leaderboards orqali yozilgan.
+
+    Args (query):
+      period: weekly | monthly | yearly  (required)
+      scope_kind: global | region | tenant | mock  (required)
+      scope_id: scope identifier (region_id / org_id / mock_id), global uchun bo'sh
+      period_key: ixtiyoriy. Yo'q bo'lsa eng so'nggi snapshot qaytadi.
+    """
+
+    def get(self, request):
+        period = request.query_params.get('period')
+        scope_kind = request.query_params.get('scope_kind')
+        scope_id = request.query_params.get('scope_id', '')
+        period_key = request.query_params.get('period_key')
+
+        if period not in ('weekly', 'monthly', 'yearly'):
+            return Response(
+                {'detail': 'period: weekly | monthly | yearly'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if scope_kind not in ('global', 'region', 'tenant', 'mock'):
+            return Response(
+                {'detail': 'scope_kind: global | region | tenant | mock'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = LeaderboardSnapshot.objects.filter(
+            period=period, scope_kind=scope_kind, scope_id=scope_id
+        )
+        if period_key:
+            qs = qs.filter(period_key=period_key)
+
+        snapshot = qs.order_by('-taken_at').first()
+        if snapshot is None:
+            return Response({'detail': 'Snapshot topilmadi.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(
+            {
+                'period': snapshot.period,
+                'period_key': snapshot.period_key,
+                'scope_kind': snapshot.scope_kind,
+                'scope_id': snapshot.scope_id,
+                'taken_at': snapshot.taken_at,
+                'total': snapshot.total,
+                'entries': snapshot.entries,
+            }
+        )

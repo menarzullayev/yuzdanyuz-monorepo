@@ -1,0 +1,160 @@
+"""
+Task 5 — Leaderboard archive Celery tasks.
+
+Schedule (django-celery-beat admin):
+  - archive_leaderboards('weekly')    har dushanba 00:05
+  - archive_leaderboards('monthly')   har oy 1-kuni 00:10
+  - archive_leaderboards('yearly')    har 1-yanvar 00:15
+
+Idempotent: bir period_key uchun bir marta yoziladi (unique_together).
+Idempotency'ni `update_or_create` orqali kuchaytirgan — qayta chaqirsa
+faqat yangilanadi.
+
+Top-N: archive_leaderboards default 1000 ta top entry'ni saqlaydi.
+"""
+
+import logging
+from datetime import datetime
+
+from celery import shared_task
+from django.utils import timezone
+
+from . import leaderboard
+from .models import LeaderboardSnapshot
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TOP_N = 1000
+
+
+# ── Period key builders ───────────────────────────────────────────────────────
+
+
+def _period_key(period: str, when: datetime | None = None) -> str:
+    """
+    "weekly" → "2026-W19"
+    "monthly" → "2026-05"
+    "yearly" → "2026"
+    """
+    when = when or timezone.now()
+    if period == 'weekly':
+        iso_year, iso_week, _ = when.isocalendar()
+        return f'{iso_year}-W{iso_week:02d}'
+    if period == 'monthly':
+        return f'{when.year}-{when.month:02d}'
+    if period == 'yearly':
+        return str(when.year)
+    raise ValueError(f'Unknown period: {period}')
+
+
+# ── Scope discovery ──────────────────────────────────────────────────────────
+
+
+def _discover_active_scopes(client) -> list[tuple[str, str]]:
+    """
+    Redis'dagi mavjud lb:* key'larni topib, scope_kind + scope_id list'ini qaytaradi.
+    SCAN cursor — production'da KEYS o'rniga ishlatish kerak (bloklamaydi).
+
+    Returns: [('global', ''), ('region', '5'), ('tenant', 'uuid'), ('mock', 'uuid'), ...]
+    """
+    scopes = []
+    for raw_key in client.scan_iter(match='lb:*', count=200):
+        # raw_key: "lb:global" yoki "lb:region:5" yoki "lb:tenant:<uuid>"
+        parts = raw_key.split(':', 2)
+        if len(parts) < 2:
+            continue
+        kind = parts[1]
+        if kind not in ('global', 'region', 'tenant', 'mock'):
+            continue
+        scope_id = parts[2] if len(parts) > 2 else ''
+        scopes.append((kind, scope_id))
+    return scopes
+
+
+# ── Snapshot writer ──────────────────────────────────────────────────────────
+
+
+def _snapshot_one(
+    period: str,
+    period_key: str,
+    scope_kind: str,
+    scope_id: str,
+    *,
+    top_n: int = DEFAULT_TOP_N,
+) -> LeaderboardSnapshot:
+    """Bir scope uchun snapshot yaratadi yoki yangilaydi."""
+    if scope_kind == 'global':
+        scope_key = leaderboard.key_global()
+    elif scope_kind == 'region':
+        scope_key = leaderboard.key_region(scope_id)
+    elif scope_kind == 'tenant':
+        scope_key = leaderboard.key_tenant(scope_id)
+    elif scope_kind == 'mock':
+        scope_key = leaderboard.key_mock(scope_id)
+    else:
+        raise ValueError(f'Unknown scope_kind: {scope_kind}')
+
+    top_results = leaderboard.top(scope_key, limit=top_n)
+    entries = [
+        {'user_id': uid, 'score': score, 'rank': idx + 1}
+        for idx, (uid, score) in enumerate(top_results)
+    ]
+    total = leaderboard.total(scope_key)
+
+    snapshot, _created = LeaderboardSnapshot.objects.update_or_create(
+        period=period,
+        period_key=period_key,
+        scope_kind=scope_kind,
+        scope_id=scope_id or '',
+        defaults={'total': total, 'entries': entries},
+    )
+    return snapshot
+
+
+# ── Celery tasks ─────────────────────────────────────────────────────────────
+
+
+@shared_task(name='engagement.archive_leaderboards')
+def archive_leaderboards(period: str = 'weekly', top_n: int = DEFAULT_TOP_N) -> dict:
+    """
+    Beat schedule entry. Joriy vaqtning period_key'i uchun barcha aktiv
+    Redis lb:* scope'larini snapshot qiladi.
+
+    Args:
+      period: "weekly" / "monthly" / "yearly"
+      top_n: snapshotda saqlanadigan top entries soni
+    """
+    if period not in ('weekly', 'monthly', 'yearly'):
+        raise ValueError(f'Invalid period: {period}')
+
+    period_key = _period_key(period)
+    client = leaderboard._redis()
+    scopes = _discover_active_scopes(client)
+
+    saved = 0
+    for kind, scope_id in scopes:
+        try:
+            _snapshot_one(period, period_key, kind, scope_id, top_n=top_n)
+            saved += 1
+        except Exception as e:
+            logger.warning(
+                'archive_leaderboards: snapshot %s/%s/%s failed: %s',
+                period_key,
+                kind,
+                scope_id,
+                e,
+            )
+
+    logger.info(
+        'archive_leaderboards %s/%s: %d/%d scopes archived',
+        period,
+        period_key,
+        saved,
+        len(scopes),
+    )
+    return {
+        'period': period,
+        'period_key': period_key,
+        'scopes_found': len(scopes),
+        'snapshots_saved': saved,
+    }

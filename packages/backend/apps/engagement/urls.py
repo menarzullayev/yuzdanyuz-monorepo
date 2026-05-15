@@ -16,4 +16,5 @@ urlpatterns = [
     path('tenant/', views.TenantLeaderboardView.as_view(), name='lb-tenant'),
     path('mock/<uuid:mock_id>/', views.MockLeaderboardView.as_view(), name='lb-mock'),
     path('me/', views.MyLeaderboardRankView.as_view(), name='lb-me'),
+    path('history/', views.LeaderboardHistoryView.as_view(), name='lb-history'),
 ]
