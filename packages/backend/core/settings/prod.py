@@ -1,6 +1,18 @@
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *
 
 DEBUG = False
+
+# Production'da SECRET_KEY env'dan kelishi shart — base.py'dagi insecure default
+# prod muhitida ishlasa, JWT/session imzolari aniq qiymat bilan yaratiladi va
+# loyihani ekspozitsiya qiladi. Fail-loud o'rnatish o'rniga sukut bilan o'tib ketmaslik.
+if not os.environ.get('SECRET_KEY'):
+    raise ImproperlyConfigured(
+        'SECRET_KEY environment variable is required in production. '
+        'See .env.example for the expected format.'
+    )
+SECRET_KEY = os.environ['SECRET_KEY']
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
 
