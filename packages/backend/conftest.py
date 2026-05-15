@@ -33,22 +33,24 @@ def reset_tenant_context():
 
 @pytest.fixture(autouse=True)
 def mock_redis(monkeypatch):
-    """Mock Redis for all tests using fakeredis."""
+    """Mock Redis for all tests using fakeredis. Har test FRESH client oladi."""
     import fakeredis
 
     from apps.accounts.services import token_service
+    from apps.engagement import leaderboard
+    from core import membership_cache
 
-    # Create fakeredis client with decode_responses=True to match production behavior
     redis_client = fakeredis.FakeStrictRedis(decode_responses=True)
 
-    # Patch the global _redis_client variable
+    # Reset module-level cached _redis_client (fresh per test)
     token_service._redis_client = redis_client
+    leaderboard._redis_client = redis_client
+    membership_cache._redis_client = redis_client
 
-    # Also patch the _redis function to always return fakeredis
-    def fake_redis_func():
-        return redis_client
-
-    monkeypatch.setattr(token_service, '_redis', fake_redis_func)
+    # Also patch _redis() factory funcs (agar lazy-init paytida cache reset bo'lsa)
+    monkeypatch.setattr(token_service, '_redis', lambda: redis_client)
+    monkeypatch.setattr(leaderboard, '_redis', lambda: redis_client)
+    monkeypatch.setattr(membership_cache, '_redis', lambda: redis_client)
     monkeypatch.setattr('redis.Redis.from_url', lambda *a, **k: redis_client)
 
     yield redis_client
