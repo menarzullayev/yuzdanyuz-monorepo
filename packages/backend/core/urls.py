@@ -2,6 +2,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import HttpResponse
+from django.shortcuts import redirect, render
 from django.urls import include, path
 
 
@@ -9,12 +10,9 @@ def ping_view(request):
     return HttpResponse('pong')
 
 
-from django.shortcuts import redirect
-
-
 def home_view(request):
     if request.user.is_authenticated:
-        return HttpResponse('<h1>YuzdanYuz Dashboard</h1><p>Tizimga muvaffaqiyatli kirdingiz!</p>')
+        return render(request, 'index.html')
     return redirect('accounts:login')
 
 
