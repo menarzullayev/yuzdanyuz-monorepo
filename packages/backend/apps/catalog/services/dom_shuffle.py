@@ -18,17 +18,14 @@ Cheklovlar:
 
 from __future__ import annotations
 
+# Top-level block-level tag'larni topish uchun regex.
+# Faqat ichida tag bo'lmagan, balanced bo'lmagan tag'larga ehtiyot —
+# shu uchun HTMLParser ishlatamiz.
+import html.parser
 import random
 import re
 
 from django.utils.safestring import mark_safe
-
-
-# Top-level block-level tag'larni topish uchun regex.
-# Faqat ichida tag bo'lmagan, balanced bo'lmagan tag'larga ehtiyot —
-# shu uchun HTMLParser ishlatamiz.
-
-import html.parser
 
 
 class _TopLevelSplitter(html.parser.HTMLParser):
@@ -132,9 +129,7 @@ def shuffle_html(html_str: str, seed: int | None = None) -> str:
         out_parts.append(_inject_order_style(part, orig_idx))
 
     inner = ''.join(out_parts)
-    return mark_safe(
-        f'<div style="display:flex;flex-direction:column">{inner}</div>'
-    )
+    return mark_safe(f'<div style="display:flex;flex-direction:column">{inner}</div>')
 
 
 def _split_top_level(html_str: str) -> list[str]:
@@ -166,15 +161,10 @@ def _inject_order_style(part: str, order: int) -> str:
     if sm:
         # Existing style'ga qo'shamiz
         new_style = f'order:{order};{sm.group(1)}'
-        rest = rest[:sm.start()] + f'style="{new_style}"' + rest[sm.end():]
+        rest = rest[: sm.start()] + f'style="{new_style}"' + rest[sm.end() :]
     else:
         # Tag oxiriga qo'shamiz (>` dan oldin)
-        end_char = m.group(2)
         insert_pos = m.start(2)
-        rest = (
-            rest[:insert_pos]
-            + f' style="order:{order}"'
-            + rest[insert_pos:]
-        )
+        rest = rest[:insert_pos] + f' style="order:{order}"' + rest[insert_pos:]
 
     return leading + rest

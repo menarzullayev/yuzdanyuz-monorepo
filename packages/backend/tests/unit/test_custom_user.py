@@ -5,6 +5,7 @@ Focus: user_type, has_org_permission, display_name, profile
 
 import pytest
 from django.contrib.auth import get_user_model
+
 from apps.organizations.models import MembershipStatus
 
 User = get_user_model()
@@ -23,9 +24,7 @@ class TestUserType:
 
     def test_user_type_platform_staff(self, db):
         """is_staff=True (not superuser) → user_type='platform_staff'."""
-        user = User.objects.create_user(
-            username='staff', email='staff@test.com', password='pass'
-        )
+        user = User.objects.create_user(username='staff', email='staff@test.com', password='pass')
         user.is_staff = True
         user.save()
         assert user.user_type == 'platform_staff'
@@ -40,6 +39,7 @@ class TestUserType:
 
         # Change role
         from apps.organizations.models import OrgRole
+
         member.role = OrgRole.objects.get(organization=member.organization, name='teacher')
         member.save()
         assert member.user.user_type == 'teacher'
@@ -51,15 +51,21 @@ class TestUserType:
         # Secondary membership (student in org)
         role1 = OrgRole.objects.get(organization=org, name='student')
         m1 = Membership.objects.create(
-            user=user, organization=org, role=role1,
-            status=MembershipStatus.ACTIVE, is_primary=False
+            user=user,
+            organization=org,
+            role=role1,
+            status=MembershipStatus.ACTIVE,
+            is_primary=False,
         )
 
         # Primary membership (teacher in org2)
         role2 = OrgRole.objects.get(organization=org2, name='teacher')
         m2 = Membership.objects.create(
-            user=user, organization=org2, role=role2,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user,
+            organization=org2,
+            role=role2,
+            status=MembershipStatus.ACTIVE,
+            is_primary=True,
         )
         m2.activate()
 
@@ -72,8 +78,7 @@ class TestUserType:
 
         role = OrgRole.objects.get(organization=org, name='student')
         Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.SUSPENDED
+            user=user, organization=org, role=role, status=MembershipStatus.SUSPENDED
         )
 
         assert user.user_type == 'b2c'
@@ -86,32 +91,31 @@ class TestDisplayName:
     def test_display_name_full_name(self, db):
         """first_name + last_name → full name."""
         user = User.objects.create_user(
-            username='john', email='john@test.com', password='pass',
-            first_name='John', last_name='Doe'
+            username='john',
+            email='john@test.com',
+            password='pass',
+            first_name='John',
+            last_name='Doe',
         )
         assert user.display_name == 'John Doe'
 
     def test_display_name_fallback_telegram(self, db):
         """No full name → telegram_username."""
         user = User.objects.create_user(
-            username='john', email='john@test.com', password='pass',
-            telegram_username='@johndoe'
+            username='john', email='john@test.com', password='pass', telegram_username='@johndoe'
         )
         assert user.display_name == '@johndoe'
 
     def test_display_name_fallback_phone(self, db):
         """No name or telegram → phone_number."""
         user = User.objects.create_user(
-            username='john', email='john@test.com', password='pass',
-            phone_number='+998901234567'
+            username='john', email='john@test.com', password='pass', phone_number='+998901234567'
         )
         assert user.display_name == '+998901234567'
 
     def test_display_name_fallback_username(self, db):
         """Fallback to username if nothing else."""
-        user = User.objects.create_user(
-            username='john', email='john@test.com', password='pass'
-        )
+        user = User.objects.create_user(username='john', email='john@test.com', password='pass')
         assert user.display_name == 'john'
 
 
@@ -133,15 +137,17 @@ class TestPrimaryOrganization:
 
         role1 = OrgRole.objects.get(organization=org, name='student')
         m1 = Membership.objects.create(
-            user=user, organization=org, role=role1,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role1, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m1.activate()
 
         role2 = OrgRole.objects.get(organization=org2, name='teacher')
         m2 = Membership.objects.create(
-            user=user, organization=org2, role=role2,
-            status=MembershipStatus.ACTIVE, is_primary=False
+            user=user,
+            organization=org2,
+            role=role2,
+            status=MembershipStatus.ACTIVE,
+            is_primary=False,
         )
         m2.activate()
 
@@ -169,15 +175,16 @@ class TestHasOrgPermission:
 
     def test_has_org_permission_wildcard(self, owner_member):
         """Owner role with '*' → any permission True."""
-        assert owner_member.user.has_org_permission(
-            owner_member.organization, 'anything:goes'
-        ) is True
+        assert (
+            owner_member.user.has_org_permission(owner_member.organization, 'anything:goes') is True
+        )
 
     def test_has_org_permission_suspended_member(self, suspended_member):
         """Suspended membership → False."""
-        assert suspended_member.user.has_org_permission(
-            suspended_member.organization, 'exam:take'
-        ) is False
+        assert (
+            suspended_member.user.has_org_permission(suspended_member.organization, 'exam:take')
+            is False
+        )
 
 
 @pytest.mark.unit
@@ -187,25 +194,27 @@ class TestProfileComplete:
     def test_is_profile_complete_true(self, db):
         """Name + contact → True."""
         user = User.objects.create_user(
-            username='complete', email='complete@test.com', password='pass',
-            first_name='John', phone_number='+998901234567'
+            username='complete',
+            email='complete@test.com',
+            password='pass',
+            first_name='John',
+            phone_number='+998901234567',
         )
         assert user.is_profile_complete is True
 
     def test_is_profile_complete_no_name(self, db):
         """No name → False."""
         user = User.objects.create_user(
-            username='notype', email='notype@test.com', password='pass',
-            phone_number='+998901234567'
+            username='notype',
+            email='notype@test.com',
+            password='pass',
+            phone_number='+998901234567',
         )
         assert user.is_profile_complete is False
 
     def test_is_profile_complete_no_contact(self, db):
         """Name but no contact (phone/email/telegram) → False."""
-        user = User.objects.create_user(
-            username='nocontact', password='pass',
-            first_name='John'
-        )
+        user = User.objects.create_user(username='nocontact', password='pass', first_name='John')
         # No email, phone_number, or telegram_id set
         user.email = ''  # Clear the auto-set email
         user.save()

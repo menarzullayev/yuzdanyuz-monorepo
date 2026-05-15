@@ -37,14 +37,14 @@ POSTGRES_PASSWORD="hsm_secret_pass"
 
 start() {
     echo "Starting PostgreSQL daemon..."
-    
+
     # Create directories
     mkdir -p "$RUN" "$DATA"
     chmod 700 "$DATA"
-    
+
     # Clean stale socket files
     rm -f "$RUN/.s.PGSQL"*
-    
+
     # Check if already running
     if [ -f "$RUN/postmaster.pid" ]; then
         PID=$(cat "$RUN/postmaster.pid")
@@ -54,45 +54,45 @@ start() {
         fi
         rm -f "$RUN/postmaster.pid"
     fi
-    
+
     # Initialize DB if needed
     if [ ! -f "$DATA/PG_VERSION" ]; then
         echo "Initializing database cluster..."
         initdb -D "$DATA" -U "$POSTGRES_USER"
     fi
-    
+
     # Start server
     exec postgres -D "$DATA" \
         -k "$RUN" \
         -p 5992 \
         -c log_statement=none \
         >> "$LOG" 2>&1 &
-    
+
     DAEMON_PID=$!
     echo $DAEMON_PID > "$RUN/postmaster.pid"
-    
+
     # Wait for socket
     sleep 1
     pg_isready -h "$RUN" -p 5992 -U "$POSTGRES_USER" || {
         echo "Failed to start PostgreSQL"
         return 1
     }
-    
+
     # Set password if not set
     PGPASSWORD="$POSTGRES_PASSWORD" psql \
         -h "$RUN" -p 5992 -U "$POSTGRES_USER" \
         -c "ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';" || true
-    
+
     echo "PostgreSQL started (PID: $DAEMON_PID)"
 }
 
 stop() {
     echo "Stopping PostgreSQL..."
-    
+
     if [ -f "$RUN/postmaster.pid" ]; then
         PID=$(cat "$RUN/postmaster.pid")
         kill -TERM "$PID" 2>/dev/null || true
-        
+
         # Wait for graceful shutdown
         for i in {1..30}; do
             if ! kill -0 "$PID" 2>/dev/null; then
@@ -101,7 +101,7 @@ stop() {
             fi
             sleep 1
         done
-        
+
         # Force kill
         kill -9 "$PID" 2>/dev/null || true
         rm -f "$RUN/postmaster.pid"
@@ -476,7 +476,7 @@ from django.conf import settings
 def stream_event_to_clickhouse(event_data):
     """Send event to ClickHouse asynchronously."""
     client = Client(**settings.CLICKHOUSE_CLIENT)
-    
+
     client.execute(
         'INSERT INTO exam_events VALUES',
         [event_data]
@@ -609,19 +609,19 @@ request_duration = Histogram(
 class PrometheusMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-    
+
     def __call__(self, request):
         start = time.time()
-        
+
         response = self.get_response(request)
-        
+
         duration = time.time() - start
         request_count.labels(
             method=request.method,
             status=response.status_code
         ).inc()
         request_duration.observe(duration)
-        
+
         return response
 ```
 
@@ -648,7 +648,7 @@ def health_check(request):
         'status': 'ok',
         'services': {}
     }
-    
+
     # Check database
     try:
         with connection.cursor() as cursor:
@@ -657,7 +657,7 @@ def health_check(request):
     except Exception as e:
         status['services']['database'] = f'error: {e}'
         status['status'] = 'degraded'
-    
+
     # Check Redis
     try:
         redis_conn = get_redis_connection('default')
@@ -666,7 +666,7 @@ def health_check(request):
     except Exception as e:
         status['services']['redis'] = f'error: {e}'
         status['status'] = 'degraded'
-    
+
     # Check Celery
     try:
         from config.celery import app
@@ -679,7 +679,7 @@ def health_check(request):
     except Exception as e:
         status['services']['celery'] = f'error: {e}'
         status['status'] = 'degraded'
-    
+
     code = 200 if status['status'] == 'ok' else 503
     return JsonResponse(status, status=code)
 
@@ -776,27 +776,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/dev.txt
-      
+
       - name: Run migrations
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/test_db
         run: python manage.py migrate
-      
+
       - name: Run tests
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/test_db
         run: pytest --cov=. --cov-report=xml
-      
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
 
@@ -804,10 +804,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Deploy to production
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}

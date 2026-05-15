@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 SYSTEM_PROMPT = (
-    "Sen professional EdTech parser assistentisan. "
+    'Sen professional EdTech parser assistentisan. '
     "Faqat valid JSON qaytar — hech qanday markdown, izoh yoki prefiks qo'shma."
 )
 

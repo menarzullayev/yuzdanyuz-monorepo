@@ -1,0 +1,56 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    "venv",
+    "migrations",
+    "staticfiles",
+    "media",
+    "node_modules",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort (import sorting)
+    "B",      # flake8-bugbear (likely bugs)
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade (modern syntax)
+    "DJ",     # flake8-django
+    "S",      # flake8-bandit (security)
+    "PIE",    # flake8-pie (misc)
+]
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "E402",   # Module-level import not at top (Django settings pattern)
+    "S101",   # assert usage (tests use it)
+    "S104",   # Bind to all interfaces (dev server uses 0.0.0.0)
+    "S105",   # Hardcoded password (test fixtures)
+    "S106",   # Same
+    "S110",   # except-pass (intentional Redis fallback)
+    "S308",   # mark_safe XSS (template tag controlled context)
+    "S311",   # random — used for non-crypto shuffle
+    "S324",   # md5 (used for cache keys, not crypto)
+    "B008",   # Function call in default arg (Django style)
+    "B904",   # Raise from (not always desired)
+    "DJ001",  # CharField nullable — sometimes needed
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S", "B", "DJ", "F841", "F401", "E712"]   # Tests: unused vars OK
+"**/tests.py"   = ["S", "B", "DJ", "F841", "F401", "E712"]
+"**/migrations/*.py" = ["E", "W", "F", "I", "DJ", "UP"]
+"conftest.py"   = ["S", "F"]
+"manage.py"     = ["S"]
+"**/settings/*.py" = ["F405", "F403"]   # star imports (django settings pattern)
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "core"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+docstring-code-format = true

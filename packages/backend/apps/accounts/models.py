@@ -1,47 +1,49 @@
+import datetime
+from uuid import uuid4
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
-from uuid import uuid4
-import datetime
-
 
 # ─── Region / District ────────────────────────────────────────────────────────
 # Leaderboard (viloyat reytingi), analitika va org joylashuvi uchun umumiy jadval.
 
+
 class Region(models.Model):
-    code     = models.PositiveSmallIntegerField(unique=True, verbose_name='Kod')
-    name_uz  = models.CharField(max_length=100, verbose_name="Nomi (o'zb)")
-    name_ru  = models.CharField(max_length=100, verbose_name='Nomi (rus)')
-    name_en  = models.CharField(max_length=100, verbose_name='Nomi (eng)')
-    slug     = models.SlugField(max_length=60, unique=True)
+    code = models.PositiveSmallIntegerField(unique=True, verbose_name='Kod')
+    name_uz = models.CharField(max_length=100, verbose_name="Nomi (o'zb)")
+    name_ru = models.CharField(max_length=100, verbose_name='Nomi (rus)')
+    name_en = models.CharField(max_length=100, verbose_name='Nomi (eng)')
+    slug = models.SlugField(max_length=60, unique=True)
 
     class Meta:
-        verbose_name        = 'Viloyat'
+        verbose_name = 'Viloyat'
         verbose_name_plural = 'Viloyatlar'
-        ordering            = ['code']
+        ordering = ['code']
 
     def __str__(self):
         return self.name_uz
 
 
 class District(models.Model):
-    region  = models.ForeignKey(Region, on_delete=models.CASCADE, related_name='districts')
-    code    = models.PositiveSmallIntegerField(verbose_name='Kod')
+    region = models.ForeignKey(Region, on_delete=models.CASCADE, related_name='districts')
+    code = models.PositiveSmallIntegerField(verbose_name='Kod')
     name_uz = models.CharField(max_length=100, verbose_name="Nomi (o'zb)")
     name_ru = models.CharField(max_length=100, verbose_name='Nomi (rus)')
     name_en = models.CharField(max_length=100, verbose_name='Nomi (eng)')
 
     class Meta:
-        verbose_name        = 'Tuman'
+        verbose_name = 'Tuman'
         verbose_name_plural = 'Tumanlar'
-        unique_together     = [['region', 'code']]
-        ordering            = ['region', 'code']
+        unique_together = [['region', 'code']]
+        ordering = ['region', 'code']
 
     def __str__(self):
         return f'{self.region.name_uz} / {self.name_uz}'
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
+
 
 class PreferredLang(models.TextChoices):
     UZ = 'uz', "O'zbek"
@@ -50,15 +52,16 @@ class PreferredLang(models.TextChoices):
 
 
 class StudyYear(models.TextChoices):
-    GRADE_10   = 'grade_10',   '10-sinf'
-    GRADE_11   = 'grade_11',   '11-sinf'
-    GRADUATE   = 'graduate',   'Bitiruvchi'
+    GRADE_10 = 'grade_10', '10-sinf'
+    GRADE_11 = 'grade_11', '11-sinf'
+    GRADUATE = 'graduate', 'Bitiruvchi'
     UNIVERSITY = 'university', 'Talaba'
-    TEACHER    = 'teacher',    "O'qituvchi"
-    OTHER      = 'other',      'Boshqa'
+    TEACHER = 'teacher', "O'qituvchi"
+    OTHER = 'other', 'Boshqa'
 
 
 # ─── CustomUser ───────────────────────────────────────────────────────────────
+
 
 class CustomUser(AbstractUser):
     """
@@ -75,19 +78,22 @@ class CustomUser(AbstractUser):
 
     # ── Asosiy login identifikatorlari ───────────────────────────────────────
     # Django AbstractUser da email blank=True (unique emas). Biz unique qilamiz.
-    email        = models.EmailField(blank=True, null=True, unique=True, verbose_name='Email')
+    email = models.EmailField(blank=True, null=True, unique=True, verbose_name='Email')
     phone_number = models.CharField(
-        max_length=20, blank=True, null=True, unique=True,
+        max_length=20,
+        blank=True,
+        null=True,
+        unique=True,
         verbose_name='Telefon raqami',
-        help_text="+998901234567 formatida",
+        help_text='+998901234567 formatida',
     )
 
     # ── Telegram TMA integratsiyasi ───────────────────────────────────────────
-    telegram_id        = models.BigIntegerField(null=True, blank=True, unique=True)
-    telegram_username  = models.CharField(max_length=100, null=True, blank=True)
+    telegram_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    telegram_username = models.CharField(max_length=100, null=True, blank=True)
     telegram_photo_url = models.URLField(max_length=500, null=True, blank=True)
-    telegram_language  = models.CharField(max_length=10, null=True, blank=True)
-    tg_linked_at       = models.DateTimeField(null=True, blank=True)
+    telegram_language = models.CharField(max_length=10, null=True, blank=True)
+    tg_linked_at = models.DateTimeField(null=True, blank=True)
 
     # ── Profil ────────────────────────────────────────────────────────────────
     # first_name va last_name AbstractUser da bor (max_length=150).
@@ -95,32 +101,46 @@ class CustomUser(AbstractUser):
     avatar = models.ImageField(upload_to='users/avatars/', null=True, blank=True)
 
     preferred_lang = models.CharField(
-        max_length=5, choices=PreferredLang.choices,
-        default=PreferredLang.UZ, verbose_name='Til',
+        max_length=5,
+        choices=PreferredLang.choices,
+        default=PreferredLang.UZ,
+        verbose_name='Til',
     )
 
     # ── Hududiy ma'lumotlar ───────────────────────────────────────────────────
-    region   = models.ForeignKey(
-        Region, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='users',
+    region = models.ForeignKey(
+        Region,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='users',
         verbose_name='Viloyat',
     )
     district = models.ForeignKey(
-        District, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='users',
+        District,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='users',
         verbose_name='Tuman',
     )
 
     # ── Akademik ma'lumotlar (AI diagnostika uchun) ───────────────────────────
-    birth_year   = models.PositiveSmallIntegerField(
-        null=True, blank=True, verbose_name="Tug'ilgan yil",
+    birth_year = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Tug'ilgan yil",
     )
-    study_year   = models.CharField(
-        max_length=20, choices=StudyYear.choices,
-        null=True, blank=True, verbose_name="O'qish bosqichi",
+    study_year = models.CharField(
+        max_length=20,
+        choices=StudyYear.choices,
+        null=True,
+        blank=True,
+        verbose_name="O'qish bosqichi",
     )
     target_score = models.PositiveSmallIntegerField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         verbose_name='Maqsad ball (DTM)',
         help_text='Maksimal 189',
     )
@@ -130,9 +150,9 @@ class CustomUser(AbstractUser):
     REQUIRED_FIELDS = []
 
     class Meta:
-        verbose_name        = 'Foydalanuvchi'
+        verbose_name = 'Foydalanuvchi'
         verbose_name_plural = 'Foydalanuvchilar'
-        ordering            = ['-date_joined']
+        ordering = ['-date_joined']
 
     def __str__(self):
         return self.display_name
@@ -162,8 +182,7 @@ class CustomUser(AbstractUser):
         if self.is_staff:
             return 'platform_staff'
         membership = (
-            self.memberships
-            .filter(status='active')
+            self.memberships.filter(status='active')
             .select_related('role')
             .order_by('-is_primary', '-joined_at')
             .first()
@@ -176,8 +195,7 @@ class CustomUser(AbstractUser):
     def primary_membership(self):
         """Asosiy tashkilot bilan bog'liq membership."""
         return (
-            self.memberships
-            .filter(status='active')
+            self.memberships.filter(status='active')
             .select_related('role', 'organization')
             .order_by('-is_primary', '-joined_at')
             .first()
@@ -195,7 +213,7 @@ class CustomUser(AbstractUser):
     @property
     def is_profile_complete(self) -> bool:
         """Minimal to'liq profil: ism + (telefon yoki email yoki telegram)."""
-        has_name    = bool(self.first_name)
+        has_name = bool(self.first_name)
         has_contact = bool(self.phone_number or self.email or self.telegram_id)
         return has_name and has_contact
 
@@ -209,9 +227,11 @@ class CustomUser(AbstractUser):
         """
         if self.is_superuser:
             return True
-        membership = self.memberships.filter(
-            organization=org, status='active'
-        ).select_related('role').first()
+        membership = (
+            self.memberships.filter(organization=org, status='active')
+            .select_related('role')
+            .first()
+        )
         if membership is None:
             return False
         return membership.has_permission(perm)
@@ -219,8 +239,8 @@ class CustomUser(AbstractUser):
 
 # ─── OTP ──────────────────────────────────────────────────────────────────────
 
-OTP_TTL_SECONDS = 120   # 2 daqiqa
-OTP_MAX_ATTEMPTS = 3    # 3 marta noto'g'ri → blok
+OTP_TTL_SECONDS = 120  # 2 daqiqa
+OTP_MAX_ATTEMPTS = 3  # 3 marta noto'g'ri → blok
 
 
 class OTPCode(models.Model):
@@ -232,18 +252,18 @@ class OTPCode(models.Model):
     Eskirgan yozuvlar Celery periodic task orqali tozalanadi (Task 9).
     """
 
-    phone      = models.CharField(max_length=20, db_index=True)
-    code       = models.CharField(max_length=6)
+    phone = models.CharField(max_length=20, db_index=True)
+    code = models.CharField(max_length=6)
     is_verified = models.BooleanField(default=False)
-    attempts   = models.PositiveSmallIntegerField(default=0)
+    attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
 
     class Meta:
-        verbose_name        = 'OTP Kod'
+        verbose_name = 'OTP Kod'
         verbose_name_plural = 'OTP Kodlar'
-        ordering            = ['-created_at']
-        indexes             = [models.Index(fields=['phone', 'expires_at'])]
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['phone', 'expires_at'])]
 
     def __str__(self):
         return f'{self.phone} — {self.created_at:%H:%M:%S}'
@@ -259,6 +279,7 @@ class OTPCode(models.Model):
     @classmethod
     def create_for_phone(cls, phone: str) -> 'OTPCode':
         import random
+
         code = f'{random.randint(0, 999999):06d}'
         return cls.objects.create(
             phone=phone,

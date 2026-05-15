@@ -37,7 +37,7 @@ while true; do
   "$PG" -D "$DATA" &
   PG_PID=$!
   echo "PostgreSQL PID: $PG_PID"
-  
+
   wait $PG_PID
   STATUS=$?
   echo "PostgreSQL exited with status $STATUS at $(date)"
@@ -50,7 +50,7 @@ chmod +x ~/.local/pgsql/daemon.sh
 
 **Key points:**
 - `exec > ... 2>&1` redirects output **before** backgrounding
-- `trap` for clean shutdown  
+- `trap` for clean shutdown
 - `wait $PG_PID` ensures proper child process handling
 - `rm -f postmaster.pid` clears stale locks on each restart
 

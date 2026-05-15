@@ -14,13 +14,11 @@ SocialAccountAdapter:
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
-from django.conf import settings
 from django.http import HttpRequest
 
 from apps.accounts.services.token_service import (
     create_token_pair,
     make_fingerprint,
-    set_auth_cookies,
 )
 
 
@@ -32,11 +30,11 @@ class AccountAdapter(DefaultAccountAdapter):
 
     def login(self, request: HttpRequest, user) -> None:
         super().login(request, user)
-        fingerprint    = make_fingerprint(request)
+        fingerprint = make_fingerprint(request)
         access, refresh = create_token_pair(user, fingerprint)
         # request.jwt_tokens — response'ga cookie yozish uchun signal
         # (response bu yerda mavjud emas; signal orqali uzatiladi)
-        request._jwt_access  = access
+        request._jwt_access = access
         request._jwt_refresh = refresh
 
 
@@ -54,6 +52,7 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
 
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin) -> None:
         from allauth.account.models import EmailAddress
+
         from apps.accounts.models import CustomUser
 
         if sociallogin.is_existing:

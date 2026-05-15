@@ -3,12 +3,12 @@ Unit tests for apps/accounts/services/otp_service.py
 Focus: Rate limiting, OTP generation, verification, expiration
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timedelta, timezone
+
 from apps.accounts.models import OTPCode
-from apps.accounts.services.otp_service import (
-    send_otp, verify_otp, OTPError, OTPRateLimitError
-)
+from apps.accounts.services.otp_service import OTPError, OTPRateLimitError, send_otp, verify_otp
 from apps.accounts.services.phone_utils import PhoneValidationError
 
 
@@ -47,8 +47,8 @@ class TestOTPSend:
 
     def test_send_otp_rate_limit_reset_after_600s(self, db, phone_number, mock_redis):
         """After 600s, rate limit counter resets."""
+
         from apps.accounts.services.otp_service import _redis
-        import time
 
         # Send 3 OTPs
         send_otp(phone_number)
@@ -113,9 +113,9 @@ class TestOTPVerify:
         code = OTPCode.objects.create(
             phone=phone_number,
             code='123456',
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
             is_verified=False,
-            attempts=5
+            attempts=5,
         )
 
         with pytest.raises(OTPError):
@@ -127,8 +127,8 @@ class TestOTPVerify:
         OTPCode.objects.create(
             phone=phone_number,
             code='123456',
-            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-            is_verified=False
+            expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            is_verified=False,
         )
 
         with pytest.raises(OTPError):
@@ -152,8 +152,8 @@ class TestOTPVerify:
         OTPCode.objects.create(
             phone=phone_number,
             code='123456',
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
-            is_verified=True
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            is_verified=True,
         )
 
         with pytest.raises(OTPError):
@@ -185,12 +185,12 @@ class TestOTPExceptionHandling:
 
     def test_otp_code_expiration_boundary(self, db, phone_number, user_with_phone):
         """Code expires exactly at expires_at time."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         OTPCode.objects.create(
             phone=phone_number,
             code='123456',
             expires_at=now + timedelta(seconds=1),
-            is_verified=False
+            is_verified=False,
         )
 
         # Should work before expiration

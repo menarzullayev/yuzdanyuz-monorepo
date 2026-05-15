@@ -13,13 +13,11 @@ JWTAuthMiddleware dan KEYIN, TenantMiddleware dan OLDIN joylashadi.
 
 import logging
 
-from django.conf import settings
-
 from apps.accounts.services.token_service import (
+    _redis,
     clear_auth_cookies,
     make_fingerprint,
     verify_access_token,
-    _redis,
 )
 
 log = logging.getLogger(__name__)
@@ -41,7 +39,7 @@ class DeviceCheckMiddleware:
         Agar single_device_policy=True: mos kelmasa → force logout
         Agar single_device_policy=False: ko'p qurilmaga ruxsat, check skip
         """
-        access_token  = request.COOKIES.get('access_token')
+        access_token = request.COOKIES.get('access_token')
         refresh_token = request.COOKIES.get('refresh_token')
 
         if not access_token or not refresh_token:
@@ -57,7 +55,7 @@ class DeviceCheckMiddleware:
         from core.tenant import get_current_org
 
         try:
-            user = CustomUser.objects.get(pk=user_id)
+            CustomUser.objects.get(pk=user_id)
             org = get_current_org()
 
             if org and not org.single_device_policy:
@@ -99,6 +97,7 @@ class DeviceLogoutMiddleware:
             clear_auth_cookies(response)
             # request.user ni ham tozalaymiz
             from django.contrib.auth.models import AnonymousUser
+
             request.user = AnonymousUser()
 
             # HTMX requestlarda redirect signal yuborish

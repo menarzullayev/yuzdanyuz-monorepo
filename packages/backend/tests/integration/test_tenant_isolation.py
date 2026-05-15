@@ -4,8 +4,9 @@ Focus: TenantManager enforcement, context switching, global manager bypass
 """
 
 import pytest
+
 from apps.catalog.models import Question
-from core.tenant import set_current_org, clear_current_org, tenant_context
+from core.tenant import clear_current_org, set_current_org
 
 
 @pytest.mark.integration
@@ -15,14 +16,10 @@ class TestTenantIsolation:
     def test_tenant_manager_isolates_org_data(self, db, org, org2, subject):
         """Org1 user querying → can't see Org2 data."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         set_current_org(org)
@@ -36,14 +33,10 @@ class TestTenantIsolation:
     def test_global_manager_sees_all_orgs(self, db, org, org2, subject):
         """global_objects bypasses tenant context."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         set_current_org(org)
@@ -53,14 +46,10 @@ class TestTenantIsolation:
     def test_context_switch_changes_queryset(self, db, org, org2, subject):
         """Switch context → queryset changes immediately."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         set_current_org(org)
@@ -75,14 +64,10 @@ class TestTenantIsolation:
     def test_for_org_explicit_filter(self, db, org, org2, subject):
         """objects.for_org(org) filters explicitly regardless of context."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         set_current_org(org)
@@ -93,14 +78,10 @@ class TestTenantIsolation:
     def test_no_context_returns_all(self, db, org, org2, subject):
         """context=None → no filtering (admin/platform mode)."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         clear_current_org()

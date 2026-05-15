@@ -3,11 +3,18 @@ Unit tests for apps/organizations/models.py
 Focus: Organization, OrgRole, Membership, OrgInvite
 """
 
+from datetime import timedelta
+
 import pytest
 from django.utils import timezone
-from datetime import timedelta
+
 from apps.organizations.models import (
-    Organization, OrgRole, OrgStatus, Membership, MembershipStatus, OrgInvite
+    Membership,
+    MembershipStatus,
+    Organization,
+    OrgInvite,
+    OrgRole,
+    OrgStatus,
 )
 
 
@@ -52,9 +59,7 @@ class TestOrganizationModel:
 
     def test_org_is_active(self, db):
         """is_active property."""
-        org = Organization.objects.create(
-            name='Active', slug='active', status=OrgStatus.ACTIVE
-        )
+        org = Organization.objects.create(name='Active', slug='active', status=OrgStatus.ACTIVE)
         assert org.is_active is True
 
         org.status = OrgStatus.SUSPENDED
@@ -62,9 +67,7 @@ class TestOrganizationModel:
 
     def test_org_is_trial(self, db):
         """is_trial property."""
-        org = Organization.objects.create(
-            name='Trial', slug='trial', status=OrgStatus.TRIAL
-        )
+        org = Organization.objects.create(name='Trial', slug='trial', status=OrgStatus.TRIAL)
         assert org.is_trial is True
 
     def test_org_trial_expired_no_date(self, org):
@@ -167,8 +170,7 @@ class TestMembership:
         """activate() → status=ACTIVE, joined_at set."""
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.INVITED
+            user=user, organization=org, role=role, status=MembershipStatus.INVITED
         )
 
         assert m.joined_at is None
@@ -193,18 +195,14 @@ class TestOrgInvite:
     def test_orginvite_is_valid_true(self, db, org, user):
         """Fresh invite → is_valid=True."""
         role = OrgRole.objects.get(organization=org, name='student')
-        invite = OrgInvite.objects.create(
-            organization=org, role=role,
-            created_by=user
-        )
+        invite = OrgInvite.objects.create(organization=org, role=role, created_by=user)
         assert invite.is_valid is True
 
     def test_orginvite_is_valid_inactive(self, db, org, user):
         """is_active=False → is_valid=False."""
         role = OrgRole.objects.get(organization=org, name='student')
         invite = OrgInvite.objects.create(
-            organization=org, role=role, is_active=False,
-            created_by=user
+            organization=org, role=role, is_active=False, created_by=user
         )
         assert invite.is_valid is False
 
@@ -212,9 +210,10 @@ class TestOrgInvite:
         """expires_at in past → is_valid=False."""
         role = OrgRole.objects.get(organization=org, name='student')
         invite = OrgInvite.objects.create(
-            organization=org, role=role,
+            organization=org,
+            role=role,
             expires_at=timezone.now() - timedelta(days=1),
-            created_by=user
+            created_by=user,
         )
         assert invite.is_valid is False
 
@@ -222,18 +221,14 @@ class TestOrgInvite:
         """used_count >= max_uses → is_valid=False."""
         role = OrgRole.objects.get(organization=org, name='student')
         invite = OrgInvite.objects.create(
-            organization=org, role=role, max_uses=2, used_count=2,
-            created_by=user
+            organization=org, role=role, max_uses=2, used_count=2, created_by=user
         )
         assert invite.is_valid is False
 
     def test_orginvite_use_increments_count(self, db, org, user):
         """use() → used_count += 1."""
         role = OrgRole.objects.get(organization=org, name='student')
-        invite = OrgInvite.objects.create(
-            organization=org, role=role,
-            created_by=user
-        )
+        invite = OrgInvite.objects.create(organization=org, role=role, created_by=user)
 
         assert invite.used_count == 0
         invite.use()

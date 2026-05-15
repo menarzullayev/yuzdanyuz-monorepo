@@ -3,14 +3,20 @@ Unit tests for apps/accounts/services/telegram_auth.py
 Focus: HMAC validation, user creation, data parsing
 """
 
-import pytest
-import hmac
 import hashlib
-from datetime import datetime, timezone
+import hmac
+from datetime import UTC, datetime
 from urllib.parse import urlencode
+
+import pytest
 from django.conf import settings
+
 from apps.accounts.models import CustomUser
-from apps.accounts.services.telegram_auth import verify_init_data, find_or_create_user, TelegramAuthError
+from apps.accounts.services.telegram_auth import (
+    TelegramAuthError,
+    find_or_create_user,
+    verify_init_data,
+)
 
 
 @pytest.mark.unit
@@ -22,10 +28,10 @@ class TestTelegramInitDataValidation:
         import json
 
         user_id = 123456789
-        first_name = "John"
-        last_name = "Doe"
-        username = "johndoe"
-        language_code = "en"
+        first_name = 'John'
+        last_name = 'Doe'
+        username = 'johndoe'
+        language_code = 'en'
 
         user_obj = {
             'id': user_id,
@@ -33,16 +39,12 @@ class TestTelegramInitDataValidation:
             'first_name': first_name,
             'last_name': last_name,
             'username': username,
-            'language_code': language_code
+            'language_code': language_code,
         }
 
-        auth_date = str(int(datetime.now(timezone.utc).timestamp()))
+        auth_date = str(int(datetime.now(UTC).timestamp()))
 
-        data = {
-            'user': json.dumps(user_obj),
-            'chat_instance': '1234567890',
-            'auth_date': auth_date
-        }
+        data = {'user': json.dumps(user_obj), 'chat_instance': '1234567890', 'auth_date': auth_date}
 
         # Calculate HMAC exactly as the service does
         bot_token = settings.TELEGRAM_BOT_TOKEN
@@ -59,10 +61,7 @@ class TestTelegramInitDataValidation:
 
     def test_verify_init_data_invalid_hash(self):
         """Invalid HMAC → raises TelegramAuthError."""
-        data = {
-            'user': '{"id":123}',
-            'auth_date': str(int(datetime.now(timezone.utc).timestamp()))
-        }
+        data = {'user': '{"id":123}', 'auth_date': str(int(datetime.now(UTC).timestamp()))}
         init_data = urlencode(data) + '&hash=invalid_hash'
 
         with pytest.raises(TelegramAuthError):
@@ -70,11 +69,8 @@ class TestTelegramInitDataValidation:
 
     def test_verify_init_data_expired_timestamp(self):
         """Auth date > max_age (24h default) → raises TelegramAuthError."""
-        old_timestamp = int(datetime.now(timezone.utc).timestamp()) - (86400 + 1)
-        data = {
-            'user': '{"id":123}',
-            'auth_date': str(old_timestamp)
-        }
+        old_timestamp = int(datetime.now(UTC).timestamp()) - (86400 + 1)
+        data = {'user': '{"id":123}', 'auth_date': str(old_timestamp)}
 
         secret_key = hashlib.sha256(f'WebAppData{settings.TELEGRAM_BOT_TOKEN}'.encode()).digest()
         check_string = '\n'.join(f'{k}={v}' for k, v in sorted(data.items()))
@@ -87,10 +83,7 @@ class TestTelegramInitDataValidation:
 
     def test_verify_init_data_no_hash(self):
         """Missing hash parameter → raises TelegramAuthError."""
-        data = {
-            'user': '{"id":123}',
-            'auth_date': str(int(datetime.now(timezone.utc).timestamp()))
-        }
+        data = {'user': '{"id":123}', 'auth_date': str(int(datetime.now(UTC).timestamp()))}
         init_data = urlencode(data)
 
         with pytest.raises(TelegramAuthError):
@@ -98,10 +91,7 @@ class TestTelegramInitDataValidation:
 
     def test_verify_init_data_malformed_json(self):
         """Malformed user JSON → raises TelegramAuthError."""
-        data = {
-            'user': 'not-json',
-            'auth_date': str(int(datetime.now(timezone.utc).timestamp()))
-        }
+        data = {'user': 'not-json', 'auth_date': str(int(datetime.now(UTC).timestamp()))}
 
         secret_key = hashlib.sha256(f'WebAppData{settings.TELEGRAM_BOT_TOKEN}'.encode()).digest()
         check_string = '\n'.join(f'{k}={v}' for k, v in sorted(data.items()))
@@ -135,7 +125,7 @@ class TestFindOrCreateUser:
             'id': 987654321,
             'first_name': 'Jane',
             'last_name': 'Smith',
-            'username': 'janesmith'
+            'username': 'janesmith',
         }
 
         user, created = find_or_create_user(telegram_data)
@@ -160,16 +150,10 @@ class TestFindOrCreateUser:
     def test_find_or_create_user_duplicate_username(self, db):
         """Username conflict → auto-append number."""
         existing = CustomUser.objects.create_user(
-            username='janesmith',
-            email='jane@example.com',
-            password='pass'
+            username='janesmith', email='jane@example.com', password='pass'
         )
 
-        telegram_data = {
-            'id': 111222333,
-            'first_name': 'Jane',
-            'username': 'janesmith'
-        }
+        telegram_data = {'id': 111222333, 'first_name': 'Jane', 'username': 'janesmith'}
 
         user, created = find_or_create_user(telegram_data)
         assert user.id != existing.id
@@ -183,7 +167,7 @@ class TestFindOrCreateUser:
             'first_name': 'Test',
             'last_name': 'User',
             'username': 'testuser',
-            'language_code': 'en'
+            'language_code': 'en',
         }
 
         user, created = find_or_create_user(telegram_data)
@@ -195,10 +179,7 @@ class TestFindOrCreateUser:
 
     def test_find_or_create_user_no_phone(self, db):
         """User created without phone → phone_number empty."""
-        telegram_data = {
-            'id': 555666777,
-            'first_name': 'NoPhone'
-        }
+        telegram_data = {'id': 555666777, 'first_name': 'NoPhone'}
 
         user, created = find_or_create_user(telegram_data)
         assert user.phone_number == '' or user.phone_number is None
@@ -217,7 +198,7 @@ class TestTelegramDataExtraction:
             'first_name': 'John',
             'last_name': 'Doe',
             'username': 'johndoe',
-            'language_code': 'en'
+            'language_code': 'en',
         }
 
         assert data['id'] == 123456
@@ -225,10 +206,7 @@ class TestTelegramDataExtraction:
 
     def test_parse_user_minimal_fields(self):
         """Telegram user with only id + first_name → works."""
-        data = {
-            'id': 123456,
-            'first_name': 'John'
-        }
+        data = {'id': 123456, 'first_name': 'John'}
 
         assert data['id'] == 123456
         assert data['first_name'] == 'John'

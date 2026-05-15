@@ -1,19 +1,19 @@
-from django.db import models
-from django.conf import settings as django_settings
-from django.utils import timezone
 from uuid import uuid4
 
+from django.conf import settings as django_settings
+from django.db import models
+from django.utils import timezone
 
 # ─── Org settings default qiymatlari ─────────────────────────────────────────
 # effective_settings() orqali har doim to'liq holda o'qiladi.
 # Har bir org o'z settings JSONField da faqat o'zgartirilgan qiymatlarni saqlaydi.
 DEFAULT_ORG_SETTINGS = {
-    'approval_required': False,   # True bo'lsa yangi orglar pending da qoladi
-    'ai_enabled': True,           # AI diagnostika va feedback yoqilganmi
-    'max_students': None,         # None = cheksiz
-    'proctoring': 'basic',        # 'none' | 'basic' | 'strict'
-    'allow_public_exams': True,   # B2C ochiq testlarini ko'rsatishga ruxsat
-    'trial_days': 14,             # Yangi org uchun sinov davri (kun)
+    'approval_required': False,  # True bo'lsa yangi orglar pending da qoladi
+    'ai_enabled': True,  # AI diagnostika va feedback yoqilganmi
+    'max_students': None,  # None = cheksiz
+    'proctoring': 'basic',  # 'none' | 'basic' | 'strict'
+    'allow_public_exams': True,  # B2C ochiq testlarini ko'rsatishga ruxsat
+    'trial_days': 14,  # Yangi org uchun sinov davri (kun)
 }
 
 # ─── Org ichidagi tizimiy rollar va ularning default ruxsatlari ───────────────
@@ -26,17 +26,28 @@ SYSTEM_ROLES = {
     'manager': {
         'display_name': 'Menejer',
         'permissions': [
-            'exam:create', 'exam:edit', 'exam:delete', 'exam:view',
-            'catalog:create', 'catalog:edit', 'catalog:view',
-            'members:invite', 'members:manage', 'members:view',
+            'exam:create',
+            'exam:edit',
+            'exam:delete',
+            'exam:view',
+            'catalog:create',
+            'catalog:edit',
+            'catalog:view',
+            'members:invite',
+            'members:manage',
+            'members:view',
             'analytics:view',
         ],
     },
     'teacher': {
         'display_name': "O'qituvchi",
         'permissions': [
-            'exam:create', 'exam:edit', 'exam:view',
-            'catalog:create', 'catalog:edit', 'catalog:view',
+            'exam:create',
+            'exam:edit',
+            'exam:view',
+            'catalog:create',
+            'catalog:edit',
+            'catalog:view',
             'members:view',
             'analytics:view',
         ],
@@ -44,14 +55,17 @@ SYSTEM_ROLES = {
     'student': {
         'display_name': "O'quvchi",
         'permissions': [
-            'exam:take', 'exam:view_own_results',
+            'exam:take',
+            'exam:view_own_results',
             'catalog:view',
         ],
     },
     'observer': {
         'display_name': 'Kuzatuvchi',
         'permissions': [
-            'exam:view', 'analytics:view', 'members:view',
+            'exam:view',
+            'analytics:view',
+            'members:view',
         ],
     },
 }
@@ -59,82 +73,95 @@ SYSTEM_ROLES = {
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
+
 class OrgType(models.TextChoices):
-    PLATFORM   = 'platform',   'Platforma'
-    TENANT     = 'tenant',     "O'quv markazi"
-    BRANCH     = 'branch',     'Filial'
+    PLATFORM = 'platform', 'Platforma'
+    TENANT = 'tenant', "O'quv markazi"
+    BRANCH = 'branch', 'Filial'
 
 
 class OrgStatus(models.TextChoices):
-    PENDING    = 'pending',    'Tasdiqlash kutilmoqda'
-    TRIAL      = 'trial',      'Sinov davri'
-    ACTIVE     = 'active',     'Faol'
-    SUSPENDED  = 'suspended',  "To'xtatilgan"
-    CANCELLED  = 'cancelled',  'Bekor qilingan'
+    PENDING = 'pending', 'Tasdiqlash kutilmoqda'
+    TRIAL = 'trial', 'Sinov davri'
+    ACTIVE = 'active', 'Faol'
+    SUSPENDED = 'suspended', "To'xtatilgan"
+    CANCELLED = 'cancelled', 'Bekor qilingan'
 
 
 class OrgTier(models.TextChoices):
-    FREE        = 'free',       'Bepul'
-    BASIC       = 'basic',      'Asosiy'
-    PRO         = 'pro',        'Professional'
-    ENTERPRISE  = 'enterprise', 'Korporativ'
+    FREE = 'free', 'Bepul'
+    BASIC = 'basic', 'Asosiy'
+    PRO = 'pro', 'Professional'
+    ENTERPRISE = 'enterprise', 'Korporativ'
 
 
 class MembershipStatus(models.TextChoices):
-    ACTIVE     = 'active',     'Faol'
-    INVITED    = 'invited',    'Taklif yuborilgan'
-    SUSPENDED  = 'suspended',  "To'xtatilgan"
-    LEFT       = 'left',       'Chiqib ketgan'
+    ACTIVE = 'active', 'Faol'
+    INVITED = 'invited', 'Taklif yuborilgan'
+    SUSPENDED = 'suspended', "To'xtatilgan"
+    LEFT = 'left', 'Chiqib ketgan'
 
 
 class JoinedVia(models.TextChoices):
-    MANUAL  = 'manual',  'Admin qo\'shdi'
-    INVITE  = 'invite',  'Invite link'
-    API     = 'api',     'API integratsiya'
+    MANUAL = 'manual', "Admin qo'shdi"
+    INVITE = 'invite', 'Invite link'
+    API = 'api', 'API integratsiya'
 
 
 # ─── Organization ─────────────────────────────────────────────────────────────
 
+
 class Organization(models.Model):
-    id   = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=255, verbose_name='Nomi')
     slug = models.SlugField(max_length=100, unique=True, verbose_name='Slug')
 
     # Daraja: platforma → tenant → branch
     org_type = models.CharField(
-        max_length=20, choices=OrgType.choices,
-        default=OrgType.TENANT, verbose_name='Tur',
+        max_length=20,
+        choices=OrgType.choices,
+        default=OrgType.TENANT,
+        verbose_name='Tur',
     )
     parent = models.ForeignKey(
-        'self', null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='children',
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='children',
         verbose_name='Yuqori tashkilot',
     )
 
     # Lifecycle
     status = models.CharField(
-        max_length=20, choices=OrgStatus.choices,
-        default=OrgStatus.PENDING, verbose_name='Holat',
+        max_length=20,
+        choices=OrgStatus.choices,
+        default=OrgStatus.PENDING,
+        verbose_name='Holat',
     )
     tier = models.CharField(
-        max_length=20, choices=OrgTier.choices,
-        default=OrgTier.FREE, verbose_name='Tarif',
+        max_length=20,
+        choices=OrgTier.choices,
+        default=OrgTier.FREE,
+        verbose_name='Tarif',
     )
     trial_ends_at = models.DateTimeField(
-        null=True, blank=True, verbose_name='Sinov tugash vaqti',
+        null=True,
+        blank=True,
+        verbose_name='Sinov tugash vaqti',
     )
 
     # White-label branding
-    logo          = models.ImageField(upload_to='orgs/logos/', null=True, blank=True)
+    logo = models.ImageField(upload_to='orgs/logos/', null=True, blank=True)
     primary_color = models.CharField(max_length=7, default='#1A73E8', verbose_name='Asosiy rang')
-    subdomain     = models.SlugField(max_length=100, null=True, blank=True, unique=True)
+    subdomain = models.SlugField(max_length=100, null=True, blank=True, unique=True)
     custom_domain = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
     # Device policy — bir qurilma yoki ko'p qurilmaga ruxsat berish
     single_device_policy = models.BooleanField(
         default=True,
         verbose_name='Bir qurilma siyosati',
-        help_text='True: 1 ta qurilma faol, yangi kirsa eski sessiya uzilib qoladi'
+        help_text='True: 1 ta qurilma faol, yangi kirsa eski sessiya uzilib qoladi',
     )
 
     # Konfiguratsiya (DEFAULT_ORG_SETTINGS bilan merge qilinadi)
@@ -142,8 +169,11 @@ class Organization(models.Model):
 
     # Kim yaratdi
     created_by = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='created_orgs',
+        django_settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_orgs',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -183,20 +213,24 @@ class Organization(models.Model):
 
 # ─── OrgRole (RBAC) ───────────────────────────────────────────────────────────
 
+
 class OrgRole(models.Model):
     """
     Org ichidagi custom rol.
     is_system_role=True rollar o'chirib bo'lmaydi va avtomatik yaratiladi.
     permissions = ['exam:create', 'billing:view', '*'] (wildcard = hammasi)
     """
-    id           = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE,
-        related_name='roles', verbose_name='Tashkilot',
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='roles',
+        verbose_name='Tashkilot',
     )
-    name         = models.CharField(max_length=50, verbose_name='Kod nomi')
-    display_name = models.CharField(max_length=100, verbose_name='Ko\'rinadigan nomi')
-    permissions  = models.JSONField(default=list, verbose_name='Ruxsatlar')
+    name = models.CharField(max_length=50, verbose_name='Kod nomi')
+    display_name = models.CharField(max_length=100, verbose_name="Ko'rinadigan nomi")
+    permissions = models.JSONField(default=list, verbose_name='Ruxsatlar')
     is_system_role = models.BooleanField(
         default=False,
         help_text="Tizimiy rollar o'chirib bo'lmaydi",
@@ -235,47 +269,58 @@ class OrgRole(models.Model):
 
 # ─── Membership ───────────────────────────────────────────────────────────────
 
+
 class Membership(models.Model):
     """
     User ↔ Organization ko'prigi.
     Bir user bir nechta orgga tegishli bo'la oladi.
     is_primary — leaderboard, billing, default org uchun.
     """
-    id           = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    user         = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
         related_name='memberships',
     )
     organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE,
+        Organization,
+        on_delete=models.CASCADE,
         related_name='memberships',
     )
     role = models.ForeignKey(
-        OrgRole, on_delete=models.PROTECT,
-        related_name='memberships', verbose_name='Rol',
+        OrgRole,
+        on_delete=models.PROTECT,
+        related_name='memberships',
+        verbose_name='Rol',
     )
-    status     = models.CharField(
-        max_length=20, choices=MembershipStatus.choices,
+    status = models.CharField(
+        max_length=20,
+        choices=MembershipStatus.choices,
         default=MembershipStatus.INVITED,
     )
     joined_via = models.CharField(
-        max_length=20, choices=JoinedVia.choices,
+        max_length=20,
+        choices=JoinedVia.choices,
         default=JoinedVia.MANUAL,
     )
-    is_primary  = models.BooleanField(
+    is_primary = models.BooleanField(
         default=False,
-        help_text="Foydalanuvchining asosiy tashkiloti",
+        help_text='Foydalanuvchining asosiy tashkiloti',
     )
-    invited_by  = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL, null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='sent_invites',
+    invited_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='sent_invites',
     )
-    joined_at  = models.DateTimeField(null=True, blank=True)
+    joined_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = 'A\'zolik'
+        verbose_name = "A'zolik"
         verbose_name_plural = "A'zoliklar"
         unique_together = [['user', 'organization']]
         ordering = ['-created_at']
@@ -294,28 +339,33 @@ class Membership(models.Model):
 
 # ─── OrgInvite ────────────────────────────────────────────────────────────────
 
+
 class OrgInvite(models.Model):
     """
     Invite link/token tizimi.
     max_uses=None → cheksiz foydalanish.
     expires_at=None → muddatsiz.
     """
-    id           = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE,
+        Organization,
+        on_delete=models.CASCADE,
         related_name='invites',
     )
-    token      = models.UUIDField(default=uuid4, unique=True, editable=False)
-    role       = models.ForeignKey(
-        OrgRole, on_delete=models.CASCADE,
+    token = models.UUIDField(default=uuid4, unique=True, editable=False)
+    role = models.ForeignKey(
+        OrgRole,
+        on_delete=models.CASCADE,
         related_name='invites',
     )
-    max_uses   = models.PositiveIntegerField(null=True, blank=True)
+    max_uses = models.PositiveIntegerField(null=True, blank=True)
     used_count = models.PositiveIntegerField(default=0)
     expires_at = models.DateTimeField(null=True, blank=True)
-    is_active  = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
         related_name='created_invites',
     )
     created_at = models.DateTimeField(auto_now_add=True)

@@ -50,28 +50,26 @@ def verify_init_data(init_data: str, bot_token: str | None = None, max_age: int 
     params = dict(parse_qsl(unquote(init_data), keep_blank_values=True))
     received_hash = params.pop('hash', None)
     if not received_hash:
-        raise TelegramAuthError('initData da hash yo\'q')
+        raise TelegramAuthError("initData da hash yo'q")
 
     # Vaqt tekshiruvi
     auth_date = params.get('auth_date')
     if auth_date and time.time() - int(auth_date) > max_age:
-        raise TelegramAuthError('initData muddati o\'tgan (max_age exceeded)')
+        raise TelegramAuthError("initData muddati o'tgan (max_age exceeded)")
 
     # data-check-string
-    data_check_string = '\n'.join(
-        f'{k}={v}' for k, v in sorted(params.items())
-    )
+    data_check_string = '\n'.join(f'{k}={v}' for k, v in sorted(params.items()))
 
     # secret_key = HMAC-SHA256("WebAppData", bot_token)
     secret_key = hmac.new(b'WebAppData', token.encode(), hashlib.sha256).digest()
     expected_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(expected_hash, received_hash):
-        raise TelegramAuthError('initData imzosi noto\'g\'ri')
+        raise TelegramAuthError("initData imzosi noto'g'ri")
 
     user_json = params.get('user')
     if not user_json:
-        raise TelegramAuthError('initData da user yo\'q')
+        raise TelegramAuthError("initData da user yo'q")
 
     return json.loads(user_json)
 
@@ -106,6 +104,7 @@ def find_or_create_user(tg_user: dict) -> tuple[CustomUser, bool]:
 
 # ── private helpers ──────────────────────────────────────────
 
+
 def _update_tg_fields(user: CustomUser, tg_user: dict) -> None:
     """Telegram ma'lumotlarini user modeliga yozadi."""
     import django.utils.timezone as tz
@@ -120,15 +119,23 @@ def _update_tg_fields(user: CustomUser, tg_user: dict) -> None:
     if not user.last_name:
         user.last_name = tg_user.get('last_name', '')
 
-    user.save(update_fields=[
-        'telegram_username', 'telegram_language', 'telegram_photo_url',
-        'tg_linked_at', 'first_name', 'last_name',
-    ] if user.pk else None)
+    user.save(
+        update_fields=[
+            'telegram_username',
+            'telegram_language',
+            'telegram_photo_url',
+            'tg_linked_at',
+            'first_name',
+            'last_name',
+        ]
+        if user.pk
+        else None
+    )
 
 
 def _unique_username(tg_user: dict) -> str:
     """Noyob username generatsiya qiladi."""
-    base = tg_user.get('username') or f"tg_{tg_user['id']}"
+    base = tg_user.get('username') or f'tg_{tg_user["id"]}'
     if not CustomUser.objects.filter(username=base).exists():
         return base
-    return f"{base}_{tg_user['id']}"
+    return f'{base}_{tg_user["id"]}'

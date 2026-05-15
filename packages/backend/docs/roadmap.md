@@ -1,8 +1,8 @@
 # Milliy Sertifikat — Strategic Roadmap
 
-> **Loyiha**: Milliy Sertifikat EdTech Super-App  
-> **Stек**: Django 5.2 + HTMX + Alpine.js + Celery + Redis + PostgreSQL  
-> **Maqsad**: O'zbekiston miqyosidagi B2C + B2B + AI ta'lim ekotizimi  
+> **Loyiha**: Milliy Sertifikat EdTech Super-App
+> **Stек**: Django 5.2 + HTMX + Alpine.js + Celery + Redis + PostgreSQL
+> **Maqsad**: O'zbekiston miqyosidagi B2C + B2B + AI ta'lim ekotizimi
 > **Asос**: [30-bosqichli arxitektura qarorlari](./milliy_sertifikat_django.md)
 
 ---

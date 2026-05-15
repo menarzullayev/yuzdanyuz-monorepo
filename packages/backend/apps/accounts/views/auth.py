@@ -67,14 +67,16 @@ class TelegramAuthView(View):
         org = user.primary_organization
         access, refresh = create_token_pair(user, fingerprint, org=org)
 
-        response = JsonResponse({
-            'user': {
-                'id'          : user.pk,
-                'display_name': user.display_name,
-                'user_type'   : user.user_type,
-                'is_new'      : created,
+        response = JsonResponse(
+            {
+                'user': {
+                    'id': user.pk,
+                    'display_name': user.display_name,
+                    'user_type': user.user_type,
+                    'is_new': created,
+                }
             }
-        })
+        )
         set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
         return response
 
@@ -91,18 +93,20 @@ class TokenRefreshView(View):
     def post(self, request):
         old_refresh = request.COOKIES.get('refresh_token')
         if not old_refresh:
-            return JsonResponse({'error': 'refresh_token cookie yo\'q'}, status=401)
+            return JsonResponse({'error': "refresh_token cookie yo'q"}, status=401)
 
         access_token = request.COOKIES.get('access_token')
-        fingerprint  = make_fingerprint(request)
+        fingerprint = make_fingerprint(request)
 
         # user_id ni eskirgan access token dan olish (imzo tekshirilmaydi, faqat payload)
         import jwt as pyjwt
+
         user_id = None
         if access_token:
             try:
                 payload = pyjwt.decode(
-                    access_token, settings.SECRET_KEY,
+                    access_token,
+                    settings.SECRET_KEY,
                     algorithms=['HS256'],
                     options={'verify_exp': False},
                 )
@@ -111,11 +115,13 @@ class TokenRefreshView(View):
                 pass
 
         if not user_id:
-            return JsonResponse({'error': 'Token o\'qib bo\'lmadi'}, status=401)
+            return JsonResponse({'error': "Token o'qib bo'lmadi"}, status=401)
 
         result = rotate_refresh_token(old_refresh, user_id, fingerprint)
         if result is None:
-            return JsonResponse({'error': 'Refresh token noto\'g\'ri yoki muddati o\'tgan'}, status=401)
+            return JsonResponse(
+                {'error': "Refresh token noto'g'ri yoki muddati o'tgan"}, status=401
+            )
 
         new_access, new_refresh = result
         response = JsonResponse({'ok': True})
@@ -132,13 +138,15 @@ class LogoutView(View):
 
     def post(self, request):
         access_token = request.COOKIES.get('access_token')
-        fingerprint  = make_fingerprint(request)
+        fingerprint = make_fingerprint(request)
 
         if access_token:
             import jwt as pyjwt
+
             try:
                 payload = pyjwt.decode(
-                    access_token, settings.SECRET_KEY,
+                    access_token,
+                    settings.SECRET_KEY,
                     algorithms=['HS256'],
                     options={'verify_exp': False},
                 )

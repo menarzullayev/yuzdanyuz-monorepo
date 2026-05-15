@@ -12,9 +12,12 @@ class JWTCookieWriterMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
-        access  = getattr(request, '_jwt_access',  None)
+        access = getattr(request, '_jwt_access', None)
         refresh = getattr(request, '_jwt_refresh', None)
         if access and refresh:
-            is_secure = request.is_secure() or not __import__('django.conf', fromlist=['settings']).settings.DEBUG
+            is_secure = (
+                request.is_secure()
+                or not __import__('django.conf', fromlist=['settings']).settings.DEBUG
+            )
             set_auth_cookies(response, access, refresh, is_secure=is_secure)
         return response

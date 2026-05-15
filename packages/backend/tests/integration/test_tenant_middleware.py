@@ -3,13 +3,15 @@ Integration tests for core/middleware/tenant.py
 Focus: JWT-aware tenant resolution, membership validation, fallback logic
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
+
 import jwt as pyjwt
-from datetime import datetime, timezone, timedelta
+import pytest
 from django.conf import settings
 from django.test import RequestFactory
-from core.middleware.tenant import TenantMiddleware
+
 from apps.organizations.models import Membership, MembershipStatus, OrgRole
+from core.middleware.tenant import TenantMiddleware
 
 
 def dummy_view(request):
@@ -35,8 +37,7 @@ class TestTenantMiddlewareResolution:
         """Authenticated, no JWT → _resolve_org returns primary_organization."""
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -53,15 +54,17 @@ class TestTenantMiddlewareResolution:
         """JWT with current_org + membership → resolve to that org."""
         role1 = OrgRole.objects.get(organization=org, name='student')
         m1 = Membership.objects.create(
-            user=user, organization=org, role=role1,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role1, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m1.activate()
 
         role2 = OrgRole.objects.get(organization=org2, name='teacher')
         m2 = Membership.objects.create(
-            user=user, organization=org2, role=role2,
-            status=MembershipStatus.ACTIVE, is_primary=False
+            user=user,
+            organization=org2,
+            role=role2,
+            status=MembershipStatus.ACTIVE,
+            is_primary=False,
         )
         m2.activate()
 
@@ -69,7 +72,7 @@ class TestTenantMiddlewareResolution:
             'sub': str(user.pk),
             'type': 'access',
             'current_org': str(org2.pk),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -89,8 +92,7 @@ class TestTenantMiddlewareResolution:
 
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -99,7 +101,7 @@ class TestTenantMiddlewareResolution:
             'sub': str(user.pk),
             'type': 'access',
             'current_org': bad_org_id,
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -117,8 +119,7 @@ class TestTenantMiddlewareResolution:
         """JWT has org but user not member → fallback to primary_org."""
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -126,7 +127,7 @@ class TestTenantMiddlewareResolution:
             'sub': str(user.pk),
             'type': 'access',
             'current_org': str(org2.pk),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -146,7 +147,7 @@ class TestTenantMiddlewareResolution:
             'sub': str(superuser.pk),
             'type': 'access',
             'current_org': str(org.pk),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 

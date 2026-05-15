@@ -103,12 +103,12 @@ def send_welcome_email(user_id):
     Fire-and-forget: view doesn't wait for response.
     """
     from accounts.models import CustomUser
-    
+
     user = CustomUser.objects.get(id=user_id)
-    
+
     # Simulate email sending
     logger.info(f"Sending welcome email to {user.email}")
-    
+
     return f"Email sent to {user.email}"
 
 # In view
@@ -116,10 +116,10 @@ from catalog.tasks import send_welcome_email
 
 def register_user(request):
     user = CustomUser.objects.create_user(...)
-    
+
     # Queue task (doesn't wait)
     send_welcome_email.delay(str(user.id))
-    
+
     return render(request, 'success.html')
 ```
 
@@ -140,38 +140,38 @@ def parse_excel_file(self, batch_id, file_url):
     """
     from catalog.models import ImportBatch
     import requests
-    
+
     batch = ImportBatch.objects.get(id=batch_id)
     batch.status = 'parsing'
     batch.save()
-    
+
     try:
         # Download file
         response = requests.get(file_url, timeout=30)
         response.raise_for_status()
-        
+
         # Parse (simplified)
         questions = parse_excel(response.content)
-        
+
         batch.total_imported = len(questions)
         batch.status = 'parsed'
         batch.save()
-        
+
         logger.info(f"Batch {batch_id}: Parsed {len(questions)} questions")
-        
+
         return {'batch_id': str(batch_id), 'count': len(questions)}
-    
+
     except requests.Timeout as e:
         # Retry on timeout (transient failure)
         logger.warning(f"Batch {batch_id}: Timeout, retrying...")
         raise self.retry(exc=e, countdown=60)  # Wait 60s before retry
-    
+
     except Exception as e:
         # Non-retryable error
         batch.status = 'failed'
         batch.error_log.append(str(e))
         batch.save()
-        
+
         logger.error(f"Batch {batch_id}: Failed permanently: {e}")
         raise  # Don't retry
 
@@ -180,13 +180,13 @@ from catalog.tasks import parse_excel_file
 
 def start_import(request, batch_id):
     batch = ImportBatch.objects.get(id=batch_id)
-    
+
     # Queue task with args
     parse_excel_file.apply_async(
         args=(str(batch_id), batch.import_file_url),
         countdown=5  # Start after 5 seconds
     )
-    
+
     return JsonResponse({'status': 'parsing_started'})
 ```
 
@@ -205,50 +205,50 @@ def compute_skill_profile(self, user_id):
     """
     from accounts.models import CustomUser
     from exams.models import UserAnswer
-    
+
     user = CustomUser.objects.get(id=user_id)
     progress_recorder = ProgressRecorder(self)
-    
+
     # Get all answers for this user
     answers = UserAnswer.objects.filter(
         attempt__user=user
     ).select_related('question')
-    
+
     # Aggregate by skill
     skill_scores = {}
-    
+
     for i, answer in enumerate(answers):
         if answer.question.tags.exists():
             for tag in answer.question.tags.all():
                 skill_id = str(tag.id)
-                
+
                 if skill_id not in skill_scores:
                     skill_scores[skill_id] = {'correct': 0, 'total': 0}
-                
+
                 skill_scores[skill_id]['total'] += 1
                 if answer.is_correct:
                     skill_scores[skill_id]['correct'] += 1
-        
+
         # Report progress
         progress_recorder.set_progress(
             i + 1,
             answers.count(),
             description=f"Processing answer {i + 1}/{answers.count()}"
         )
-    
+
     # Calculate mastery scores (0-100)
     mastery = {}
     for skill_id, data in skill_scores.items():
         if data['total'] > 0:
             mastery[skill_id] = (data['correct'] / data['total']) * 100
-    
+
     # Save to user profile
     from intelligence.models import UserSkillProfile
     profile, _ = UserSkillProfile.objects.get_or_create(user=user)
     profile.skill_scores = mastery
     profile.overall_mastery = sum(mastery.values()) / len(mastery) if mastery else 0
     profile.save()
-    
+
     return {'user_id': str(user_id), 'skills_computed': len(mastery)}
 
 # Frontend polling
@@ -275,11 +275,11 @@ def check_daily_streaks():
     from accounts.models import CustomUser
     from engagement.models import Streak
     from exams.models import PracticeSession, ExamAttempt
-    
+
     today = date.today()
     updated = 0
     broken = 0
-    
+
     for user in CustomUser.objects.filter(is_active=True):
         # Was user active today? (completed practice or exam)
         was_active_today = (
@@ -292,9 +292,9 @@ def check_daily_streaks():
                 submitted_at__date=today
             ).exists()
         )
-        
+
         streak, _ = Streak.objects.get_or_create(user=user)
-        
+
         if was_active_today:
             # Extend streak
             streak.current_streak += 1
@@ -309,7 +309,7 @@ def check_daily_streaks():
                 streak.current_streak = 0
                 streak.save()
                 broken += 1
-    
+
     logger.info(f"Streaks: Updated {updated}, Broken {broken}")
     return {'updated': updated, 'broken': broken}
 ```
@@ -324,14 +324,14 @@ from celery import shared_task, chain, group, chord
 def validate_draft(draft_id):
     """Step 1: Validate draft."""
     from catalog.models import QuestionDraft
-    
+
     draft = QuestionDraft.objects.get(id=draft_id)
     errors = draft.validate()
-    
+
     draft.validation_errors = errors
     draft.validation_status = 'valid' if not errors else 'invalid'
     draft.save()
-    
+
     return str(draft_id)
 
 @shared_task
@@ -339,12 +339,12 @@ def generate_ai_explanation(draft_id):
     """Step 2: Generate AI explanation (only if valid)."""
     from catalog.models import QuestionDraft
     from anthropic import Anthropic
-    
+
     draft = QuestionDraft.objects.get(id=draft_id)
-    
+
     if draft.validation_status != 'valid':
         return None  # Skip for invalid drafts
-    
+
     client = Anthropic()
     response = client.messages.create(
         model="claude-3-5-sonnet-20241022",
@@ -354,10 +354,10 @@ def generate_ai_explanation(draft_id):
             "content": f"Generate explanation for: {draft.raw_content}"
         }]
     )
-    
+
     draft.question.explanation = {'ai_generated': response.content[0].text}
     draft.question.save()
-    
+
     return str(draft_id)
 
 @shared_task
@@ -366,15 +366,15 @@ def notify_admin(draft_id):
     from catalog.models import QuestionDraft
     from engagement.models import Notification
     from accounts.models import CustomUser
-    
+
     draft = QuestionDraft.objects.get(id=draft_id)
     org = draft.import_batch.organization
-    
+
     admins = CustomUser.objects.filter(
         membership_set__organization=org,
         membership_set__role__name='admin'
     )
-    
+
     for admin in admins:
         Notification.objects.create(
             user=admin,
@@ -383,7 +383,7 @@ def notify_admin(draft_id):
             message=f'Draft from batch {draft.import_batch.id} is ready.',
             action_url=f'/catalog/drafts/{draft_id}/'
         )
-    
+
     return str(draft_id)
 
 # Workflow: Chain tasks
@@ -396,19 +396,19 @@ def process_import_batch(batch_id):
     3. Notify admins
     """
     from catalog.models import ImportBatch
-    
+
     batch = ImportBatch.objects.get(id=batch_id)
-    
+
     # Get all draft IDs in batch
     draft_ids = list(batch.drafts.values_list('id', flat=True))
-    
+
     # Chain: sequential tasks
     workflow = chain(
         group([validate_draft.s(str(did)) for did in draft_ids]),
         group([generate_ai_explanation.s(str(did)) for did in draft_ids]),
         group([notify_admin.s(str(did)) for did in draft_ids]),
     )
-    
+
     return workflow.apply_async()
 
 # Or use chord for reduce step
@@ -417,7 +417,7 @@ def process_import_batch_with_summary(batch_id):
     Process batch and get summary.
     """
     draft_ids = list(ImportBatch.objects.get(id=batch_id).drafts.values_list('id', flat=True))
-    
+
     def process_batch_summary(results):
         """Called after all drafts processed."""
         return {
@@ -425,24 +425,24 @@ def process_import_batch_with_summary(batch_id):
             'processed_count': len(results),
             'timestamp': datetime.utcnow().isoformat()
         }
-    
+
     # Chord: parallel + callback
     callback = chord([validate_draft.s(str(did)) for did in draft_ids])(
         finalize_batch_processing.s(batch_id)
     )
-    
+
     return callback
 
 @shared_task
 def finalize_batch_processing(results, batch_id):
     """Callback: Run after all drafts processed."""
     from catalog.models import ImportBatch
-    
+
     batch = ImportBatch.objects.get(id=batch_id)
     batch.status = 'parsed'
     batch.total_imported = len(results)
     batch.save()
-    
+
     return f"Batch {batch_id} finalized"
 ```
 
@@ -484,16 +484,16 @@ logger = get_task_logger(__name__)
 
 class LoggingTask(Task):
     """Base task class with detailed logging."""
-    
+
     def before_start(self, task_id, args, kwargs):
         logger.info(f"Task {self.name} starting: {task_id}")
-    
+
     def on_success(self, result, task_id, args, kwargs):
         logger.info(f"Task {self.name} succeeded: {result}")
-    
+
     def on_retry(self, exc, task_id, args, kwargs, einfo):
         logger.warning(f"Task {self.name} retrying: {exc}")
-    
+
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         logger.error(f"Task {self.name} failed: {exc}", exc_info=einfo)
 
@@ -541,18 +541,18 @@ from django.utils import timezone
 
 class Command(BaseCommand):
     help = 'Clean up expired Redis keys'
-    
+
     def handle(self, *args, **options):
         redis_conn = get_redis_connection('default')
-        
+
         # SCAN through keys (doesn't block)
         for key in redis_conn.scan_iter('cache:*'):
             ttl = redis_conn.ttl(key)
-            
+
             if ttl == -1:  # No TTL set
                 # Auto-expire old cache keys
                 redis_conn.expire(key, 3600)  # 1 hour
-        
+
         self.stdout.write("Redis cleanup complete")
 ```
 
@@ -573,7 +573,7 @@ def critical_task(self):
     except UnrecoverableError as e:
         # Move to dead-letter queue
         logger.error(f"Moving to DLQ: {e}")
-        
+
         # Store for manual review
         from core.models import FailedTask
         FailedTask.objects.create(
@@ -582,9 +582,9 @@ def critical_task(self):
             traceback=traceback.format_exc(),
             retry_count=self.request.retries
         )
-        
+
         raise  # Don't retry
-    
+
     except RecoverableError:
         raise self.retry(countdown=120, max_retries=5)
 ```
@@ -635,21 +635,21 @@ from celery.app.control import Inspect
 
 class Command(BaseCommand):
     help = 'Check Celery worker health'
-    
+
     def handle(self, *args, **options):
         from config.celery import app
-        
+
         insp = Inspect(app=app)
-        
+
         # Active tasks
         active = insp.active()
         print(f"Active tasks: {sum(len(v) for v in active.values())}")
-        
+
         # Worker stats
         stats = insp.stats()
         for worker, stat in stats.items():
             print(f"{worker}: pool={stat['pool']['max-concurrency']} tasks")
-        
+
         # Queue lengths
         reserved = insp.reserved()
         for worker, reserved_tasks in reserved.items():

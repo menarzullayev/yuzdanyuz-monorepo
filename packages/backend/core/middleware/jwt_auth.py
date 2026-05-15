@@ -6,7 +6,6 @@ Cookie da valid access_token bo'lsa — foydalanuvchi authenticate qilinadi.
 """
 
 from django.contrib.auth import authenticate
-from django.contrib.auth.models import AnonymousUser
 
 
 class JWTAuthMiddleware:

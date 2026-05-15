@@ -9,13 +9,13 @@ const apiClient = axios.create({
 
 export const authService = {
   login: (email: string, password: string) =>
-    apiClient.post('/accounts/api/auth/email/', 
-      new URLSearchParams({ login: email, password }), 
+    apiClient.post('/accounts/api/auth/email/',
+      new URLSearchParams({ login: email, password }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     ),
 
   register: (regMethod: 'email' | 'username', data: Record<string, string>) =>
-    apiClient.post('/accounts/api/auth/register/', 
+    apiClient.post('/accounts/api/auth/register/',
       new URLSearchParams({ reg_method: regMethod, ...data }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     ),

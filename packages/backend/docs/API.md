@@ -33,19 +33,19 @@ urlpatterns = [
     # List & Create
     path('questions/', views.QuestionListView.as_view(), name='list'),
     path('questions/create/', views.QuestionCreateView.as_view(), name='create'),
-    
+
     # Retrieve, Update, Delete
     path('questions/<uuid:pk>/', views.QuestionDetailView.as_view(), name='detail'),
     path('questions/<uuid:pk>/edit/', views.QuestionEditView.as_view(), name='edit'),
     path('questions/<uuid:pk>/delete/', views.QuestionDeleteView.as_view(), name='delete'),
-    
+
     # Bulk actions
     path('questions/bulk-action/', views.QuestionBulkActionView.as_view(), name='bulk_action'),
-    
+
     # Custom actions (semantic)
     path('questions/<uuid:pk>/approve/', views.QuestionApproveView.as_view(), name='approve'),
     path('questions/<uuid:pk>/flag/', views.QuestionFlagView.as_view(), name='flag'),
-    
+
     # Nested resources
     path('imports/<uuid:batch_id>/review/', views.ImportReviewView.as_view(), name='import_review'),
     path('imports/<uuid:batch_id>/drafts/', views.ImportDraftsListView.as_view(), name='import_drafts'),
@@ -84,27 +84,27 @@ class QuestionListView(LoginRequiredMixin, TenantMixin, ListView):
     model = Question
     template_name = 'catalog/partials/question_list.html'
     paginate_by = 20
-    
+
     def get_queryset(self):
         # Auto-filtered by TenantManager
         qs = Question.objects.all()
-        
+
         # Filtering
         status = self.request.GET.get('status')
         if status:
             qs = qs.filter(status=status)
-        
+
         search = self.request.GET.get('search')
         if search:
             qs = qs.filter(content__icontains=search)
-        
+
         return qs.order_by('-created_at')
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['statuses'] = Question.STATUS_CHOICES
         return context
-    
+
     def get_template_names(self):
         # HTMX request: return partial
         if self.request.headers.get('HX-Request'):
@@ -118,7 +118,7 @@ class QuestionEditView(LoginRequiredMixin, TenantMixin, View):
     GET /catalog/questions/<id>/edit/ → Form (partial)
     POST /catalog/questions/<id>/edit/ → Save and return updated partial or errors
     """
-    
+
     def get(self, request, pk):
         question = get_object_or_404(Question, pk=pk, organization=request.org)
         form = QuestionForm(instance=question)
@@ -126,18 +126,18 @@ class QuestionEditView(LoginRequiredMixin, TenantMixin, View):
             'form': form,
             'question': question,
         })
-    
+
     def post(self, request, pk):
         question = get_object_or_404(Question, pk=pk, organization=request.org)
         form = QuestionForm(request.POST, instance=question)
-        
+
         if form.is_valid():
             form.save()
             # Return updated view (client swaps it in)
             return render(request, 'catalog/partials/question_detail.html', {
                 'question': question,
             })
-        
+
         # Validation failed: return form with errors
         return render(request, 'catalog/partials/question_form.html', {
             'form': form,
@@ -161,7 +161,7 @@ def approve_question(request, pk):
     question = get_object_or_404(Question, pk=pk, organization=request.org)
     question.status = 'published'
     question.save()
-    
+
     # Return updated badge + out-of-band status update
     return render(request, 'catalog/partials/question_status_badge.html', {
         'question': question,
@@ -183,7 +183,7 @@ def approve_question(request, pk):
      hx-target="#draft-list-panel"
      hx-indicator=".htmx-indicator"
      hx-select=".draft-item">
-  
+
   <div class="htmx-indicator">Loading drafts...</div>
 </div>
 
@@ -286,28 +286,28 @@ Django template:
 ### Alpine.js Integration
 
 ```html
-<div x-data="{ 
+<div x-data="{
   filters: { status: 'draft', search: '' },
   selectedIds: [],
-  isLoading: false 
+  isLoading: false
 }">
-  
+
   <!-- Trigger HTMX reload when filters change -->
   <input x-model="filters.status"
          @change="$dispatch('filters-changed')"
          name="status">
-  
+
   <div hx-trigger="filters-changed from:parent"
        hx-get="/catalog/questions/"
        @htmx:configRequest="event.detail.parameters = filters">
   </div>
-  
+
   <!-- Bulk selection -->
   <input type="checkbox"
          x-model="selectedIds"
          :value="question.id"
          @change="$dispatch('selection-changed')">
-  
+
   <!-- Bulk action button (disabled if none selected) -->
   <button hx-post="/catalog/questions/bulk-action/"
           hx-vals="js:{ids: selectedIds, action: 'approve'}"
@@ -357,7 +357,7 @@ HTML template (form_with_errors.html):
 ```html
 <form hx-post="/submit/" hx-target="#form-container">
   {% csrf_token %}
-  
+
   {% for field in form %}
     <div class="form-group">
       {{ field.label }}
@@ -367,13 +367,13 @@ HTML template (form_with_errors.html):
       {% endif %}
     </div>
   {% endfor %}
-  
+
   {% if form.non_field_errors %}
     <div class="alert alert-danger">
       {{ form.non_field_errors.0 }}
     </div>
   {% endif %}
-  
+
   <button type="submit">Submit</button>
 </form>
 ```
@@ -456,7 +456,7 @@ return render(request, 'form.html', status=422)
 ```python
 class QuestionListView(ListView):
     paginate_by = 20
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         page = context['page_obj']
@@ -519,7 +519,7 @@ class QuestionEditView(LoginRequiredMixin, TenantMixin, UpdateView):
     """
     model = Question
     fields = ['title', 'content', 'status']
-    
+
     def get_queryset(self):
         # Only allow editing questions in user's org
         return Question.objects.filter(organization=self.request.org)
@@ -608,19 +608,19 @@ Return different formats based on accept header or request type:
 ```python
 def get_questions(request):
     questions = Question.objects.all()
-    
+
     # API request (JSON)
     if request.headers.get('Accept') == 'application/json':
         return JsonResponse({
             'questions': list(questions.values('id', 'title'))
         })
-    
+
     # HTMX request (partial HTML)
     if request.headers.get('HX-Request'):
         return render(request, 'catalog/partials/question_list_table.html', {
             'questions': questions,
         })
-    
+
     # Full page HTML
     return render(request, 'catalog/question_list.html', {
         'questions': questions,
@@ -644,10 +644,10 @@ def apply_rate_limit(request, action, limit=10, window=60):
     """Check and increment rate limit counter."""
     key = rate_limit_key(request, action)
     count = cache.get(key, 0)
-    
+
     if count >= limit:
         raise PermissionDenied("Rate limit exceeded. Try again later.")
-    
+
     cache.set(key, count + 1, window)
 
 # In view

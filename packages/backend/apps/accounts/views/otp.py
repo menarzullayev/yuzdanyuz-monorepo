@@ -7,6 +7,7 @@ POST /api/auth/otp/verify/  — kodni tekshiradi, JWT cookie qaytaradi
 
 import json
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -24,7 +25,6 @@ from apps.accounts.services.token_service import (
     make_fingerprint,
     set_auth_cookies,
 )
-from django.conf import settings
 
 
 def _is_secure(request) -> bool:
@@ -57,10 +57,12 @@ class OTPSendView(View):
         except OTPError as e:
             return JsonResponse({'error': str(e)}, status=503)
 
-        return JsonResponse({
-            'phone'  : normalized,
-            'message': 'SMS yuborildi',
-        })
+        return JsonResponse(
+            {
+                'phone': normalized,
+                'message': 'SMS yuborildi',
+            }
+        )
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -79,7 +81,7 @@ class OTPVerifyView(View):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
         raw_phone = body.get('phone', '').strip()
-        code      = body.get('code', '').strip()
+        code = body.get('code', '').strip()
 
         if not raw_phone or not code:
             return JsonResponse({'error': 'phone va code majburiy'}, status=400)
@@ -94,17 +96,19 @@ class OTPVerifyView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        fingerprint    = make_fingerprint(request)
+        fingerprint = make_fingerprint(request)
         access, refresh = create_token_pair(user, fingerprint)
 
-        response = JsonResponse({
-            'user': {
-                'id'          : str(user.pk),
-                'display_name': user.display_name,
-                'user_type'   : user.user_type,
-                'phone'       : user.phone_number,
-                'is_new'      : not user.date_joined < user.date_joined,
+        response = JsonResponse(
+            {
+                'user': {
+                    'id': str(user.pk),
+                    'display_name': user.display_name,
+                    'user_type': user.user_type,
+                    'phone': user.phone_number,
+                    'is_new': not user.date_joined < user.date_joined,
+                }
             }
-        })
+        )
         set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
         return response

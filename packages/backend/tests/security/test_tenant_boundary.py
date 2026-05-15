@@ -4,9 +4,10 @@ Focus: cross-org access prevention, membership validation, permission scoping
 """
 
 import pytest
+
 from apps.catalog.models import Question
 from apps.organizations.models import Membership, MembershipStatus, OrgRole
-from core.tenant import set_current_org, tenant_context, get_current_org
+from core.tenant import get_current_org, set_current_org
 
 
 @pytest.mark.security
@@ -16,21 +17,16 @@ class TestTenantBoundaryEnforcement:
     def test_user_cannot_access_other_org_data(self, db, user, org, org2, subject):
         """User in Org1 → TenantManager blocks Org2 data access."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         # User only in org
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE
         )
 
         set_current_org(org)
@@ -43,8 +39,7 @@ class TestTenantBoundaryEnforcement:
         """JWT org claim validated: no membership → fallback."""
         role1 = OrgRole.objects.get(organization=org, name='student')
         Membership.objects.create(
-            user=user, organization=org, role=role1,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role1, status=MembershipStatus.ACTIVE, is_primary=True
         )
 
         # Middleware will validate membership for org2
@@ -55,8 +50,7 @@ class TestTenantBoundaryEnforcement:
         """Suspended/inactive membership → cannot set context."""
         role = OrgRole.objects.get(organization=org, name='student')
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.SUSPENDED
+            user=user, organization=org, role=role, status=MembershipStatus.SUSPENDED
         )
 
         # User cannot use this membership
@@ -80,8 +74,7 @@ class TestTenantBoundaryEnforcement:
         role1.save()
 
         m1 = Membership.objects.create(
-            user=user, organization=org, role=role1,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role1, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m1.activate()
 

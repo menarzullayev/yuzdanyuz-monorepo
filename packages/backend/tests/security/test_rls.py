@@ -2,18 +2,18 @@
 PostgreSQL Row Level Security (RLS) Tests
 Verify database-level multi-tenant isolation
 """
-import pytest
-from django.db import connection
-from django.conf import settings
-from apps.catalog.models import Question, QuestionBank, ImportBatch
-from apps.organizations.models import Organization
-from core.tenant import tenant_context
 
+import pytest
+from django.conf import settings
+from django.db import connection
+
+from apps.catalog.models import ImportBatch, Question, QuestionBank
+from core.tenant import tenant_context
 
 # Skip all RLS tests if not using PostgreSQL
 pytestmark = pytest.mark.skipif(
     'postgresql' not in settings.DATABASES['default'].get('ENGINE', ''),
-    reason="RLS tests require PostgreSQL"
+    reason='RLS tests require PostgreSQL',
 )
 
 
@@ -43,21 +43,15 @@ class TestRLSIsolation:
     def test_organization_context_isolation(self, db, org, org2):
         """Verify that setting org context filters data"""
         subject = __import__('apps.catalog.models', fromlist=['Subject']).Subject
-        s = subject.objects.create(name="Math", slug="math")
+        s = subject.objects.create(name='Math', slug='math')
 
         # Create questions in org1
         with tenant_context(org):
-            q1 = Question.objects.create(
-                organization=org,
-                subject=s
-            )
+            q1 = Question.objects.create(organization=org, subject=s)
 
         # Create questions in org2
         with tenant_context(org2):
-            q2 = Question.objects.create(
-                organization=org2,
-                subject=s
-            )
+            q2 = Question.objects.create(organization=org2, subject=s)
 
         # Verify isolation
         with tenant_context(org):
@@ -75,35 +69,27 @@ class TestRLSIsolation:
     def test_rls_prevents_direct_sql_access(self, db, org, org2):
         """Test that direct SQL queries respect RLS"""
         subject = __import__('apps.catalog.models', fromlist=['Subject']).Subject
-        s = subject.objects.create(name="Math", slug="math")
+        s = subject.objects.create(name='Math', slug='math')
 
         # Create data
         with tenant_context(org):
-            q_org1 = Question.objects.create(
-                organization=org,
-                subject=s
-            )
+            q_org1 = Question.objects.create(organization=org, subject=s)
 
         with tenant_context(org2):
-            q_org2 = Question.objects.create(
-                organization=org2,
-                subject=s
-            )
+            q_org2 = Question.objects.create(organization=org2, subject=s)
 
         # Test raw query isolation
         with tenant_context(org):
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT COUNT(*) FROM catalog_question WHERE organization_id = %s",
-                    [org.id]
+                    'SELECT COUNT(*) FROM catalog_question WHERE organization_id = %s', [org.id]
                 )
                 count_org1 = cursor.fetchone()[0]
 
         with tenant_context(org2):
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT COUNT(*) FROM catalog_question WHERE organization_id = %s",
-                    [org2.id]
+                    'SELECT COUNT(*) FROM catalog_question WHERE organization_id = %s', [org2.id]
                 )
                 count_org2 = cursor.fetchone()[0]
 
@@ -115,18 +101,10 @@ class TestRLSIsolation:
     def test_import_batch_isolation(self, db, org, org2, user):
         """Verify ImportBatch is isolated between organizations"""
         with tenant_context(org):
-            batch1 = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv',
-                created_by=user
-            )
+            batch1 = ImportBatch.objects.create(organization=org, file_type='csv', created_by=user)
 
         with tenant_context(org2):
-            batch2 = ImportBatch.objects.create(
-                organization=org2,
-                file_type='csv',
-                created_by=user
-            )
+            batch2 = ImportBatch.objects.create(organization=org2, file_type='csv', created_by=user)
 
         # Org1 should only see batch1
         with tenant_context(org):
@@ -143,18 +121,10 @@ class TestRLSIsolation:
     def test_questionbank_isolation(self, db, org, org2):
         """Verify QuestionBank respects RLS"""
         with tenant_context(org):
-            bank1 = QuestionBank.objects.create(
-                organization=org,
-                name="Bank 1",
-                slug="bank1"
-            )
+            bank1 = QuestionBank.objects.create(organization=org, name='Bank 1', slug='bank1')
 
         with tenant_context(org2):
-            bank2 = QuestionBank.objects.create(
-                organization=org2,
-                name="Bank 2",
-                slug="bank2"
-            )
+            bank2 = QuestionBank.objects.create(organization=org2, name='Bank 2', slug='bank2')
 
         # Query from org1
         with tenant_context(org):
@@ -174,20 +144,14 @@ class TestRLSSuperuser:
     def test_superuser_can_see_all_organizations(self, db, org, org2, superuser):
         """Superusers should bypass RLS restrictions"""
         subject = __import__('apps.catalog.models', fromlist=['Subject']).Subject
-        s = subject.objects.create(name="Math", slug="math")
+        s = subject.objects.create(name='Math', slug='math')
 
         # Create questions in both orgs
         with tenant_context(org):
-            q1 = Question.objects.create(
-                organization=org,
-                subject=s
-            )
+            q1 = Question.objects.create(organization=org, subject=s)
 
         with tenant_context(org2):
-            q2 = Question.objects.create(
-                organization=org2,
-                subject=s
-            )
+            q2 = Question.objects.create(organization=org2, subject=s)
 
         # Superuser accessing as org1 should still see both
         # (if RLS is set up correctly with superuser bypass)
@@ -206,15 +170,12 @@ class TestRLSPerformance:
         import time
 
         subject = __import__('apps.catalog.models', fromlist=['Subject']).Subject
-        s = subject.objects.create(name="Math", slug="math")
+        s = subject.objects.create(name='Math', slug='math')
 
         # Create 100 questions
         with tenant_context(org):
             for i in range(100):
-                Question.objects.create(
-                    organization=org,
-                    subject=s
-                )
+                Question.objects.create(organization=org, subject=s)
 
         # Measure query time
         with tenant_context(org):

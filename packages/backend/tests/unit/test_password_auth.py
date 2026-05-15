@@ -5,6 +5,7 @@ Focus: Registration validation, password strength, email uniqueness
 
 import pytest
 from django.contrib.auth import authenticate
+
 from apps.accounts.models import CustomUser
 
 
@@ -15,9 +16,7 @@ class TestPasswordRegistration:
     def test_register_email_password_valid(self, db):
         """Valid email + password → user created."""
         user = CustomUser.objects.create_user(
-            username='newuser',
-            email='new@example.com',
-            password='Pass1234'
+            username='newuser', email='new@example.com', password='Pass1234'
         )
         assert user.email == 'new@example.com'
         assert user.check_password('Pass1234')
@@ -28,7 +27,7 @@ class TestPasswordRegistration:
         user = CustomUser.objects.create_user(
             username='user',
             email='test@test.com',
-            password='Pass1'  # Only 5 chars
+            password='Pass1',  # Only 5 chars
         )
         # User is created, but password is hashed
         assert user.check_password('Pass1')
@@ -46,31 +45,23 @@ class TestPasswordRegistration:
     def test_register_duplicate_email(self, db):
         """Duplicate email → raises IntegrityError."""
         CustomUser.objects.create_user(
-            username='user1',
-            email='duplicate@example.com',
-            password='Pass1234'
+            username='user1', email='duplicate@example.com', password='Pass1234'
         )
 
         with pytest.raises(Exception):  # IntegrityError or ValidationError
             CustomUser.objects.create_user(
-                username='user2',
-                email='duplicate@example.com',
-                password='Pass1234'
+                username='user2', email='duplicate@example.com', password='Pass1234'
             )
 
     def test_register_duplicate_username(self, db):
         """Duplicate username → raises IntegrityError."""
         CustomUser.objects.create_user(
-            username='duplicate',
-            email='user1@example.com',
-            password='Pass1234'
+            username='duplicate', email='user1@example.com', password='Pass1234'
         )
 
         with pytest.raises(Exception):
             CustomUser.objects.create_user(
-                username='duplicate',
-                email='user2@example.com',
-                password='Pass1234'
+                username='duplicate', email='user2@example.com', password='Pass1234'
             )
 
 
@@ -81,9 +72,7 @@ class TestPasswordAuthentication:
     def test_authenticate_valid_credentials(self, db):
         """Valid username + password → authenticates user."""
         user = CustomUser.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='Pass1234'
+            username='testuser', email='test@example.com', password='Pass1234'
         )
 
         authenticated = authenticate(username='testuser', password='Pass1234')
@@ -93,9 +82,7 @@ class TestPasswordAuthentication:
     def test_authenticate_invalid_password(self, db):
         """Wrong password → returns None."""
         CustomUser.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='Pass1234'
+            username='testuser', email='test@example.com', password='Pass1234'
         )
 
         authenticated = authenticate(username='testuser', password='WrongPass')
@@ -109,9 +96,7 @@ class TestPasswordAuthentication:
     def test_authenticate_by_email(self, db):
         """Login by email instead of username (case insensitive)."""
         user = CustomUser.objects.create_user(
-            username='testuser',
-            email='Test@Example.COM',
-            password='Pass1234'
+            username='testuser', email='Test@Example.COM', password='Pass1234'
         )
 
         # Email-based login (app-specific logic needed in view)
@@ -125,9 +110,7 @@ class TestPasswordAuthentication:
     def test_authenticate_case_insensitive_email(self, db):
         """Email lookup is case-insensitive."""
         CustomUser.objects.create_user(
-            username='testuser',
-            email='Test@Example.COM',
-            password='Pass1234'
+            username='testuser', email='Test@Example.COM', password='Pass1234'
         )
 
         found = CustomUser.objects.filter(email__iexact='test@example.com').first()
@@ -136,9 +119,7 @@ class TestPasswordAuthentication:
     def test_authenticate_inactive_user(self, db):
         """Inactive user → authentication fails or returns None."""
         user = CustomUser.objects.create_user(
-            username='inactive',
-            email='inactive@example.com',
-            password='Pass1234'
+            username='inactive', email='inactive@example.com', password='Pass1234'
         )
         user.is_active = False
         user.save()
@@ -156,9 +137,7 @@ class TestEmailValidation:
     def test_email_valid_format(self, db):
         """Standard email format accepted."""
         user = CustomUser.objects.create_user(
-            username='user',
-            email='user+tag@example.co.uk',
-            password='Pass1234'
+            username='user', email='user+tag@example.co.uk', password='Pass1234'
         )
         assert user.email == 'user+tag@example.co.uk'
 
@@ -171,9 +150,7 @@ class TestEmailValidation:
     def test_email_lowercase_normalized(self, db):
         """Email stored/searched case-insensitively."""
         user = CustomUser.objects.create_user(
-            username='user1',
-            email='User@Example.Com',
-            password='Pass1234'
+            username='user1', email='User@Example.Com', password='Pass1234'
         )
         found = CustomUser.objects.get(email__iexact='user@example.com')
         assert found.id == user.id
@@ -186,9 +163,7 @@ class TestPasswordHashing:
     def test_password_hashed_not_plaintext(self, db):
         """Password stored as hash, not plaintext."""
         user = CustomUser.objects.create_user(
-            username='user',
-            email='test@example.com',
-            password='Pass1234'
+            username='user', email='test@example.com', password='Pass1234'
         )
         assert user.password != 'Pass1234'
         assert user.password.startswith('pbkdf2_') or user.password.startswith('md5$')
@@ -196,27 +171,21 @@ class TestPasswordHashing:
     def test_password_check_correct(self, db):
         """check_password with correct plaintext → True."""
         user = CustomUser.objects.create_user(
-            username='user',
-            email='test@example.com',
-            password='Pass1234'
+            username='user', email='test@example.com', password='Pass1234'
         )
         assert user.check_password('Pass1234')
 
     def test_password_check_incorrect(self, db):
         """check_password with wrong plaintext → False."""
         user = CustomUser.objects.create_user(
-            username='user',
-            email='test@example.com',
-            password='Pass1234'
+            username='user', email='test@example.com', password='Pass1234'
         )
         assert not user.check_password('WrongPass')
 
     def test_password_set_method(self, db):
         """set_password() updates hash."""
         user = CustomUser.objects.create_user(
-            username='user',
-            email='test@example.com',
-            password='Old1234'
+            username='user', email='test@example.com', password='Old1234'
         )
         old_hash = user.password
 

@@ -6,6 +6,7 @@ global_objects → filter bypas qiladi (admin, background worker uchun).
 """
 
 from django.db import models
+
 from .tenant import get_current_org
 
 
@@ -16,7 +17,7 @@ class TenantManager(models.Manager):
     """
 
     def get_queryset(self):
-        qs  = super().get_queryset()
+        qs = super().get_queryset()
         org = get_current_org()
         if org is not None:
             qs = qs.filter(organization=org)

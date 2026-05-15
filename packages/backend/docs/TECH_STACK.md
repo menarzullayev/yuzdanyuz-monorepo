@@ -41,7 +41,7 @@ django-htmx==1.17.0  # hx-* attribute support
 
 **Request Pattern**:
 ```html
-<div hx-get="/api/endpoint/" 
+<div hx-get="/api/endpoint/"
      hx-trigger="load, customEvent from:body"
      hx-swap="innerHTML swap:1s"
      hx-target="#target-id"
@@ -90,26 +90,26 @@ python manage.py tailwind start  # Watch mode in dev
 ### Alpine.js State Management
 
 ```html
-<div x-data="{ 
-  count: 0, 
+<div x-data="{
+  count: 0,
   toggle: false,
-  fetch_loading: false 
+  fetch_loading: false
 }">
   <button @click="count++" x-text="`Count: ${count}`"></button>
-  
-  <button @click="toggle = !toggle" 
+
+  <button @click="toggle = !toggle"
           :class="toggle ? 'bg-blue-500' : 'bg-gray-500'">
     Toggle
   </button>
-  
+
   <!-- Fetch with Alpine -->
-  <button @click="fetch_loading = true; 
+  <button @click="fetch_loading = true;
     fetch('/api/endpoint/')
       .then(r => r.text())
       .then(html => { /* process */ fetch_loading = false })">
     Fetch Data
   </button>
-  
+
   <!-- Watch nested object -->
   <input x-model="filters.search" @input.debounce="$dispatch('filters-changed')">
 </div>
@@ -193,7 +193,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third-party
     'django_extensions',
     'django_htmx',
@@ -202,7 +202,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_beat',
     'django_celery_results',
-    
+
     # Local apps
     'core',
     'accounts',

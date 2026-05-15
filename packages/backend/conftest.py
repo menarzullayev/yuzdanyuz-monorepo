@@ -2,12 +2,15 @@
 Global pytest fixtures for Task 1 + Task 2 tests
 """
 
+from datetime import UTC
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
-from apps.organizations.models import Organization, OrgRole, Membership, MembershipStatus
+
 from apps.catalog.models import Subject
+from apps.organizations.models import Membership, MembershipStatus, Organization, OrgRole
 
 User = get_user_model()
 
@@ -16,6 +19,7 @@ User = get_user_model()
 def mock_redis(monkeypatch):
     """Mock Redis for all tests using fakeredis."""
     import fakeredis
+
     from apps.accounts.services import token_service
 
     # Create fakeredis client with decode_responses=True to match production behavior
@@ -36,6 +40,7 @@ def mock_redis(monkeypatch):
 
 # ─── Organization Fixtures ────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def org(db):
     """Test organization with auto-created system roles."""
@@ -50,13 +55,12 @@ def org2(db):
 
 # ─── User Fixtures ────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def user(db):
     """Regular user with no organization membership."""
     return User.objects.create_user(
-        username='testuser',
-        email='test@example.com',
-        password='pass123'
+        username='testuser', email='test@example.com', password='pass123'
     )
 
 
@@ -64,9 +68,7 @@ def user(db):
 def user2(db):
     """Second user for isolation tests."""
     return User.objects.create_user(
-        username='testuser2',
-        email='test2@example.com',
-        password='pass123'
+        username='testuser2', email='test2@example.com', password='pass123'
     )
 
 
@@ -74,24 +76,19 @@ def user2(db):
 def superuser(db):
     """Superuser with platform_admin privileges."""
     return User.objects.create_superuser(
-        username='admin',
-        email='admin@example.com',
-        password='pass123'
+        username='admin', email='admin@example.com', password='pass123'
     )
 
 
 # ─── Membership Fixtures ───────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def member(db, user, org):
     """User as student in org (active, primary)."""
     role = OrgRole.objects.get(organization=org, name='student')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return m
@@ -102,11 +99,7 @@ def owner_member(db, user, org):
     """User as owner in org (active, primary)."""
     role = OrgRole.objects.get(organization=org, name='owner')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return m
@@ -117,11 +110,7 @@ def teacher_member(db, user, org):
     """User as teacher in org (active, primary)."""
     role = OrgRole.objects.get(organization=org, name='teacher')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return m
@@ -132,11 +121,7 @@ def manager_member(db, user, org):
     """User as manager in org (active, primary)."""
     role = OrgRole.objects.get(organization=org, name='manager')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return m
@@ -147,55 +132,40 @@ def suspended_member(db, user, org):
     """User with suspended membership."""
     role = OrgRole.objects.get(organization=org, name='student')
     return Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.SUSPENDED,
-        is_primary=False
+        user=user, organization=org, role=role, status=MembershipStatus.SUSPENDED, is_primary=False
     )
 
 
 # ─── Catalog Fixtures ──────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def subject(db):
     """Default subject for question tests."""
-    return Subject.objects.create(
-        name='Test Subject',
-        slug='test-subject'
-    )
+    return Subject.objects.create(name='Test Subject', slug='test-subject')
 
 
 # ─── Multi-org Fixtures ────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def user_multi_org(db, org, org2):
     """User with membership in both orgs."""
     user = User.objects.create_user(
-        username='multiuser',
-        email='multi@example.com',
-        password='pass123'
+        username='multiuser', email='multi@example.com', password='pass123'
     )
 
     # Member in org
     role1 = OrgRole.objects.get(organization=org, name='student')
     m1 = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role1,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role1, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m1.activate()
 
     # Member in org2
     role2 = OrgRole.objects.get(organization=org2, name='teacher')
     m2 = Membership.objects.create(
-        user=user,
-        organization=org2,
-        role=role2,
-        status=MembershipStatus.ACTIVE,
-        is_primary=False
+        user=user, organization=org2, role=role2, status=MembershipStatus.ACTIVE, is_primary=False
     )
     m2.activate()
 
@@ -203,6 +173,7 @@ def user_multi_org(db, org, org2):
 
 
 # ─── Auth Fixtures (Task 2) ────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def phone_number():
@@ -247,15 +218,11 @@ def user_with_phone(db, org):
         username='phoneuser',
         email='phone@example.com',
         password='pass123',
-        phone_number='+998901234567'
+        phone_number='+998901234567',
     )
     role = OrgRole.objects.get(organization=org, name='student')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return user
@@ -265,18 +232,11 @@ def user_with_phone(db, org):
 def user_with_telegram(db, org):
     """User with Telegram ID linked."""
     user = User.objects.create_user(
-        username='telegramuser',
-        email='tg@example.com',
-        password='pass123',
-        telegram_id=123456789
+        username='telegramuser', email='tg@example.com', password='pass123', telegram_id=123456789
     )
     role = OrgRole.objects.get(organization=org, name='student')
     m = Membership.objects.create(
-        user=user,
-        organization=org,
-        role=role,
-        status=MembershipStatus.ACTIVE,
-        is_primary=True
+        user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
     return user
@@ -294,6 +254,7 @@ def mock_sms_backend(monkeypatch):
 
     # Patch get_sms_backend to return mock
     from apps.accounts.services import sms_backend
+
     monkeypatch.setattr(sms_backend, 'get_sms_backend', lambda: MockSMSBackend())
     return sent_messages
 
@@ -301,14 +262,15 @@ def mock_sms_backend(monkeypatch):
 @pytest.fixture
 def mock_otp_code(db, phone_number):
     """Create a valid OTP code for testing."""
-    from apps.accounts.models import OTPCode
     from datetime import datetime, timedelta, timezone
+
+    from apps.accounts.models import OTPCode
 
     code = OTPCode.objects.create(
         phone=phone_number,
         code='123456',
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
         is_verified=False,
-        attempts=0
+        attempts=0,
     )
     return code

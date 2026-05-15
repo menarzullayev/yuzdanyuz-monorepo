@@ -17,6 +17,7 @@ class AIParserService:
 
     def parse_text_block(self, text: str) -> dict:
         from apps.catalog.models import AIProviderConfig
+
         from .ai_providers import ProviderFactory
 
         configs = AIProviderConfig.objects.filter(
@@ -26,22 +27,25 @@ class AIParserService:
 
         if not configs.exists():
             return {
-                "error": "Hech qanday AI provider sozlanmagan. "
-                         "Admin panel → AI Provider konfiguratsiyalari ga kiring.",
-                "raw_text": text,
+                'error': 'Hech qanday AI provider sozlanmagan. '
+                'Admin panel → AI Provider konfiguratsiyalari ga kiring.',
+                'raw_text': text,
             }
 
         last_error = None
         for config in configs:
             try:
                 provider = ProviderFactory.create(config)
-                result   = provider.parse_text_block(text)
-                if "error" not in result:
+                result = provider.parse_text_block(text)
+                if 'error' not in result:
                     return result
                 last_error = result
-                logger.warning("Provider '%s' xato qaytardi: %s", config.name, result.get("error"))
+                logger.warning("Provider '%s' xato qaytardi: %s", config.name, result.get('error'))
             except Exception as exc:
-                last_error = {"error": str(exc), "raw_text": text}
+                last_error = {'error': str(exc), 'raw_text': text}
                 logger.error("Provider '%s' ishlamadi: %s", config.name, exc)
 
-        return last_error or {"error": "Barcha provyderlar muvaffaqiyatsiz bo'ldi.", "raw_text": text}
+        return last_error or {
+            'error': "Barcha provyderlar muvaffaqiyatsiz bo'ldi.",
+            'raw_text': text,
+        }
