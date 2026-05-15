@@ -1,0 +1,54 @@
+# ── Core Framework ────────────────────────────────────────────────────────────
+Django==5.2.14
+asgiref==3.11.1
+sqlparse==0.5.5
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.12        # Task 1: PostgreSQL driver (dev/prod uchun binary)
+
+# ── Environment ───────────────────────────────────────────────────────────────
+python-dotenv==1.2.2           # Task 1: .env fayl o'qish
+
+# ── Async Workers ─────────────────────────────────────────────────────────────
+celery==5.4.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
+django-celery-beat==2.7.0      # Task 9: Cron jobs (streak, league reset)
+django-celery-results==2.5.1   # Task 6: Worker natijalarini DB da saqlash
+
+# ── Cache & Session ───────────────────────────────────────────────────────────
+redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
+django-redis==5.4.0            # Task 2, 5: Django cache backend for Redis
+
+# ── Real-time ─────────────────────────────────────────────────────────────────
+channels==4.2.0                # Task 4: WebSocket (heartbeat, leaderboard live)
+channels-redis==4.2.1          # Task 4: Channel layer for Redis
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+django-allauth==65.3.0         # Task 2: Google OAuth, email auth
+PyJWT==2.10.1                  # Task 2: JWT token generation/verification
+
+# ── Telegram ──────────────────────────────────────────────────────────────────
+python-telegram-bot==21.11.1   # Task 2, 9: TMA auth, notifications bot
+
+# ── REST API ──────────────────────────────────────────────────────────────────
+djangorestframework==3.15.2    # Task 2, 4: TMA va mobile uchun API endpoints
+django-cors-headers==4.7.0     # Task 2: CORS (TMA, mobile app)
+
+# ── Frontend Helpers ──────────────────────────────────────────────────────────
+django-htmx==1.21.0            # Task 1+: HTMX request detection middleware
+
+# ── File & Media ──────────────────────────────────────────────────────────────
+Pillow==11.2.1                 # Task 3: Rasm ishlash, watermark
+openpyxl==3.1.5                # Task 3: Excel/CSV bulk import parser
+python-docx==1.1.2             # Task 3: Word (.docx) bulk import parser
+pypdf==6.11.0                  # Task 3: PDF bulk import parser (text-based PDFs)
+
+# ── Search ────────────────────────────────────────────────────────────────────
+meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
+
+# ── AI / LLM ──────────────────────────────────────────────────────────────────
+anthropic==0.102.0             # Task 3, 6: AI parser (bulk import) + AI tutor feedback
+
+# ── HTTP Client ───────────────────────────────────────────────────────────────
+httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
+requests==2.32.3               # Task 2, 7: allauth Google OAuth + Payme/Click
+cryptography==44.0.2           # Task 2: allauth Google JWT verification
