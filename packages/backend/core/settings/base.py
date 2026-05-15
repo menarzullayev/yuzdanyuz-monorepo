@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     'django_celery_results',
     # DRF — REST API
     'rest_framework',
+    # Channels — WebSocket (heartbeat, real-time strikes)
+    'channels',
     # Local apps — Domain-Driven Design
     'apps.accounts',  # User, auth, device session
     'apps.organizations',  # Organization (tenant), membership, roles
@@ -87,6 +89,18 @@ CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 daqiqada SoftTimeLimitExceeded
 # JWT cookie auth allaqachon JWTAuthMiddleware tomonidan handle qilinadi —
 # request.user view'ga yetib kelguncha autentifikatsiya qilingan bo'ladi.
 # DRF SessionAuthentication shu user'ni qabul qiladi.
+# ── Django Channels ───────────────────────────────────────────
+ASGI_APPLICATION = 'core.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            # Channels uchun alohida Redis db (token sessions DB=1, channels DB=2)
+            'hosts': [os.getenv('CHANNELS_REDIS_URL', 'redis://127.0.0.1:6379/2')],
+        },
+    },
+}
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',

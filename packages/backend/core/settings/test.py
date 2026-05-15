@@ -28,6 +28,13 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # Redis — test instance
 REDIS_URL = 'redis://127.0.0.1:6379/15'
 
+# Channels — in-memory backend for tests (Redis siz)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
 # Fast password hashing
 PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.MD5PasswordHasher',
