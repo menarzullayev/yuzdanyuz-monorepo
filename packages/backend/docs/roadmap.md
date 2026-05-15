@@ -483,18 +483,31 @@ Return error to user
 
 ## Task 5 — Leaderboard va Redis Reyting Tizimi
 
+**Status**: 🟡 **Core ✅ COMPLETE** (PR #31). WebSocket broadcast (#32) va Celery archive 🔵 PENDING.
+
 **Maqsad**: 50,000+ bir vaqtdagi foydalanuvchida ham qotmaydigan real-time reyting.
 
 ### Deliverables
-- [ ] Redis `ZSET` — global reyting (barcha O'zbekiston)
-- [ ] Redis `ZSET` — viloyat reytingi
-- [ ] Redis `ZSET` — B2B tenant reytingi (o'quv markazi ichida)
-- [ ] `ZADD` — test tugashida ball yoziladi
-- [ ] `ZREVRANK` — o'quvchining o'rni O(log N) da
-- [ ] `ZRANGE` — Top-100 ro'yxati
-- [ ] Real-time yangilanish — WebSocket push
-- [ ] Haftalik/oylik/yillik reyting — Celery cron orqali arxivlash
-- [ ] Leaderboard HTMX sahifasi — auto-refresh
+
+**Core** ✅ COMPLETE (PR #31, 2026-05-16):
+- [x] Redis `ZSET` — global reyting (barcha O'zbekiston) — `lb:global`
+- [x] Redis `ZSET` — viloyat reytingi — `lb:region:<region_id>`
+- [x] Redis `ZSET` — B2B tenant reytingi (o'quv markazi ichida) — `lb:tenant:<org_id>`
+- [x] Redis `ZSET` — per-mock leaderboard (qo'shimcha) — `lb:mock:<mock_id>`
+- [x] `ZADD` — `ExamAttempt.SUBMITTED` post_save signal'da avtomat
+- [x] `ZREVRANK` — `leaderboard.rank(scope_key, user_id)` O(log N)
+- [x] `ZREVRANGE` — `leaderboard.top(scope_key, limit)` Top-N
+- [x] **Best-of semantics**: global/region/tenant ZSET'larida user'ning eng yuqori scor'i (Redis `ZADD GT` modifier)
+- [x] REST API: 5 endpoint (`/api/leaderboard/global|region|tenant|mock/<id>|me/`)
+- [x] User info enrichment (username, region_name, avatar) bitta SQL query bilan (N+1 yo'q)
+- [x] Tenant isolation — tenant scope faqat shu org member'larini ko'rsatadi
+- [x] `me` payload — joriy user'ning rank+score har scope uchun
+- [x] 14 ta integration test (380 jami)
+
+**Pending** 🔵 (kelajakdagi PR'lar):
+- [ ] **Real-time yangilanish** — WebSocket push (Channels group `lb:<scope>`'ga broadcast)
+- [ ] **Haftalik/oylik/yillik reyting** — Celery cron orqali Redis ZSET → DB snapshot arxivlash
+- [ ] **Leaderboard HTMX sahifasi** — Frontend (Next.js) tomon
 
 ### Tech Stack
 `Redis` · `django-channels` · `Celery Beat`
@@ -665,7 +678,7 @@ Return error to user
 | 2 | Auth + Device Fingerprinting | ⭐⭐⭐ | ✅ COMPLETE | ✅ 246 test (95%+) |
 | 3 | Question Bank + Kontent Himoya | ⭐⭐⭐ | ✅ COMPLETE (10/10) | ✅ 49 test (99%+) |
 | 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟢 Backend ✅ (data+celery+API+WS+RLS) / Frontend 🔵 | ✅ 53 test (Task 4) |
-| 5 | Redis Leaderboard | ⭐⭐ | 🔵 Planned |  |
+| 5 | Redis Leaderboard | ⭐⭐ | 🟡 Core ✅ / WS+archive 🔵 | ✅ 14 test |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🔵 Planned |  |
@@ -702,6 +715,15 @@ Return error to user
 - Login + Dashboard pages
 - Production startup scripts
 
+**Task 5** (2026-05-16): 🟡 **CORE COMPLETE** (PR #31)
+- Service: `apps/engagement/leaderboard.py` — Redis ZSET wrapper (record/top/rank/score/total)
+- 4 ta scope: `lb:mock:<id>`, `lb:global`, `lb:region:<id>`, `lb:tenant:<id>`
+- Best-of semantics: GT modifier (Redis 6.2+) + fallback compare-and-swap
+- Signal: ExamAttempt SUBMITTED + score → leaderboard.record_attempt()
+- REST API: 5 endpoint, N+1 yo'q (single SQL prefetch)
+- Tests: 14/14 ✅ (380 jami)
+- WebSocket broadcast (#32) va Celery archive (kelajakdagi PR'lar): 🔵
+
 **Task 4** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #25, #27, #28, #29 + RLS)
 - Models: 7/7 ✅ + custom manager + 1 migration
 - Celery: 3 task ✅ (auto-publish, quarantine, finalize_score) + signal trigger
@@ -721,14 +743,14 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       366 ✅ (100% passing)
+Total Tests:       380 ✅ (100% passing)
 Models:             42 ✅ (all tenant-aware: 35 + 7 exam)
-Services:          27+ ✅ (+ watermark, dom_shuffle, rate_limiter, membership_cache,
-                            celery tasks, websocket consumer)
+Services:          28+ ✅ (+ leaderboard ZSET service)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     53+ ✅ (+ /api/exams/* 12 ta)
+API Endpoints:     58+ ✅ (+ /api/leaderboard/* 5 ta)
 WebSocket:          1  ✅ (ws/exams/attempt/<id>/)
 Celery tasks:       3  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score)
+Redis ZSETs:        4  ✅ scope (lb:mock, lb:global, lb:region, lb:tenant)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 
