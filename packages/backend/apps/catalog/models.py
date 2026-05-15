@@ -163,6 +163,17 @@ class QuestionVersion(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Auto-quarantine: agar QuestionDispute > 5% bo'lsa, Celery task True qiladi
+    # va barcha UserAnswer.auto_correct=True bo'lib, ball recompute qilinadi.
+    is_quarantined = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name=_('Karantinda'),
+        help_text=_(
+            "True bo'lsa, savol yangi exam'larga qo'shilmaydi va affected attempt'lar bonus oladi."
+        ),
+    )
+
     class Meta:
         verbose_name = _('Savol versiyasi')
         verbose_name_plural = _('Savol versiyalari')

@@ -16,6 +16,22 @@ User = get_user_model()
 
 
 @pytest.fixture(autouse=True)
+def reset_tenant_context():
+    """
+    Test isolation: ContextVar (current_org, unscoped_allowed) ni har test
+    boshida tozalash. Aks holda set_current_org() ishlatuvchi testlar
+    keyingi testlarga state leak qiladi (PR #27 task tests'da topilgan).
+    """
+    from core.tenant import clear_current_org, set_unscoped_allowed
+
+    clear_current_org()
+    set_unscoped_allowed(False)
+    yield
+    clear_current_org()
+    set_unscoped_allowed(False)
+
+
+@pytest.fixture(autouse=True)
 def mock_redis(monkeypatch):
     """Mock Redis for all tests using fakeredis."""
     import fakeredis

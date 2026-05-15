@@ -24,6 +24,9 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
     'allauth.socialaccount.providers.apple',
+    # Celery infrastructure (admin'da beat schedule + result tracking)
+    'django_celery_beat',
+    'django_celery_results',
     # Local apps — Domain-Driven Design
     'apps.accounts',  # User, auth, device session
     'apps.organizations',  # Organization (tenant), membership, roles
@@ -63,6 +66,20 @@ AUTHENTICATION_BACKENDS = [
 SITE_ID = 1
 
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+
+# ── Celery ────────────────────────────────────────────────────
+# Worker: `celery -A core worker -l info`
+# Beat:   `celery -A core beat -l info -S django_celery_beat.schedulers:DatabaseScheduler`
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = 'django-db'  # django_celery_results
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = 'Asia/Tashkent'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 300  # 5 daqiqa hard limit
+CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 daqiqada SoftTimeLimitExceeded
 
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────
 # Multi-tenant isolation at database level (defense in depth)
