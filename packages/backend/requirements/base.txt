@@ -11,8 +11,8 @@ python-dotenv==1.2.2           # Task 1: .env fayl o'qish
 
 # ── Async Workers ─────────────────────────────────────────────────────────────
 celery==5.4.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
-django-celery-beat==2.7.0      # Task 9: Cron jobs (streak, league reset)
-django-celery-results==2.5.1   # Task 6: Worker natijalarini DB da saqlash
+django-celery-beat==2.8.1      # Task 9: Cron jobs (streak, league reset) — Django 5.2 support
+django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — Django 5.2 support
 
 # ── Cache & Session ───────────────────────────────────────────────────────────
 redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
