@@ -374,26 +374,59 @@ Return error to user
 
 ## Task 4 — Exam Engine: Test va Imtihon Dvigateli
 
+**Status**: 🟡 **IN PROGRESS** — Data layer ✅ COMPLETE (PR #25), application layer 🔵 PENDING
+
 **Maqsad**: Haqiqiy DTM simulyatori + cheksiz mashg'ulot rejimi.
 
 ### Deliverables
-- [ ] `MockExam` modeli — statik, reytingli, haftada 1 marta, umumiy savollар
-- [ ] `PracticeSession` modeli — dinamik, tag-based randomizatsiya, cheksiz
-- [ ] `ExamAttempt` + `UserAnswer` modellar — har bir javob loglanadi
-- [ ] **Strict Browser Lock** (Frontend):
+
+**Data Layer** ✅ COMPLETE (PR #25, 2026-05-16):
+- [x] `MockExam` modeli — `is_public` flag bilan platform/B2B custom split, snapshot through table (`MockExamQuestion` → `QuestionVersion`)
+- [x] `PracticeSession` modeli — `blueprint` JSONField bilan dinamik tag/topic random
+- [x] `ExamAttempt` + `UserAnswer` modellar — XOR CHECK constraint (attempt yoki session)
+- [x] `AntiCheatEvent` model (bonus) — strike audit log: tab_switch, blur, fullscreen_exit, heartbeat_miss, devtools_open, copy_attempt
+- [x] `QuestionDispute` model — 5% trigger uchun foundation
+- [x] `PublicOrTenantManager` — `Q(is_public=True) | Q(organization=current_org)`, fail-closed
+- [x] B2B Custom Exams **data layer** — `is_public=False` + org FK bilan tenant private exams qo'llab-quvvatlanadi
+- [x] **Heartbeat backend fields** — `heartbeat_last_at`, `strikes`, `cancel_reason` (storage layer)
+- [x] **Auto-Quarantine foundation** — `QuestionDispute` model + `auto_correct` field UserAnswer'da
+- [x] 20 ta unit test (PublicOrTenantManager 7, MockExamQuestion 3, ExamAttempt 2, PracticeSession 1, UserAnswer XOR 4, AntiCheatEvent 1, QuestionDispute 2)
+
+**Application Layer** 🔵 PENDING (kelajakdagi PR'lar):
+- [ ] **Views + serializers** — REST API (mock list/detail, attempt start/submit, practice generate, dispute file)
+- [ ] **WebSocket consumer** (Django Channels) — heartbeat processor + 3-strike auto-cancel + timer sync
+- [ ] **Celery task'lar**:
+  - Weekly mock auto-publish (yakshanba 10:00)
+  - Quarantine recompute (>5% disputes → `Question.is_quarantined=True` + `UserAnswer.auto_correct=True` for all affected)
+  - Score finalize (submit'dan keyin `score` va `correct_count` recompute)
+- [ ] **Strict Browser Lock** (Next.js Frontend):
   - Fullscreen API majburiy
   - `Alt+Tab`, `Ctrl+C`, `Ctrl+V`, `F12`, `PrtScr` blokirovka
   - `Page Visibility API` — tab o'zgarishini sezish
-- [ ] **Heartbeat** (Backend): har 10 soniyada ping, 3 ta strike → test bekor
-- [ ] B2B Custom Exams — o'quv markazi o'z tenant savollari bilan imtihon yaratadi
-- [ ] Vaqt hisoblagich — WebSocket orqali sinxron
-- [ ] Auto-Quarantine: 5% shikoyat → savol avtomatik to'xtatiladi + bonus ball
+  - WebSocket'ga AntiCheatEvent jo'natish
+- [ ] **Vaqt hisoblagich** — WebSocket orqali server↔client time sync
+- [ ] **B2B Custom Exam UI** — Frontend Next.js admin paneli (mock yaratish, savol biriktirish)
+- [ ] **RLS migration** — 6 ta yangi exam table uchun PostgreSQL RLS policies (catalog.0003_enable_rls pattern bo'yicha)
 
 ### Tech Stack
-`Django Channels` · `WebSockets` · `Celery` · `Redis`
+`Django Channels` · `WebSockets` · `Celery` · `Redis` · `PostgreSQL JSONB` · `PostgreSQL CHECK constraints`
 
 ### Arxitektura qaror
 > **Gibrid Dvigatel** — Statik Mock (adolatli reyting) + Dinamik Practice (cheksiz mashq) (Bosqich 3, 4, 23)
+
+### Task 4 — Data Layer (2026-05-16) ✅
+
+**Maqsad**: Exam Engine ma'lumotlar bazasi qatlamini tayyorlash.
+
+**Ishlab chiqilgan qismlar**:
+- 7 ta yangi model (`apps/exams/models.py`, 416 qator)
+- 1 ta custom manager (`apps/exams/managers.py`)
+- 1 ta migration (`apps/exams/migrations/0001_initial.py` — 7 model, 8 index, 4 unique constraint, 1 CHECK constraint)
+- Django admin barchasi ro'yxatga olindi (raw_id_fields + `MockExamQuestionInline`)
+- 20 ta unit test (333 jami, ham regression yo'q)
+- CheckConstraint Django 6.0 `.condition` keyword bilan future-proof
+
+**Hujjat**: `docs/milliy_sertifikat_django.md` Bosqich 3+4+23 + roadmap'ning Task 4 bo'limi
 
 ---
 
@@ -580,7 +613,7 @@ Return error to user
 | 1 | Foundation & Multi-Tenant | ⭐⭐ | ✅ COMPLETE | ✅ 111 test (95%+) |
 | 2 | Auth + Device Fingerprinting | ⭐⭐⭐ | ✅ COMPLETE | ✅ 246 test (95%+) |
 | 3 | Question Bank + Kontent Himoya | ⭐⭐⭐ | ✅ COMPLETE (10/10) | ✅ 49 test (99%+) |
-| 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🔵 Next |  |
+| 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟡 Data layer ✅ / App layer 🔵 | ✅ 20 test (data) |
 | 5 | Redis Leaderboard | ⭐⭐ | 🔵 Planned |  |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
@@ -618,24 +651,38 @@ Return error to user
 - Login + Dashboard pages
 - Production startup scripts
 
+**Task 4** (2026-05-16): 🟡 **DATA LAYER COMPLETE** (PR #25)
+- Models: 7/7 ✅ (MockExam, MockExamQuestion, ExamAttempt, PracticeSession, UserAnswer, AntiCheatEvent, QuestionDispute)
+- Manager: PublicOrTenantManager (Q(is_public) | Q(org=current)) ✅
+- Migration: 0001_initial — 7 model, 8 index, 4 unique, 1 CHECK ✅
+- Tests: 20/20 ✅ (333 jami, ham regression yo'q)
+- App layer (views, Channels, Celery, Frontend): 🔵 **Pending — keyingi PR'lar**
+
+### 🛡️ Hardening (post-Task 1, 2026-05-16)
+
+L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
+- **PR #22** — `request.org` hech qachon set qilinmagan → RLS bypass; TenantManager fail-closed; JWT verify_exp; RLS fail-closed; 313 → 333 test
+- **PR #23** — SECRET_KEY prod'da fail-loud (env required); urls.py mid-file import + home_view template
+- **PR #24** — Membership query Redis cache (60s TTL + signal invalidation); threading.local → contextvars (async-ready)
+
 ### 📊 Overall Progress
 
 ```
-Total Tests:       295 ✅ (100% passing)
-Models:             35 ✅ (all tenant-aware)
-Services:          23+ ✅ (+ watermark, dom_shuffle, rate_limiter)
-Middleware:         8  ✅ (+ rls, rate_limit)
-API Endpoints:     41+ ✅ (+ /catalog/wm.png)
+Total Tests:       333 ✅ (100% passing)
+Models:             42 ✅ (all tenant-aware: 35 + 7 exam)
+Services:          24+ ✅ (+ watermark, dom_shuffle, rate_limiter, membership_cache)
+Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
+API Endpoints:     41+ ✅ (+ /catalog/wm.png) — exam endpoints pending
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 
 Security Stack (Defense-in-Depth):
   L1 — JWT + Device Fingerprinting (Task 2)
-  L2 — RBAC + Tenant Isolation (Task 1)
-  L3 — PostgreSQL RLS (DB-level isolation)
+  L2 — RBAC + Tenant Isolation + TenantManager fail-closed (Task 1 + PR #22)
+  L3 — PostgreSQL RLS (DB-level, fixed in PR #22, fail-closed in middleware)
   L4 — Rate Limiting (Redis, progressive ban)
   L5 — Content Protection (Watermark + DOM Shuffle)
 ```
 
-> **Izoh**: Birinchi 3 task to'liq. Keyingi tasklar (4-10) paralel o'z jadvali bo'yicha.
+> **Izoh**: Birinchi 3 task to'liq. Task 4 — data layer tayyor, app layer (Channels/Celery/Views/Frontend) keyingi PR'larda.
 > AI agentlar (Claude Code + Gemini) yordamida tezlashtirilgan implementatsiya.
