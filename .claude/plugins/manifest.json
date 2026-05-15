@@ -1,0 +1,55 @@
+{
+  "name": "yuzdanyuz-edtech-claude-pack",
+  "version": "1.0.0",
+  "description": "Claude Code agent setup for YuzDanYuz EdTech monorepo (Django + Next.js + multi-tenant + RLS).",
+  "author": {
+    "name": "Sardor Narzullayev",
+    "email": "s.narzullayev@tassvision.ai",
+    "github": "menarzullayev"
+  },
+  "license": "Proprietary",
+  "repository": "https://github.com/menarzullayev/yuzdanyuz-monorepo",
+  "compatibility": {
+    "claude_code": ">=2.0.0",
+    "platform": ["linux", "macos"]
+  },
+  "components": {
+    "memory": ["CLAUDE.md", "LESSONS.md"],
+    "hooks": {
+      "PostToolUse": "hooks/PostToolUse.sh",
+      "SessionStart": "hooks/SessionStart.sh",
+      "PreCompact": "hooks/PreCompact.sh"
+    },
+    "skills": [
+      "skills/multitenant-rls",
+      "skills/auth-jwt"
+    ],
+    "agents": [
+      "agents/migration-validator.md",
+      "agents/tenant-auditor.md",
+      "agents/test-runner.md"
+    ],
+    "commands": [
+      "commands/verify.md",
+      "commands/ship.md",
+      "commands/new-task.md",
+      "commands/audit-tenant.md",
+      "commands/db-snapshot.md"
+    ],
+    "output_styles": [
+      "output-styles/concise.md"
+    ],
+    "statusline": "statusline"
+  },
+  "requires": {
+    "tools": ["git", "gh", "make", "python3.11", "node>=20"],
+    "python_packages": ["pre-commit==4.6.0", "ruff==0.15.13", "pytest==8.3.5"],
+    "system": ["postgresql>=14", "redis>=6"]
+  },
+  "install_notes": [
+    "Place .claude/ at monorepo root (not in packages/)",
+    "Run 'pre-commit install --hook-type pre-commit --hook-type pre-push'",
+    "Ensure local PostgreSQL and Redis are running before /verify",
+    "Set GH_TOKEN env var or 'gh auth login' for /ship PR creation"
+  ]
+}

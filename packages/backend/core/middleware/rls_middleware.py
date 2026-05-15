@@ -7,6 +7,7 @@ import logging
 
 from django.conf import settings
 from django.db import connection
+from django.http import HttpResponseServerError
 from django.utils.deprecation import MiddlewareMixin
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,10 @@ class RLSMiddleware(MiddlewareMixin):
     1. Enable in settings.MIDDLEWARE
     2. Assumes request.org is set by TenantMiddleware
     3. Automatically filters tenant-aware queries
+
+    Defense-in-depth: agar RLS session variable o'rnatib bo'lmasa,
+    request to'xtaydi (HTTP 500). L3 himoya qatlami yumshoq xato bilan
+    o'tib ketishi xavfli (L1/L2 yetarli emas degan tushuncha).
     """
 
     def process_request(self, request):
@@ -48,8 +53,10 @@ class RLSMiddleware(MiddlewareMixin):
                     cursor.execute('SET app.is_admin = %s;', [str(is_admin).lower()])
 
         except Exception as e:
-            logger.warning(f'RLS middleware error: {e}')
-            # Don't fail request if RLS setup fails
+            logger.error('RLS middleware error: %s', e, exc_info=True)
+            # Defense-in-depth: L3 (RLS) muvaffaqiyatsiz bo'lsa, request rad etiladi.
+            # Yumshoq xato bilan o'tib ketish L1/L2 qatlamlariga to'liq ishonib qoladi.
+            return HttpResponseServerError('Database security context error')
 
         return None
 

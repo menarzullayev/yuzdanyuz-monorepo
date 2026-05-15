@@ -3,25 +3,34 @@ TenantManager — barcha tenant-related modellarda default Manager sifatida ishl
 
 Avtomatik ravishda joriy org ga filter qo'shadi.
 global_objects → filter bypas qiladi (admin, background worker uchun).
+
+Defense-in-depth: agar tenant context o'rnatilmagan bo'lsa va explicit unscoped
+bypass yo'q bo'lsa — bo'sh queryset qaytaradi (fail-closed).
 """
 
 from django.db import models
 
-from .tenant import get_current_org
+from .tenant import get_current_org, is_unscoped_allowed
 
 
 class TenantManager(models.Manager):
     """
-    Joriy tenant mavjud bo'lsa — organization ga filter qo'shadi.
-    Mavjud bo'lmasa (admin, worker, test) — barcha qatorlar qaytariladi.
+    Joriy tenant context'ga qarab queryset qaytaradi:
+      - org mavjud → organization=org filter
+      - org=None VA unscoped_allowed → barcha qator (admin/worker)
+      - org=None VA NOT unscoped_allowed → bo'sh queryset (fail-closed)
+
+    Fail-closed himoya: noma'lum context'da tenant ma'lumotlari ko'rinmaydi.
     """
 
     def get_queryset(self):
         qs = super().get_queryset()
         org = get_current_org()
         if org is not None:
-            qs = qs.filter(organization=org)
-        return qs
+            return qs.filter(organization=org)
+        if is_unscoped_allowed():
+            return qs
+        return qs.none()
 
     def for_org(self, org):
         """Aniq org uchun queryset — tenant context dan mustaqil."""

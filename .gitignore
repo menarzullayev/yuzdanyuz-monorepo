@@ -34,6 +34,17 @@ tsconfig.tsbuildinfo
 !.vscode/launch.json
 !.vscode/tasks.json
 
+# Claude Code agent setup — share team config, ignore personal
+.claude/CLAUDE.local.md
+.claude/settings.local.json
+.claude/sessions/
+.claude/cache/
+.claude/file-history/
+.claude/projects/
+.claude/.last-cleanup
+.claude/policy-limits.json
+.claude/.credentials.json
+
 # Logs
 *.log
 logs/
