@@ -3,13 +3,19 @@ Unit tests for apps/accounts/services/token_service.py
 Focus: JWT creation, verification, org claim, refresh rotation
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
+
 import jwt as pyjwt
-from datetime import datetime, timedelta, timezone
+import pytest
 from django.conf import settings
+
 from apps.accounts.services.token_service import (
-    create_token_pair, _create_access_token, verify_access_token,
-    rotate_refresh_token, revoke_token, make_fingerprint, _redis
+    _redis,
+    create_token_pair,
+    make_fingerprint,
+    revoke_token,
+    rotate_refresh_token,
+    verify_access_token,
 )
 
 
@@ -52,7 +58,9 @@ class TestTokenCreation:
     def test_access_token_has_exp_claim(self, user):
         """Access token has 'exp' (expiration)."""
         access, _ = create_token_pair(user, 'test-fp')
-        payload = pyjwt.decode(access, settings.SECRET_KEY, algorithms=['HS256'], options={'verify_exp': False})
+        payload = pyjwt.decode(
+            access, settings.SECRET_KEY, algorithms=['HS256'], options={'verify_exp': False}
+        )
         assert 'exp' in payload
         assert 'iat' in payload
 
@@ -85,11 +93,12 @@ class TestTokenVerification:
         access, _ = create_token_pair(user, 'test-fp')
 
         # Manually create expired token
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
+
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) - timedelta(hours=1)
+            'exp': datetime.now(UTC) - timedelta(hours=1),
         }
         expired_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -98,11 +107,12 @@ class TestTokenVerification:
     def test_verify_access_token_wrong_type(self, user):
         """Refresh token → None (wrong type)."""
         # Create a token with type='refresh'
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
+
         payload = {
             'sub': str(user.pk),
             'type': 'refresh',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         refresh_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -192,13 +202,14 @@ class TestRotateRefreshTokenUserNotFound:
     def test_rotate_refresh_token_user_not_found(self, user):
         """User deleted after token issued → None."""
         import uuid
+
         fake_user_id = str(uuid.uuid4())
 
         # Create valid token but with non-existent user
         payload = {
             'sub': fake_user_id,
             'type': 'refresh',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -215,10 +226,7 @@ class TestFingerprint:
         from unittest.mock import MagicMock
 
         req = MagicMock()
-        req.META = {
-            'HTTP_USER_AGENT': 'Mozilla/5.0',
-            'REMOTE_ADDR': '192.168.1.1'
-        }
+        req.META = {'HTTP_USER_AGENT': 'Mozilla/5.0', 'REMOTE_ADDR': '192.168.1.1'}
 
         fp1 = make_fingerprint(req)
         fp2 = make_fingerprint(req)
@@ -229,16 +237,10 @@ class TestFingerprint:
         from unittest.mock import MagicMock
 
         req1 = MagicMock()
-        req1.META = {
-            'HTTP_USER_AGENT': 'Mozilla/5.0',
-            'REMOTE_ADDR': '192.168.1.1'
-        }
+        req1.META = {'HTTP_USER_AGENT': 'Mozilla/5.0', 'REMOTE_ADDR': '192.168.1.1'}
 
         req2 = MagicMock()
-        req2.META = {
-            'HTTP_USER_AGENT': 'Safari/5.0',
-            'REMOTE_ADDR': '192.168.1.1'
-        }
+        req2.META = {'HTTP_USER_AGENT': 'Safari/5.0', 'REMOTE_ADDR': '192.168.1.1'}
 
         fp1 = make_fingerprint(req1)
         fp2 = make_fingerprint(req2)
@@ -249,16 +251,10 @@ class TestFingerprint:
         from unittest.mock import MagicMock
 
         req1 = MagicMock()
-        req1.META = {
-            'HTTP_USER_AGENT': 'Mozilla/5.0',
-            'REMOTE_ADDR': '192.168.1.1'
-        }
+        req1.META = {'HTTP_USER_AGENT': 'Mozilla/5.0', 'REMOTE_ADDR': '192.168.1.1'}
 
         req2 = MagicMock()
-        req2.META = {
-            'HTTP_USER_AGENT': 'Mozilla/5.0',
-            'REMOTE_ADDR': '192.168.1.2'
-        }
+        req2.META = {'HTTP_USER_AGENT': 'Mozilla/5.0', 'REMOTE_ADDR': '192.168.1.2'}
 
         fp1 = make_fingerprint(req1)
         fp2 = make_fingerprint(req2)
@@ -272,7 +268,7 @@ class TestFingerprint:
         req.META = {
             'HTTP_USER_AGENT': 'Mozilla/5.0',
             'HTTP_X_FORWARDED_FOR': '10.0.0.1, 192.168.1.1',
-            'REMOTE_ADDR': '192.168.1.1'
+            'REMOTE_ADDR': '192.168.1.1',
         }
 
         fp = make_fingerprint(req)

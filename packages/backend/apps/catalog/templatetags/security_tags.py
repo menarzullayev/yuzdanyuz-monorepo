@@ -9,8 +9,8 @@ Foydalanish:
 
 from django import template
 from django.urls import reverse
-from django.utils.safestring import mark_safe
 from django.utils.html import escape
+from django.utils.safestring import mark_safe
 
 from apps.catalog.services import watermark as wm
 
@@ -18,6 +18,7 @@ register = template.Library()
 
 
 # ── Watermark ──────────────────────────────────────────────────
+
 
 @register.simple_tag(takes_context=True)
 def watermark_overlay(context):
@@ -69,6 +70,7 @@ def watermark_overlay(context):
 
 # ── DOM Shuffle ────────────────────────────────────────────────
 
+
 @register.tag(name='shuffle_dom')
 def shuffle_dom(parser, token):
     """
@@ -93,6 +95,7 @@ class ShuffleDomNode(template.Node):
 
     def render(self, context):
         from apps.catalog.services.dom_shuffle import shuffle_html
+
         request = context.get('request')
         user = getattr(request, 'user', None) if request else None
         # Admin bypass

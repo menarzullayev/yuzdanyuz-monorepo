@@ -5,8 +5,8 @@ Focus: Fingerprint generation, session management, device switching
 
 import pytest
 from django.test import Client, RequestFactory
+
 from apps.accounts.services.token_service import make_fingerprint
-from apps.accounts.models import CustomUser
 
 
 @pytest.mark.integration
@@ -63,10 +63,9 @@ class TestSessionManagement:
         user.set_password('Pass1234')
         user.save()
 
-        response = client.post('/api/auth/email/', data={
-            'login': user.email,
-            'password': 'Pass1234'
-        })
+        response = client.post(
+            '/api/auth/email/', data={'login': user.email, 'password': 'Pass1234'}
+        )
 
         # Check Redis: session:active:{user_id} contains fingerprint
         # This is implementation-specific
@@ -77,7 +76,6 @@ class TestSessionManagement:
         # Make request
         # Middleware checks fingerprint
         # Should pass if same device
-        pass
 
     def test_fingerprint_mismatch_triggers_logout(self, db, client: Client, user, mock_redis):
         """Fingerprint mismatch → force logout."""
@@ -85,7 +83,6 @@ class TestSessionManagement:
         # Try to use cookies from device 2 (fingerprint B)
         # DeviceCheckMiddleware should reject
         # Response should have force logout
-        pass
 
 
 @pytest.mark.integration
@@ -96,7 +93,6 @@ class TestDeviceSwitchBehavior:
         """Organization with single_device_policy = True (default)."""
         # org.single_device_policy should be True by default
         # When user logs in from device 2, device 1 session revoked
-        pass
 
     def test_single_device_revokes_old_session(self, db, org, user_with_phone, mock_redis):
         """New device login → old device's refresh token invalidated."""
@@ -104,7 +100,6 @@ class TestDeviceSwitchBehavior:
         # Login from device 2 → get refresh token B
         # Device 1 tries to refresh with token A → fails
         # Device 2 refresh token B → works
-        pass
 
     def test_multi_device_policy_allows_concurrent(self, db, org, user_with_phone):
         """Organization with single_device_policy = False."""
@@ -113,14 +108,12 @@ class TestDeviceSwitchBehavior:
         # Login from device 2 → token B
         # Both tokens remain valid
         # Both devices can use tokens simultaneously
-        pass
 
     def test_device_policy_per_organization(self, db, org, org2, user_multi_org):
         """Device policy is per organization."""
         # user_multi_org in org (single device) and org2 (multi device)
         # Login in org context → single device policy
         # Login in org2 context → multi device policy
-        pass
 
 
 @pytest.mark.integration
@@ -133,20 +126,17 @@ class TestFingerprintEdgeCases:
         # Device 1 VPN disconnects → IP B, UA "Mozilla"
         # Fingerprints differ (different IP)
         # Should trigger logout with single-device policy
-        pass
 
     def test_fingerprint_mobile_browser_change(self, db):
         """Mobile device changing browsers → different fingerprint."""
         # Safari with IP 1.1.1.1 → fingerprint A
         # Chrome with IP 1.1.1.1 → fingerprint B
         # Different fingerprints (UA changed)
-        pass
 
     def test_fingerprint_proxy_bypass(self, db):
         """X-Forwarded-For spoofing → security consideration."""
         # If X-Forwarded-For is user-controlled, can spoof IP
         # Should validate proxy IP or use Django's IP detection
-        pass
 
     def test_fingerprint_missing_user_agent(self, db):
         """Request with no User-Agent header."""
@@ -168,14 +158,12 @@ class TestConcurrentDeviceLogins:
         # Device 1 login → get tokens
         # Device 2 login → should revoke Device 1
         # Device 1 uses old refresh token → fail
-        pass
 
     def test_both_devices_get_new_tokens_multi_policy(self, db, user_with_phone):
         """Multi-device policy → both devices get valid tokens."""
         # Device 1 login
         # Device 2 login
         # Both can refresh independently
-        pass
 
 
 @pytest.mark.integration
@@ -187,16 +175,13 @@ class TestSessionCleanup:
         # Create token
         # Check Redis TTL
         # Should be set to 24 hours
-        pass
 
     def test_session_cleanup_on_logout(self, db, user, mock_redis):
         """Logout clears Redis session entries."""
         # Login → session:active:{user_id}, session:refresh:{user_id}:{fp}
         # Logout → both deleted
-        pass
 
     def test_expired_refresh_token_rejected(self, db, user, mock_redis):
         """Expired token in Redis → refresh fails."""
         # Manually expire token in Redis
         # Try to use it → fails
-        pass

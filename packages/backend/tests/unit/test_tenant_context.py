@@ -3,7 +3,8 @@ Unit tests for core/tenant.py — thread-local tenant context management
 """
 
 import pytest
-from core.tenant import get_current_org, set_current_org, clear_current_org, tenant_context
+
+from core.tenant import clear_current_org, get_current_org, set_current_org, tenant_context
 
 
 @pytest.mark.unit
@@ -70,7 +71,7 @@ class TestTenantContext:
         try:
             with tenant_context(org):
                 assert get_current_org() == org
-                raise ValueError("test error")
+                raise ValueError('test error')
         except ValueError:
             pass
 

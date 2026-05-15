@@ -1,0 +1,73 @@
+# Pre-commit hooks for yuzdanyuz-monorepo
+# Setup: `pre-commit install && pre-commit install --hook-type pre-push`
+# Bypass (NOT recommended): `git commit --no-verify` or `git push --no-verify`
+
+default_language_version:
+  python: python3.11
+
+# ──────────────────────────────────────────────────────────────────────
+# pre-commit stage — har commit'da (tezkor checks, < 5 sek)
+# ──────────────────────────────────────────────────────────────────────
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: check-case-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # ── Python lint + format (ultra-tezkor) ─────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^packages/backend/.*\.py$
+      - id: ruff-format
+        files: ^packages/backend/.*\.py$
+
+  # ──────────────────────────────────────────────────────────────────────
+  # pre-push stage — push'dan oldin (chuqur tekshiruv)
+  # ──────────────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: django-system-check
+        name: Django system check
+        entry: bash -c 'cd packages/backend && ./venv/bin/python manage.py check --deploy 2>&1 || ./venv/bin/python manage.py check'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^packages/backend/
+
+      - id: pytest-unit
+        name: Pytest — unit tests
+        entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/unit/ apps/*/tests.py -x --tb=short -q'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^packages/backend/
+
+      - id: pytest-integration
+        name: Pytest — integration tests
+        entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/integration/ -x --tb=short -q'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^packages/backend/
+
+      - id: pytest-security
+        name: Pytest — security tests
+        entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/security/ -x --tb=short -q'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^packages/backend/

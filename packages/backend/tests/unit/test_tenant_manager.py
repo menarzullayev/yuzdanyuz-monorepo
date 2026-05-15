@@ -3,8 +3,9 @@ Unit tests for core/managers.py and core/mixins.py
 """
 
 import pytest
+
 from apps.catalog.models import Question
-from core.tenant import set_current_org, clear_current_org
+from core.tenant import clear_current_org, set_current_org
 
 
 @pytest.mark.unit
@@ -15,14 +16,10 @@ class TestTenantManager:
         """set_current_org(org) → only that org's objects returned."""
         # Create questions in both orgs
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         # Query without context → both visible
@@ -41,14 +38,10 @@ class TestTenantManager:
     def test_tenant_manager_no_filter_without_context(self, db, org, org2, subject):
         """org=None context → unfiltered queryset."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         clear_current_org()
@@ -58,14 +51,10 @@ class TestTenantManager:
     def test_global_manager_bypasses_filter(self, db, org, org2, subject):
         """global_objects always returns all regardless of context."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         set_current_org(org)
@@ -75,14 +64,10 @@ class TestTenantManager:
     def test_tenant_manager_for_org(self, db, org, org2, subject):
         """objects.for_org(org) filters by explicit org."""
         q1 = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         q2 = Question.objects.create(
-            organization=org2,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
 
         # Explicit for_org
@@ -95,9 +80,7 @@ class TestTenantManager:
     def test_tenant_mixin_has_organization_fk(self, org, subject):
         """Tenant-inheriting model has organization FK."""
         q = Question.objects.create(
-            organization=org,
-            subject=subject,
-            type=Question.Type.SINGLE_CHOICE
+            organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
         )
         assert q.organization == org
         assert hasattr(q, 'organization')

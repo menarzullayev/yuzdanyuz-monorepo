@@ -1,5 +1,6 @@
-from pathlib import Path
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,7 +16,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     # django-allauth
     'django.contrib.sites',
     'allauth',
@@ -24,16 +24,15 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
     'allauth.socialaccount.providers.apple',
-
     # Local apps — Domain-Driven Design
-    'apps.accounts',        # User, auth, device session
-    'apps.organizations',   # Organization (tenant), membership, roles
-    'apps.catalog',         # Question, QuestionBank, Tag, AnswerChoice
-    'apps.exams',           # MockExam, PracticeSession, UserAnswer, AntiCheat
-    'apps.intelligence',    # KnowledgeGraph, SkillTag, StudyPlan, AIFeedback
-    'apps.commerce',        # Wallet, Transaction, Subscription, Affiliate
-    'apps.engagement',      # Streak, League, Badge, Notification
-    'apps.analytics',       # ClickHouseEvent, Report, B2BDashboard
+    'apps.accounts',  # User, auth, device session
+    'apps.organizations',  # Organization (tenant), membership, roles
+    'apps.catalog',  # Question, QuestionBank, Tag, AnswerChoice
+    'apps.exams',  # MockExam, PracticeSession, UserAnswer, AntiCheat
+    'apps.intelligence',  # KnowledgeGraph, SkillTag, StudyPlan, AIFeedback
+    'apps.commerce',  # Wallet, Transaction, Subscription, Affiliate
+    'apps.engagement',  # Streak, League, Badge, Notification
+    'apps.analytics',  # ClickHouseEvent, Report, B2BDashboard
 ]
 
 MIDDLEWARE = [
@@ -43,16 +42,16 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'core.middleware.jwt_auth.JWTAuthMiddleware',                    # 1. cookie → request.user
-    'apps.accounts.middleware.DeviceCheckMiddleware',               # 2. fingerprint tekshirish
-    'allauth.account.middleware.AccountMiddleware',                  # allauth required
+    'core.middleware.jwt_auth.JWTAuthMiddleware',  # 1. cookie → request.user
+    'apps.accounts.middleware.DeviceCheckMiddleware',  # 2. fingerprint tekshirish
+    'allauth.account.middleware.AccountMiddleware',  # allauth required
     'core.middleware.jwt_cookie_writer.JWTCookieWriterMiddleware',  # allauth→JWT bridge
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.accounts.middleware.DeviceLogoutMiddleware',  # force logout → cookie tozalash
-    'core.middleware.tenant.TenantMiddleware',          # user → org context
-    'core.middleware.rls_middleware.RLSMiddleware',     # PostgreSQL RLS setup (DB-level isolation)
-    'core.middleware.rate_limit.RateLimitMiddleware',   # Redis-backed rate limiting (HTTP 429)
+    'core.middleware.tenant.TenantMiddleware',  # user → org context
+    'core.middleware.rls_middleware.RLSMiddleware',  # PostgreSQL RLS setup (DB-level isolation)
+    'core.middleware.rate_limit.RateLimitMiddleware',  # Redis-backed rate limiting (HTTP 429)
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -69,27 +68,27 @@ REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 # Multi-tenant isolation at database level (defense in depth)
 ENABLE_RLS = os.getenv('ENABLE_RLS', 'true').lower() == 'true'
 
-TELEGRAM_BOT_TOKEN    = os.getenv('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '')   # @ siz, masalan: milsert_bot
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '')  # @ siz, masalan: milsert_bot
 TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')  # ixtiyoriy xavfsizlik token
 
 # ── django-allauth ────────────────────────────────────────────
-ACCOUNT_ADAPTER           = 'apps.accounts.adapters.AccountAdapter'
-SOCIALACCOUNT_ADAPTER     = 'apps.accounts.adapters.SocialAccountAdapter'
-ACCOUNT_EMAIL_REQUIRED    = True
+ACCOUNT_ADAPTER = 'apps.accounts.adapters.AccountAdapter'
+SOCIALACCOUNT_ADAPTER = 'apps.accounts.adapters.SocialAccountAdapter'
+ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 # 'optional': Google bypass (already verified), email/password requires verify
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_UNIQUE_EMAIL      = True
+ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'APP': {
             'client_id': os.getenv('GOOGLE_CLIENT_ID', ''),
-            'secret':    os.getenv('GOOGLE_CLIENT_SECRET', ''),
-            'key':       '',
+            'secret': os.getenv('GOOGLE_CLIENT_SECRET', ''),
+            'key': '',
         },
         'SCOPE': ['profile', 'email'],
         'AUTH_PARAMS': {'access_type': 'online'},
@@ -99,30 +98,30 @@ SOCIALACCOUNT_PROVIDERS = {
     'yandex': {
         'APP': {
             'client_id': os.getenv('YANDEX_CLIENT_ID', ''),
-            'secret':    os.getenv('YANDEX_CLIENT_SECRET', ''),
-            'key':       '',
+            'secret': os.getenv('YANDEX_CLIENT_SECRET', ''),
+            'key': '',
         },
         'SCOPE': ['login:email', 'login:info', 'login:avatar'],
     },
     'apple': {
         'APP': {
             'client_id': os.getenv('APPLE_CLIENT_ID', ''),
-            'secret':    os.getenv('APPLE_SECRET', ''),
-            'key':       os.getenv('APPLE_PRIVATE_KEY', ''),
+            'secret': os.getenv('APPLE_SECRET', ''),
+            'key': os.getenv('APPLE_PRIVATE_KEY', ''),
         },
         'VERIFIED_EMAIL': True,
     },
 }
 
-YANDEX_CLIENT_ID     = os.getenv('YANDEX_CLIENT_ID', '')
+YANDEX_CLIENT_ID = os.getenv('YANDEX_CLIENT_ID', '')
 YANDEX_CLIENT_SECRET = os.getenv('YANDEX_CLIENT_SECRET', '')
-APPLE_CLIENT_ID      = os.getenv('APPLE_CLIENT_ID', '')
-APPLE_SECRET         = os.getenv('APPLE_SECRET', '')
+APPLE_CLIENT_ID = os.getenv('APPLE_CLIENT_ID', '')
+APPLE_SECRET = os.getenv('APPLE_SECRET', '')
 # allauth login/signup dan keyin JWT cookie o'rnatiladigan URL
-ACCOUNT_LOGIN_REDIRECT_URL  = 'accounts:login'
+ACCOUNT_LOGIN_REDIRECT_URL = 'accounts:login'
 ACCOUNT_LOGOUT_REDIRECT_URL = 'accounts:login'
 
-GOOGLE_OAUTH_CLIENT_ID     = os.getenv('GOOGLE_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
 
 # ── SMS / OTP ─────────────────────────────────────────────────
@@ -130,13 +129,13 @@ GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
 # 'playmobile' — production
 # 'dummy' — test
 # 'console' dev, 'playmobile' yoki 'eskiz' prod — admin tanlaydi
-SMS_BACKEND            = os.getenv('SMS_BACKEND', 'console')
-PLAYMOBILE_LOGIN       = os.getenv('PLAYMOBILE_LOGIN', '')
-PLAYMOBILE_PASSWORD    = os.getenv('PLAYMOBILE_PASSWORD', '')
-PLAYMOBILE_ORIGINATOR  = os.getenv('PLAYMOBILE_ORIGINATOR', 'MilSert')
-ESKIZ_EMAIL            = os.getenv('ESKIZ_EMAIL', '')
-ESKIZ_PASSWORD         = os.getenv('ESKIZ_PASSWORD', '')
-ESKIZ_SENDER           = os.getenv('ESKIZ_SENDER', '4546')
+SMS_BACKEND = os.getenv('SMS_BACKEND', 'console')
+PLAYMOBILE_LOGIN = os.getenv('PLAYMOBILE_LOGIN', '')
+PLAYMOBILE_PASSWORD = os.getenv('PLAYMOBILE_PASSWORD', '')
+PLAYMOBILE_ORIGINATOR = os.getenv('PLAYMOBILE_ORIGINATOR', 'MilSert')
+ESKIZ_EMAIL = os.getenv('ESKIZ_EMAIL', '')
+ESKIZ_PASSWORD = os.getenv('ESKIZ_PASSWORD', '')
+ESKIZ_SENDER = os.getenv('ESKIZ_SENDER', '4546')
 
 ROOT_URLCONF = 'core.urls'
 

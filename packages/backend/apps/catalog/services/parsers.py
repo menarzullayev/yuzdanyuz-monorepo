@@ -1,29 +1,30 @@
-import re
 import csv
 import logging
+import re
 
-import pypdf
-import openpyxl
 import docx
+import openpyxl
+import pypdf
 from django.conf import settings
 
-from apps.catalog.models import QuestionDraft, ImportBatch
+from apps.catalog.models import ImportBatch, QuestionDraft
+
 from .ai_parser import AIParserService
 
 logger = logging.getLogger(__name__)
 
-_LABELS          = ['A', 'B', 'C', 'D', 'E']
+_LABELS = ['A', 'B', 'C', 'D', 'E']
 _CORRECT_LETTERS = set(_LABELS)
 
 # Ikkala parser uchun umumiy regex
-_Q_PATTERN   = re.compile(r'^(\d+)[.\)]\s*(.*)')
+_Q_PATTERN = re.compile(r'^(\d+)[.\)]\s*(.*)')
 _OPT_PATTERN = re.compile(r'^\*?\s*([A-E])[.\)]\s*(.*)')
 
 
 def _validate(q_data: dict) -> bool:
     """Savol to'g'riligini tekshirish: matn + ≥2 variant + kamida 1 to'g'ri javob."""
-    has_text    = bool(q_data.get('text', '').strip())
-    options     = q_data.get('options', [])
+    has_text = bool(q_data.get('text', '').strip())
+    options = q_data.get('options', [])
     has_options = len(options) >= 2
     has_correct = any(o.get('is_correct') for o in options)
     return has_text and has_options and has_correct
@@ -47,7 +48,7 @@ class DocxParserService:
     """
 
     def __init__(self, import_batch: ImportBatch):
-        self.batch     = import_batch
+        self.batch = import_batch
         self.ai_parser = AIParserService()
 
     def parse(self) -> int:
@@ -62,57 +63,59 @@ class DocxParserService:
                     data=q_data,
                     is_valid=_validate(q_data),
                 )
-            self.batch.status          = ImportBatch.Status.COMPLETED
+            self.batch.status = ImportBatch.Status.COMPLETED
             self.batch.total_questions = len(questions)
         except Exception as exc:
-            self.batch.status    = ImportBatch.Status.FAILED
-            self.batch.error_log = {"error": str(exc)}
+            self.batch.status = ImportBatch.Status.FAILED
+            self.batch.error_log = {'error': str(exc)}
         finally:
             self.batch.save()
 
         return self.batch.total_questions
 
     def _extract_questions(self) -> list:
-        document  = docx.Document(self.batch.file.path)   # lazily opened
+        document = docx.Document(self.batch.file.path)  # lazily opened
         questions = []
-        current   = None
+        current = None
 
         for para in document.paragraphs:
-            text   = para.text.strip()
+            text = para.text.strip()
             images = self._extract_images(para)
 
             if not text and not images:
                 continue
 
-            q_match   = _Q_PATTERN.match(text) if text else None
+            q_match = _Q_PATTERN.match(text) if text else None
             opt_match = _OPT_PATTERN.match(text) if text else None
 
             if q_match:
                 if current:
                     questions.append(current)
-                current = {"text": q_match.group(2), "options": [], "media": images}
+                current = {'text': q_match.group(2), 'options': [], 'media': images}
 
             elif opt_match and current:
                 is_correct = text.startswith('*') or self._is_bold(para)
-                current["options"].append({
-                    "label":      opt_match.group(1),
-                    "text":       opt_match.group(2),
-                    "is_correct": is_correct,
-                })
+                current['options'].append(
+                    {
+                        'label': opt_match.group(1),
+                        'text': opt_match.group(2),
+                        'is_correct': is_correct,
+                    }
+                )
                 if images:
-                    current["options"][-1]["media"] = images
+                    current['options'][-1]['media'] = images
 
             elif current:
                 if text:
-                    current["text"] += "\n" + text
+                    current['text'] += '\n' + text
                 if images:
-                    current["media"].extend(images)
+                    current['media'].extend(images)
 
             elif text:
                 # Tuzilmagan blok — ENABLE_AI_PARSER=True bo'lsa AI ga yuboriladi
                 if _ai_enabled():
                     parsed = self.ai_parser.parse_text_block(text)
-                    if "error" not in parsed:
+                    if 'error' not in parsed:
                         questions.append(parsed)
                 else:
                     logger.debug("AI parser o'chirilgan, blok o'tkazildi: %.60s", text)
@@ -130,7 +133,7 @@ class DocxParserService:
     @staticmethod
     def _extract_images(para) -> list:
         return [
-            {"type": "image", "status": "extracted_from_docx"}
+            {'type': 'image', 'status': 'extracted_from_docx'}
             for run in para.runs
             if 'drawing' in run._element.xml
         ]
@@ -150,7 +153,7 @@ class PdfParserService:
     """
 
     def __init__(self, import_batch: ImportBatch):
-        self.batch     = import_batch
+        self.batch = import_batch
         self.ai_parser = AIParserService()
 
     def parse(self) -> int:
@@ -165,20 +168,20 @@ class PdfParserService:
                     data=q_data,
                     is_valid=_validate(q_data),
                 )
-            self.batch.status          = ImportBatch.Status.COMPLETED
+            self.batch.status = ImportBatch.Status.COMPLETED
             self.batch.total_questions = len(questions)
         except Exception as exc:
-            self.batch.status    = ImportBatch.Status.FAILED
-            self.batch.error_log = {"error": str(exc)}
+            self.batch.status = ImportBatch.Status.FAILED
+            self.batch.error_log = {'error': str(exc)}
         finally:
             self.batch.save()
 
         return self.batch.total_questions
 
     def _extract_questions(self) -> list:
-        reader    = pypdf.PdfReader(self.batch.file.path)
+        reader = pypdf.PdfReader(self.batch.file.path)
         questions = []
-        current   = None
+        current = None
 
         # Barcha sahifalar ketma-ket bitta oqim sifatida qayta ishlanadi
         for page in reader.pages:
@@ -188,28 +191,30 @@ class PdfParserService:
                 if not line:
                     continue
 
-                q_match   = _Q_PATTERN.match(line)
+                q_match = _Q_PATTERN.match(line)
                 opt_match = _OPT_PATTERN.match(line)
 
                 if q_match:
                     if current:
                         questions.append(current)
-                    current = {"text": q_match.group(2), "options": []}
+                    current = {'text': q_match.group(2), 'options': []}
 
                 elif opt_match and current:
                     is_correct = line.startswith('*')
-                    current["options"].append({
-                        "label":      opt_match.group(1),
-                        "text":       opt_match.group(2),
-                        "is_correct": is_correct,
-                    })
+                    current['options'].append(
+                        {
+                            'label': opt_match.group(1),
+                            'text': opt_match.group(2),
+                            'is_correct': is_correct,
+                        }
+                    )
 
                 elif current:
-                    current["text"] += "\n" + line
+                    current['text'] += '\n' + line
 
                 elif _ai_enabled():
                     parsed = self.ai_parser.parse_text_block(line)
-                    if "error" not in parsed:
+                    if 'error' not in parsed:
                         questions.append(parsed)
                 else:
                     logger.debug("AI parser o'chirilgan, blok o'tkazildi: %.60s", line)
@@ -238,11 +243,11 @@ class ExcelParserService:
 
         try:
             count = self._process_sheet()
-            self.batch.status          = ImportBatch.Status.COMPLETED
+            self.batch.status = ImportBatch.Status.COMPLETED
             self.batch.total_questions = count
         except Exception as exc:
-            self.batch.status    = ImportBatch.Status.FAILED
-            self.batch.error_log = {"error": str(exc)}
+            self.batch.status = ImportBatch.Status.FAILED
+            self.batch.error_log = {'error': str(exc)}
         finally:
             self.batch.save()
 
@@ -250,28 +255,28 @@ class ExcelParserService:
 
     def _process_sheet(self) -> int:
         workbook = openpyxl.load_workbook(self.batch.file.path, data_only=True)  # lazily opened
-        sheet    = workbook.active
+        sheet = workbook.active
         if sheet is None:
-            raise ValueError("Workbook da faol varaq (active sheet) topilmadi")
+            raise ValueError('Workbook da faol varaq (active sheet) topilmadi')
 
         count = 0
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if not row or not row[0]:
                 continue
 
-            text    = self._cell(row, 0)
+            text = self._cell(row, 0)
             correct = self._cell(row, 5).upper()
 
             options = [
                 {
-                    "label":      lbl,
-                    "text":       self._cell(row, i + 1),
-                    "is_correct": correct == lbl,
+                    'label': lbl,
+                    'text': self._cell(row, i + 1),
+                    'is_correct': correct == lbl,
                 }
                 for i, lbl in enumerate('ABCD')
             ]
 
-            q_data = {"text": text, "options": options}
+            q_data = {'text': text, 'options': options}
             QuestionDraft.objects.create(
                 batch=self.batch,
                 data=q_data,
@@ -309,11 +314,11 @@ class CSVParserService:
 
         try:
             count = self._process_file()
-            self.batch.status          = ImportBatch.Status.COMPLETED
+            self.batch.status = ImportBatch.Status.COMPLETED
             self.batch.total_questions = count
         except Exception as exc:
-            self.batch.status    = ImportBatch.Status.FAILED
-            self.batch.error_log = {"error": str(exc)}
+            self.batch.status = ImportBatch.Status.FAILED
+            self.batch.error_log = {'error': str(exc)}
         finally:
             self.batch.save()
 
@@ -321,7 +326,7 @@ class CSVParserService:
 
     def _process_file(self) -> int:
         count = 0
-        with open(self.batch.file.path, mode='r', encoding='utf-8-sig') as f:
+        with open(self.batch.file.path, encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             next(reader, None)  # sarlavha qatorini o'tkazib yuborish
             for row in reader:
@@ -347,22 +352,22 @@ class CSVParserService:
         last = row[-1].strip().upper()
         if last in _CORRECT_LETTERS:
             option_cols = row[1:-1]
-            correct     = last
+            correct = last
         else:
             option_cols = row[1:]
-            correct     = ''
+            correct = ''
 
         options = [
             {
-                "label":      _LABELS[i],
-                "text":       val.strip(),
-                "is_correct": _LABELS[i] == correct,
+                'label': _LABELS[i],
+                'text': val.strip(),
+                'is_correct': _LABELS[i] == correct,
             }
             for i, val in enumerate(option_cols)
             if i < len(_LABELS)
         ]
 
-        return {"text": text, "options": options}
+        return {'text': text, 'options': options}
 
 
 class ParserDispatcher:
@@ -374,9 +379,9 @@ class ParserDispatcher:
 
     _PARSERS = {
         'docx': DocxParserService,
-        'pdf':  PdfParserService,
+        'pdf': PdfParserService,
         'xlsx': ExcelParserService,
-        'csv':  CSVParserService,
+        'csv': CSVParserService,
     }
 
     @classmethod
@@ -385,7 +390,7 @@ class ParserDispatcher:
         if not klass:
             raise ValueError(
                 f"Qo'llab-quvvatlanmaydigan fayl turi: '{batch.file_type}'. "
-                f"Ruxsat etilganlar: {', '.join(cls._PARSERS)}"
+                f'Ruxsat etilganlar: {", ".join(cls._PARSERS)}'
             )
         return klass(batch)
 

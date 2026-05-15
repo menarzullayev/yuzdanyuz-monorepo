@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -11,10 +12,10 @@ class ProviderFactory:
     """AIProviderConfig DB yozuvidan to'g'ri provayder obyektini yaratadi."""
 
     _MAP = {
-        'claude': ('apps.catalog.services.ai_providers.claude',   'AnthropicProvider'),
+        'claude': ('apps.catalog.services.ai_providers.claude', 'AnthropicProvider'),
         'openai': ('apps.catalog.services.ai_providers.openai_p', 'OpenAIProvider'),
-        'gemini': ('apps.catalog.services.ai_providers.gemini',   'GeminiProvider'),
-        'ollama': ('apps.catalog.services.ai_providers.ollama',   'OllamaProvider'),
+        'gemini': ('apps.catalog.services.ai_providers.gemini', 'GeminiProvider'),
+        'ollama': ('apps.catalog.services.ai_providers.ollama', 'OllamaProvider'),
     }
 
     @classmethod
@@ -25,11 +26,12 @@ class ProviderFactory:
 
         module_path, class_name = entry
         import importlib
+
         module = importlib.import_module(module_path)
-        klass  = getattr(module, class_name)
+        klass = getattr(module, class_name)
 
         return klass(
-            api_key  = config.api_key,
-            model    = config.model,
-            base_url = config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+            base_url=config.base_url,
         )

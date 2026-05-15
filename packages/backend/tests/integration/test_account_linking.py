@@ -4,9 +4,8 @@ Focus: Linking Telegram + Phone + Email + Google to same user
 """
 
 import pytest
-from django.test import Client
 from django.contrib.auth import get_user_model
-from allauth.socialaccount.models import SocialAccount
+
 from apps.accounts.models import CustomUser
 
 User = get_user_model()
@@ -60,14 +59,12 @@ class TestSocialAccountLinking:
         """Google login creates SocialAccount entry."""
         # Requires allauth flow to be complete
         # Placeholder for full test
-        pass
 
     def test_google_links_to_existing_email(self, db, user):
         """Google account with same email links to existing user."""
         # User has email: test@example.com
         # Google user also has email: test@example.com
         # Should link to existing user
-        pass
 
 
 @pytest.mark.integration
@@ -77,10 +74,9 @@ class TestAuthMethodPriority:
     def test_username_password_priority_1(self, db):
         """Username + Password is priority 1 (primary)."""
         from apps.accounts.models import CustomUser
+
         user = CustomUser.objects.create_user(
-            username='primary',
-            email='test@example.com',
-            password='Pass1234'
+            username='primary', email='test@example.com', password='Pass1234'
         )
         # No other auth methods
         assert user.user_type == 'b2c'
@@ -88,10 +84,9 @@ class TestAuthMethodPriority:
     def test_email_password_priority_2(self, db):
         """Email + Password is priority 2."""
         from apps.accounts.models import CustomUser
+
         user = CustomUser.objects.create_user(
-            username='emailuser',
-            email='email@example.com',
-            password='Pass1234'
+            username='emailuser', email='email@example.com', password='Pass1234'
         )
         # Can also login via email
         user.set_password('Pass1234')
@@ -110,7 +105,6 @@ class TestAuthMethodPriority:
     def test_oauth_priority_5(self, db, user):
         """Google/OAuth is priority 5."""
         # Will test after OAuth integration complete
-        pass
 
 
 @pytest.mark.integration
@@ -122,21 +116,18 @@ class TestAccountMergingRules:
         # User logs in via phone OTP
         # Then Google OAuth with same email
         # Should merge
-        pass
 
     def test_telegram_user_adds_phone(self, db, user_with_telegram):
         """Telegram user adds phone → both methods on same account."""
         # User has Telegram
         # Later registers with phone
         # Should merge if phone verified
-        pass
 
     def test_email_password_user_adds_oauth(self, db, user):
         """Email+password user adds Google → both work."""
         # User registered with email+password
         # Later uses Google OAuth with same email
         # Should link as second method
-        pass
 
 
 @pytest.mark.integration
@@ -148,14 +139,12 @@ class TestDuplicateEmailHandling:
         # Pre-condition: user has email@example.com via password
         # Google user also email@example.com
         # Should auto-link via SocialAccountAdapter
-        pass
 
     def test_email_verified_bypass(self, db):
         """Google email (verified) bypasses unverified email."""
         # User registered with unverified email
         # Google OAuth with verified email
         # Google email should be preferred
-        pass
 
 
 @pytest.mark.integration
@@ -170,13 +159,12 @@ class TestDataConsistency:
 
         # Create another user
         user2 = CustomUser.objects.create_user(
-            username='user2',
-            email='user2@example.com',
-            password='pass'
+            username='user2', email='user2@example.com', password='pass'
         )
 
         # user2 cannot have same phone (unique constraint)
         from django.db import IntegrityError
+
         with pytest.raises(IntegrityError):
             user2.phone_number = user_with_phone.phone_number
             user2.save()
@@ -184,12 +172,11 @@ class TestDataConsistency:
     def test_unique_email_across_users(self, db, user_with_phone):
         """Email must be unique across all users."""
         user2 = CustomUser.objects.create_user(
-            username='user2',
-            email='different@example.com',
-            password='pass'
+            username='user2', email='different@example.com', password='pass'
         )
 
         from django.db import IntegrityError
+
         with pytest.raises(IntegrityError):
             user2.email = user_with_phone.email
             user2.save()

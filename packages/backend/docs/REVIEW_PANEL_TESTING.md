@@ -13,7 +13,7 @@
 - ✅ `draft_autosave_htmx()`: Field-specific updates, correct_idx toggle, badge OOB
 - ✅ `draft_bulk_action_htmx()`: Batch publish (validates is_valid + subject), batch delete
 
-### 2. **Template Suite** 
+### 2. **Template Suite**
 - ✅ `review_dashboard.html`: Alpine component, floating bulk action bar, toast container
 - ✅ `draft_list.html` partial: Filter tabs, select-all, search debounce, draft item rows
 - ✅ `draft_detail.html` partial: Validation error banner, correct toggle buttons, locked UI

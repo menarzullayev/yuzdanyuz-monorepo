@@ -1,6 +1,7 @@
 import jwt
 from django.conf import settings
-from ..tenant import set_current_org, clear_current_org
+
+from ..tenant import clear_current_org, set_current_org
 
 
 class TenantMiddleware:
@@ -37,6 +38,7 @@ class TenantMiddleware:
 
         # DB dan olish + membership validate
         from apps.organizations.models import Organization
+
         try:
             org = Organization.objects.get(pk=org_id)
         except (Organization.DoesNotExist, ValueError):
@@ -46,9 +48,7 @@ class TenantMiddleware:
         if request.user.is_superuser:
             return org
 
-        if not request.user.memberships.filter(
-            organization=org, status='active'
-        ).exists():
+        if not request.user.memberships.filter(organization=org, status='active').exists():
             return request.user.primary_organization
 
         return org
@@ -59,7 +59,8 @@ class TenantMiddleware:
             return None
         try:
             payload = jwt.decode(
-                token, settings.SECRET_KEY,
+                token,
+                settings.SECRET_KEY,
                 algorithms=['HS256'],
                 options={'verify_exp': False},
             )

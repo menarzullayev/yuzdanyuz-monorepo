@@ -3,11 +3,13 @@ Security tests for OAuth, JWT, and authentication attacks
 Focus: Token tampering, signature validation, CSRF, replay attacks
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
+
 import jwt as pyjwt
-from datetime import datetime, timedelta, timezone
+import pytest
 from django.conf import settings
-from apps.accounts.services.token_service import verify_access_token, create_token_pair
+
+from apps.accounts.services.token_service import create_token_pair, verify_access_token
 
 
 @pytest.mark.security
@@ -19,7 +21,7 @@ class TestJWTTamperingProtection:
         access, _ = create_token_pair(user, 'test-fp')
 
         # Decode without verification
-        decoded = pyjwt.decode(access, options={"verify_signature": False})
+        decoded = pyjwt.decode(access, options={'verify_signature': False})
 
         # Tamper: change sub to different user
         decoded['sub'] = 'different-user-id'
@@ -39,7 +41,7 @@ class TestJWTTamperingProtection:
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         wrong_secret_token = pyjwt.encode(payload, 'wrong-secret', algorithm='HS256')
 
@@ -62,10 +64,7 @@ class TestJWTTamperingProtection:
 
     def test_jwt_none_algorithm_rejected(self, user):
         """JWT with 'none' algorithm → rejected."""
-        payload = {
-            'sub': str(user.pk),
-            'type': 'access'
-        }
+        payload = {'sub': str(user.pk), 'type': 'access'}
 
         # Attempt to create with 'none' (should be prevented by library)
         # Modern PyJWT prevents this, but test the protection
@@ -88,7 +87,7 @@ class TestJWTExpirationSecurity:
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) - timedelta(hours=1)
+            'exp': datetime.now(UTC) - timedelta(hours=1),
         }
         expired_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -97,12 +96,12 @@ class TestJWTExpirationSecurity:
 
     def test_future_iat_token_accepted(self, user):
         """Token with future 'iat' (issued-at) still works."""
-        future_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        future_time = datetime.now(UTC) + timedelta(hours=1)
         payload = {
             'sub': str(user.pk),
             'type': 'access',
             'iat': int(future_time.timestamp()),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=2)
+            'exp': datetime.now(UTC) + timedelta(hours=2),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -142,6 +141,7 @@ class TestClaimValidation:
         """Multi-org user without current_org claim → should default to primary."""
         # Create token without org
         from apps.accounts.services.token_service import create_token_pair
+
         access, _ = create_token_pair(user_multi_org, 'test-fp', org=None)
 
         decoded = pyjwt.decode(access, settings.SECRET_KEY, algorithms=['HS256'])
@@ -162,12 +162,7 @@ class TestPasswordSecurityAttacks:
 
     def test_password_not_returned_in_api(self, user):
         """User API response should never include password hash."""
-        from apps.accounts.models import CustomUser
-        serialized = {
-            'id': str(user.pk),
-            'email': user.email,
-            'username': user.username
-        }
+        serialized = {'id': str(user.pk), 'email': user.email, 'username': user.username}
 
         assert 'password' not in serialized
 
@@ -175,14 +170,14 @@ class TestPasswordSecurityAttacks:
         """Authentication timing should be constant-time."""
         # Django uses constant-time comparison for password checking
         from apps.accounts.models import CustomUser
+
         user = CustomUser.objects.create_user(
-            username='test',
-            email='test@example.com',
-            password='Pass1234'
+            username='test', email='test@example.com', password='Pass1234'
         )
 
         # Both should take similar time
         import time
+
         start1 = time.perf_counter()
         user.check_password('Pass1234')
         t1 = time.perf_counter() - start1
@@ -207,17 +202,15 @@ class TestCSRFProtection:
         # If view is CSRF-exempt: OK for API endpoints
         # If not: should require CSRF token
         # Our views use @csrf_exempt for API
-        pass
 
     def test_same_site_cookie_setting(self, db, client, user):
         """JWT cookies should have SameSite=Strict."""
         user.set_password('Pass1234')
         user.save()
 
-        response = client.post('/api/auth/email/', data={
-            'login': user.email,
-            'password': 'Pass1234'
-        })
+        response = client.post(
+            '/api/auth/email/', data={'login': user.email, 'password': 'Pass1234'}
+        )
 
         # Check SameSite in Set-Cookie header
         # SameSite=Strict or Lax should be set
@@ -231,16 +224,15 @@ class TestOAuthSecurityAttacks:
         """Google OAuth callback must validate state parameter."""
         # allauth handles this, but should verify in tests
         # state parameter prevents CSRF during OAuth flow
-        pass
 
     def test_oauth_redirect_validation(self):
         """Redirect URI must match registered OAuth app."""
         # allauth validates, but important for security
-        pass
 
     def test_pkce_enabled_for_google(self):
         """PKCE should be enabled for Google OAuth (mobile/SPA security)."""
         from django.conf import settings
+
         assert settings.SOCIALACCOUNT_PROVIDERS['google']['OAUTH_PKCE_ENABLED'] is True
 
 
@@ -252,23 +244,28 @@ class TestPhoneNumberSecurity:
         """OTP code should not appear in logs."""
         # Implementation check: OTP service should not log codes
         from apps.accounts.models import OTPCode
+
         code = OTPCode.objects.get(phone=phone_number)
         assert code.code is not None
 
     def test_otp_attempt_limit(self, db, phone_number, mock_redis):
         """After 3 attempts (OTP_MAX_ATTEMPTS), OTP code is disabled."""
         from apps.accounts.models import OTPCode
-        from apps.accounts.services.otp_service import verify_otp, OTPError
+        from apps.accounts.services.otp_service import OTPError, verify_otp
+
         code = OTPCode.objects.create(
             phone=phone_number,
             code='123456',
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
-            attempts=3  # Already at OTP_MAX_ATTEMPTS limit
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            attempts=3,  # Already at OTP_MAX_ATTEMPTS limit
         )
 
         with pytest.raises(OTPError) as exc_info:
             verify_otp(phone_number, '123456')
-        assert 'noto\'g\'ri urinish' in str(exc_info.value).lower() or 'attempt' in str(exc_info.value).lower()
+        assert (
+            "noto'g'ri urinish" in str(exc_info.value).lower()
+            or 'attempt' in str(exc_info.value).lower()
+        )
 
     def test_phone_enumeration_attack_mitigation(self, db):
         """OTP send shouldn't reveal if phone exists."""

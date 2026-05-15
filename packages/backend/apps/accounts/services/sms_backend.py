@@ -28,6 +28,7 @@ class SMSBackendBase(ABC):
 
 # ── Console backend (dev) ─────────────────────────────────────
 
+
 class ConsoleSMSBackend(SMSBackendBase):
     def send(self, phone: str, text: str) -> bool:
         log.info('[SMS → %s] %s', phone, text)
@@ -37,12 +38,14 @@ class ConsoleSMSBackend(SMSBackendBase):
 
 # ── Dummy backend (test) ──────────────────────────────────────
 
+
 class DummySMSBackend(SMSBackendBase):
     def send(self, phone: str, text: str) -> bool:
         return True
 
 
 # ── PlayMobile backend (production) ──────────────────────────
+
 
 class PlayMobileSMSBackend(SMSBackendBase):
     """
@@ -60,10 +63,11 @@ class PlayMobileSMSBackend(SMSBackendBase):
     def send(self, phone: str, text: str) -> bool:
         import base64
         import uuid
+
         import requests as req
 
-        login      = getattr(settings, 'PLAYMOBILE_LOGIN', '')
-        password   = getattr(settings, 'PLAYMOBILE_PASSWORD', '')
+        login = getattr(settings, 'PLAYMOBILE_LOGIN', '')
+        password = getattr(settings, 'PLAYMOBILE_PASSWORD', '')
         originator = getattr(settings, 'PLAYMOBILE_ORIGINATOR', 'MilSert')
 
         if not login or not password:
@@ -72,14 +76,16 @@ class PlayMobileSMSBackend(SMSBackendBase):
 
         credentials = base64.b64encode(f'{login}:{password}'.encode()).decode()
         payload = {
-            'messages': [{
-                'recipient'  : phone,
-                'message-id' : str(uuid.uuid4()),
-                'sms': {
-                    'originator': originator,
-                    'content'   : {'text': text},
-                },
-            }]
+            'messages': [
+                {
+                    'recipient': phone,
+                    'message-id': str(uuid.uuid4()),
+                    'sms': {
+                        'originator': originator,
+                        'content': {'text': text},
+                    },
+                }
+            ]
         }
         try:
             resp = req.post(
@@ -99,6 +105,7 @@ class PlayMobileSMSBackend(SMSBackendBase):
 
 # ── Eskiz backend (production, O'zbekiston) ───────────────────
 
+
 class EskizSMSBackend(SMSBackendBase):
     """
     Eskiz.uz SMS Gateway — O'zbekistonda mashhur, arzonroq.
@@ -114,11 +121,12 @@ class EskizSMSBackend(SMSBackendBase):
 
     def _get_token(self) -> str | None:
         import requests as req
+
         try:
             resp = req.post(
                 self.AUTH_URL,
                 data={
-                    'email'   : getattr(settings, 'ESKIZ_EMAIL', ''),
+                    'email': getattr(settings, 'ESKIZ_EMAIL', ''),
                     'password': getattr(settings, 'ESKIZ_PASSWORD', ''),
                 },
                 timeout=8,
@@ -131,6 +139,7 @@ class EskizSMSBackend(SMSBackendBase):
 
     def send(self, phone: str, text: str) -> bool:
         import requests as req
+
         # E.164 → Eskiz 998XXXXXXXXX formatiga (+ belgisiz)
         normalized = phone.lstrip('+')
 
@@ -144,8 +153,8 @@ class EskizSMSBackend(SMSBackendBase):
                 self.SEND_URL,
                 data={
                     'mobile_phone': normalized,
-                    'message'     : text,
-                    'from'        : from_whom,
+                    'message': text,
+                    'from': from_whom,
                 },
                 headers={'Authorization': f'Bearer {token}'},
                 timeout=10,
@@ -164,15 +173,15 @@ class EskizSMSBackend(SMSBackendBase):
 
 _BACKENDS = {
     'playmobile': PlayMobileSMSBackend,
-    'eskiz'     : EskizSMSBackend,
-    'console'   : ConsoleSMSBackend,
-    'dummy'     : DummySMSBackend,
+    'eskiz': EskizSMSBackend,
+    'console': ConsoleSMSBackend,
+    'dummy': DummySMSBackend,
 }
 
 
 def get_sms_backend() -> SMSBackendBase:
     name = getattr(settings, 'SMS_BACKEND', 'console')
-    cls  = _BACKENDS.get(name)
+    cls = _BACKENDS.get(name)
     if cls is None:
         raise ValueError(f'Noma\'lum SMS_BACKEND: "{name}". {list(_BACKENDS)} dan birini tanlang.')
     return cls()

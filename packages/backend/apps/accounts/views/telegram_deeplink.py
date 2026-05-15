@@ -19,7 +19,11 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.models import CustomUser
 from apps.accounts.services import telegram_deeplink as dl
-from apps.accounts.services.bot_sender import send_contact_request, send_message, send_success_message
+from apps.accounts.services.bot_sender import (
+    send_contact_request,
+    send_message,
+    send_success_message,
+)
 from apps.accounts.services.token_service import (
     create_token_pair,
     make_fingerprint,
@@ -35,6 +39,7 @@ def _is_secure(request) -> bool:
 
 # ── 1. Sessiya yaratish ───────────────────────────────────────
 
+
 @method_decorator(csrf_exempt, name='dispatch')
 class TGDeeplinkInitView(View):
     """
@@ -49,6 +54,7 @@ class TGDeeplinkInitView(View):
 
 # ── 2. Holat tekshirish (polling) ─────────────────────────────
 
+
 class TGDeeplinkStatusView(View):
     """
     GET /api/auth/tg/status/?token=TOKEN
@@ -56,7 +62,7 @@ class TGDeeplinkStatusView(View):
     """
 
     def get(self, request):
-        token   = request.GET.get('token', '').strip()
+        token = request.GET.get('token', '').strip()
         session = dl.get_session(token)
         if session is None:
             return JsonResponse({'status': 'expired'})
@@ -64,6 +70,7 @@ class TGDeeplinkStatusView(View):
 
 
 # ── 3. Verified sessiyadan JWT olish ─────────────────────────
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class TGDeeplinkCompleteView(View):
@@ -86,7 +93,7 @@ class TGDeeplinkCompleteView(View):
         user_pk = dl.get_verified_user_pk(token)
         if user_pk is None:
             return JsonResponse(
-                {'error': 'Sessiya tasdiqlanmagan yoki muddati o\'tgan'},
+                {'error': "Sessiya tasdiqlanmagan yoki muddati o'tgan"},
                 status=401,
             )
 
@@ -98,23 +105,26 @@ class TGDeeplinkCompleteView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        fingerprint     = make_fingerprint(request)
+        fingerprint = make_fingerprint(request)
         access, refresh = create_token_pair(user, fingerprint)
 
-        response = JsonResponse({
-            'user': {
-                'id'          : str(user.pk),
-                'display_name': user.display_name,
-                'user_type'   : user.user_type,
-                'phone'       : user.phone_number,
+        response = JsonResponse(
+            {
+                'user': {
+                    'id': str(user.pk),
+                    'display_name': user.display_name,
+                    'user_type': user.user_type,
+                    'phone': user.phone_number,
+                }
             }
-        })
+        )
         set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
         dl.expire_session(token)
         return response
 
 
 # ── 4. Bot Webhook ────────────────────────────────────────────
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class BotWebhookView(View):
@@ -141,7 +151,7 @@ class BotWebhookView(View):
             return JsonResponse({'ok': True})
 
         from_user = message.get('from', {})
-        tg_id     = from_user.get('id')
+        tg_id = from_user.get('id')
         if not tg_id:
             return JsonResponse({'ok': True})
 
@@ -150,25 +160,28 @@ class BotWebhookView(View):
         if text.startswith('/start'):
             parts = text.split(maxsplit=1)
             if len(parts) == 2 and parts[1].startswith('tgauth_'):
-                token = parts[1][len('tgauth_'):]
+                token = parts[1][len('tgauth_') :]
                 ok = dl.on_bot_start(token, tg_id)
                 if ok:
                     send_contact_request(tg_id)
                 else:
-                    send_message(tg_id, '⚠️ Havola muddati o\'tgan yoki noto\'g\'ri. Web saytda qayta urinib ko\'ring.')
+                    send_message(
+                        tg_id,
+                        "⚠️ Havola muddati o'tgan yoki noto'g'ri. Web saytda qayta urinib ko'ring.",
+                    )
             return JsonResponse({'ok': True})
 
         # ── Contact (telefon raqam) ───────────────────────────
         contact = message.get('contact')
         if contact:
-            phone          = contact.get('phone_number', '')
-            contact_uid    = contact.get('user_id')
+            phone = contact.get('phone_number', '')
+            contact_uid = contact.get('user_id')
 
             ok = dl.on_bot_contact(tg_id, phone, contact_uid)
             if ok:
                 send_success_message(tg_id)
             else:
-                send_message(tg_id, '⚠️ Tasdiqlashda xatolik. Web saytda qayta urinib ko\'ring.')
+                send_message(tg_id, "⚠️ Tasdiqlashda xatolik. Web saytda qayta urinib ko'ring.")
             return JsonResponse({'ok': True})
 
         return JsonResponse({'ok': True})

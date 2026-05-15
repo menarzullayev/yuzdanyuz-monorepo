@@ -148,27 +148,27 @@ def admin_user(db):
 def organization(db, user):
     """Create a test organization."""
     from organizations.models import Organization, OrgRole
-    
+
     org = Organization.objects.create(
         name='Test School',
         slug='test-school',
         org_type='b2b',
         owner=user
     )
-    
+
     # Create default roles
     OrgRole.objects.create(
         organization=org,
         name='admin',
         permissions=['*']  # All permissions
     )
-    
+
     OrgRole.objects.create(
         organization=org,
         name='teacher',
         permissions=['questions.create', 'questions.edit', 'exams.view']
     )
-    
+
     return org
 
 @pytest.fixture
@@ -199,33 +199,33 @@ def org_with_users(db, user, admin_user):
         org_type='b2b',
         owner=admin_user
     )
-    
+
     admin_role = OrgRole.objects.create(
         organization=org,
         name='admin',
         permissions=['*']
     )
-    
+
     teacher_role = OrgRole.objects.create(
         organization=org,
         name='teacher',
         permissions=['questions.create', 'questions.edit']
     )
-    
+
     Membership.objects.create(
         user=admin_user,
         organization=org,
         role=admin_role,
         status='active'
     )
-    
+
     Membership.objects.create(
         user=user,
         organization=org,
         role=teacher_role,
         status='active'
     )
-    
+
     return org
 ```
 
@@ -288,7 +288,7 @@ from accounts.models import CustomUser
 
 class TestCustomUserModel:
     """Test CustomUser model."""
-    
+
     def test_user_creation(self, db):
         """User can be created with username and email."""
         user = CustomUser.objects.create_user(
@@ -296,57 +296,57 @@ class TestCustomUserModel:
             email='john@example.com',
             password='pass123'
         )
-        
+
         assert user.username == 'john'
         assert user.email == 'john@example.com'
         assert user.check_password('pass123')
-    
+
     def test_user_type_platform_admin(self, admin_user):
         """Superuser has user_type = platform_admin."""
         assert admin_user.user_type == 'platform_admin'
-    
+
     def test_user_type_b2c(self, user):
         """User without membership has user_type = b2c."""
         assert user.user_type == 'b2c'
-    
+
     def test_has_org_permission_success(self, user, organization):
         """User with permission returns True."""
         from organizations.models import OrgRole, Membership
-        
+
         role = OrgRole.objects.create(
             organization=organization,
             name='teacher',
             permissions=['questions.edit']
         )
-        
+
         Membership.objects.create(
             user=user,
             organization=organization,
             role=role
         )
-        
+
         assert user.has_org_permission(organization, 'questions.edit')
-    
+
     def test_has_org_permission_denied(self, user, organization):
         """User without permission returns False."""
         assert not user.has_org_permission(organization, 'questions.delete')
-    
+
     def test_has_org_permission_wildcard(self, user, organization):
         """User with '*' permission has all permissions."""
         from organizations.models import OrgRole, Membership
-        
+
         role = OrgRole.objects.create(
             organization=organization,
             name='admin',
             permissions=['*']
         )
-        
+
         Membership.objects.create(
             user=user,
             organization=organization,
             role=role
         )
-        
+
         assert user.has_org_permission(organization, 'any.permission')
 ```
 
@@ -360,30 +360,30 @@ from catalog.models import Question
 
 class TestQuestionListView:
     """Test question list view."""
-    
+
     def test_list_questions_unauthorized(self, client):
         """Anonymous user is redirected to login."""
         response = client.get(reverse('catalog:list'))
-        
+
         assert response.status_code == 302
         assert '/login/' in response.url
-    
+
     def test_list_questions_authorized(self, client, user, question):
         """Authenticated user sees their org's questions."""
         client.force_login(user)
-        
+
         response = client.get(reverse('catalog:list'))
-        
+
         assert response.status_code == 200
         assert 'questions' in response.context
-    
+
     def test_list_questions_filtering(self, client, user, question, db):
         """Questions are filtered by status."""
         from catalog.models import Question
         from core.tenant import tenant_context
-        
+
         client.force_login(user)
-        
+
         # Create another question with different status
         with tenant_context(question.organization):
             draft = Question.objects.create(
@@ -394,20 +394,20 @@ class TestQuestionListView:
                 answer_choices=[],
                 status='draft'
             )
-        
+
         # Filter by status
         response = client.get(reverse('catalog:list') + '?status=draft')
-        
+
         assert response.status_code == 200
         # Check that only draft is in results
         assert draft in response.context['object_list']
-    
+
     def test_list_questions_multi_tenant_isolation(self, client, user, organization, question, db):
         """User only sees questions from their organization."""
         from organizations.models import Organization, OrgRole, Membership
         from catalog.models import Question as Q
         from core.tenant import tenant_context
-        
+
         # Create another org
         other_org = Organization.objects.create(
             name='Other School',
@@ -415,10 +415,10 @@ class TestQuestionListView:
             org_type='b2b',
             owner=user
         )
-        
+
         role = OrgRole.objects.create(organization=other_org, name='teacher', permissions=[])
         Membership.objects.create(user=user, organization=other_org, role=role)
-        
+
         # Create question in other org
         with tenant_context(other_org):
             other_question = Q.objects.create(
@@ -429,11 +429,11 @@ class TestQuestionListView:
                 answer_choices=[],
                 status='published'
             )
-        
+
         # In user's current org
         client.force_login(user)
         response = client.get(reverse('catalog:list'), {'org': str(organization.id)})
-        
+
         # Should not see other org's question
         assert question in response.context['object_list']
         assert other_question not in response.context['object_list']
@@ -455,42 +455,42 @@ from core.tenant import tenant_context
 @pytest.mark.integration
 class TestImportWorkflow:
     """Test full import → review → publish workflow."""
-    
+
     def test_import_excel_to_publish(self, client, user, organization):
         """Complete import workflow: upload → parse → approve → publish."""
         client.force_login(user)
-        
+
         # Step 1: Upload file
         excel_file = SimpleUploadedFile(
             'questions.xlsx',
             b'xlsx content here',
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        
+
         response = client.post(
             reverse('catalog:import_create'),
             {'import_file': excel_file},
             follow=True
         )
-        
+
         assert response.status_code == 200
         batch = ImportBatch.objects.latest('id')
         assert batch.status == 'pending'
-        
+
         # Step 2: Parse (triggers Celery task)
         response = client.post(
             reverse('catalog:import_parse', args=[batch.id]),
             follow=True
         )
-        
+
         # Task runs synchronously in tests (CELERY_TASK_ALWAYS_EAGER)
         batch.refresh_from_db()
         assert batch.status == 'parsed'
-        
+
         # Drafts created
         drafts = batch.drafts.all()
         assert drafts.count() > 0
-        
+
         # Step 3: Review and approve draft
         draft = drafts.first()
         response = client.post(
@@ -498,16 +498,16 @@ class TestImportWorkflow:
             {'review_notes': 'Looks good'},
             follow=True
         )
-        
+
         draft.refresh_from_db()
         assert draft.approval == 'approved'
-        
+
         # Step 4: Publish batch
         response = client.post(
             reverse('catalog:import_publish', args=[batch.id]),
             follow=True
         )
-        
+
         batch.refresh_from_db()
         assert batch.status == 'published'
         assert draft.question.status == 'published'
@@ -524,14 +524,14 @@ from django.urls import reverse
 @pytest.mark.integration
 class TestExamWorkflow:
     """Test full exam taking workflow."""
-    
+
     def test_take_exam_and_submit(self, client, user, db):
         """User takes exam, answers questions, submits, gets score."""
         from exams.models import MockExam, ExamQuestion
         from datetime import datetime, timedelta
-        
+
         client.force_login(user)
-        
+
         # Create exam with 2 questions
         exam = MockExam.objects.create(
             organization=user.org,
@@ -539,45 +539,45 @@ class TestExamWorkflow:
             duration_minutes=60,
             scheduled_at=datetime.utcnow(),
         )
-        
+
         questions = [pytest.lazy_fixture('question') for _ in range(2)]
-        
+
         for i, q in enumerate(questions):
             ExamQuestion.objects.create(
                 exam=exam,
                 question=q,
                 order=i
             )
-        
+
         # Step 1: Start exam
         response = client.get(
             reverse('exams:exam_detail', args=[exam.id])
         )
-        
+
         assert response.status_code == 200
-        
+
         # Create attempt
         attempt = ExamAttempt.objects.create(
             user=user,
             exam=exam,
             started_at=datetime.utcnow()
         )
-        
+
         # Step 2: Submit answers
         for question in questions:
             response = client.post(
                 reverse('exams:submit_answer', args=[attempt.id, question.id]),
                 {'answer': 'A'},
             )
-            
+
             assert response.status_code == 200
-        
+
         # Step 3: Submit exam
         response = client.post(
             reverse('exams:submit_exam', args=[attempt.id]),
             follow=True
         )
-        
+
         attempt.refresh_from_db()
         assert attempt.submitted_at is not None
         assert attempt.percentage > 0
@@ -596,7 +596,7 @@ from unittest.mock import patch, MagicMock
 
 class TestGoogleOAuth:
     """Test Google OAuth login."""
-    
+
     @patch('accounts.auth.oauth2_session.fetch_token')
     def test_google_login_success(self, mock_fetch_token, client):
         """Google OAuth login creates/updates user."""
@@ -604,32 +604,32 @@ class TestGoogleOAuth:
             'access_token': 'fake_token',
             'id_token': 'fake_id_token'
         }
-        
+
         with patch('accounts.auth.GoogleIdTokenVerifier.verify') as mock_verify:
             mock_verify.return_value = {
                 'sub': 'google_user_123',
                 'email': 'user@gmail.com',
                 'name': 'John Doe'
             }
-            
+
             response = client.post('/auth/google/callback/', {
                 'code': 'fake_auth_code'
             })
-            
+
             # User should be created or updated
             from accounts.models import CustomUser
             user = CustomUser.objects.get(google_id='google_user_123')
             assert user.email == 'user@gmail.com'
-    
+
     @patch('accounts.auth.send_sms')
     def test_otp_login_sends_sms(self, mock_send_sms, client):
         """OTP login sends SMS."""
         mock_send_sms.return_value = True
-        
+
         response = client.post('/auth/otp/send/', {
             'phone': '+998901234567'
         })
-        
+
         mock_send_sms.assert_called_once()
         assert response.status_code == 200
 ```
@@ -644,25 +644,25 @@ from catalog.tasks import parse_excel_file
 
 class TestCeleryTasks:
     """Test Celery task execution."""
-    
+
     @patch('catalog.tasks.parse_excel_to_questions')
     def test_parse_task_success(self, mock_parse, organization):
         """Parse task processes file and creates drafts."""
         from catalog.models import ImportBatch
-        
+
         mock_parse.return_value = [
             {'title': 'Q1', 'answer': 'A'},
             {'title': 'Q2', 'answer': 'B'},
         ]
-        
+
         batch = ImportBatch.objects.create(
             organization=organization,
             import_format='excel',
             import_file_url='https://example.com/file.xlsx'
         )
-        
+
         result = parse_excel_file(str(batch.id), 'https://example.com/file.xlsx')
-        
+
         assert result['count'] == 2
         batch.refresh_from_db()
         assert batch.status == 'parsed'
@@ -680,21 +680,21 @@ from django.test.utils import override_settings
 @pytest.mark.performance
 class TestQuestionSearchPerformance:
     """Test search performance."""
-    
+
     @override_settings(DEBUG=True)
     def test_search_1000_questions(self, django_db_blocker, client, user):
         """Search across 1000 questions performs well."""
         from django.test import TransactionTestCase
         from django.db import connection
         from catalog.models import Question, QuestionBank
-        
+
         with django_db_blocker.unblock():
             # Create 1000 questions
             bank = QuestionBank.objects.create(
                 organization=user.org,
                 name='Large bank'
             )
-            
+
             questions = [
                 Question(
                     organization=user.org,
@@ -706,17 +706,17 @@ class TestQuestionSearchPerformance:
                 )
                 for i in range(1000)
             ]
-            
+
             Question.objects.bulk_create(questions, batch_size=100)
-            
+
             # Test search performance
             client.force_login(user)
-            
+
             with self.assertNumQueries(2):  # Expect exactly 2 queries
                 response = client.get(
                     reverse('catalog:list') + '?search=Question+500'
                 )
-            
+
             assert response.status_code == 200
             assert len(response.context['object_list']) > 0
 ```

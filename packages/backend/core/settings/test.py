@@ -1,7 +1,9 @@
 """
 Test settings — PostgreSQL, fast hashers, RLS support
 """
+
 import os
+
 from .base import *
 
 SECRET_KEY = 'test-secret-key-not-for-production'

@@ -15,14 +15,14 @@ import logging
 from django.conf import settings
 
 from apps.accounts.models import CustomUser, OTPCode
-from apps.accounts.services.phone_utils import normalize_phone, PhoneValidationError
+from apps.accounts.services.phone_utils import normalize_phone
 from apps.accounts.services.sms_backend import get_sms_backend
 
 log = logging.getLogger(__name__)
 
 # Rate limit sozlamalari
-SEND_RATE_WINDOW  = 600   # 10 daqiqa (soniyada)
-SEND_RATE_LIMIT   = 3     # 10 daqiqada max 3 ta SMS
+SEND_RATE_WINDOW = 600  # 10 daqiqa (soniyada)
+SEND_RATE_LIMIT = 3  # 10 daqiqada max 3 ta SMS
 
 
 class OTPError(Exception):
@@ -35,8 +35,10 @@ class OTPRateLimitError(OTPError):
 
 # ── Redis yordamchi ───────────────────────────────────────────
 
+
 def _redis():
     import redis
+
     return redis.Redis.from_url(
         getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
         decode_responses=True,
@@ -45,18 +47,16 @@ def _redis():
 
 def _check_send_rate(phone: str) -> None:
     """10 daqiqada 3 dan ko'p yuborishni bloklaydi."""
-    r   = _redis()
+    r = _redis()
     key = f'otp:send_count:{phone}'
     count = r.get(key)
     if count and int(count) >= SEND_RATE_LIMIT:
         ttl = r.ttl(key)
-        raise OTPRateLimitError(
-            f'Juda ko\'p urinish. {ttl} soniyadan keyin qayta urinib ko\'ring.'
-        )
+        raise OTPRateLimitError(f"Juda ko'p urinish. {ttl} soniyadan keyin qayta urinib ko'ring.")
 
 
 def _increment_send_count(phone: str) -> None:
-    r   = _redis()
+    r = _redis()
     key = f'otp:send_count:{phone}'
     pipe = r.pipeline()
     pipe.incr(key)
@@ -65,6 +65,7 @@ def _increment_send_count(phone: str) -> None:
 
 
 # ── Asosiy funksiyalar ────────────────────────────────────────
+
 
 def send_otp(raw_phone: str) -> str:
     """
@@ -91,7 +92,7 @@ def send_otp(raw_phone: str) -> str:
     sent = backend.send(phone, text)
     if not sent:
         otp.delete()
-        raise OTPError('SMS yuborishda xato yuz berdi. Keyinroq urinib ko\'ring.')
+        raise OTPError("SMS yuborishda xato yuz berdi. Keyinroq urinib ko'ring.")
 
     _increment_send_count(phone)
     log.info('OTP yuborildi: phone=%s id=%s', phone, otp.pk)
@@ -108,30 +109,25 @@ def verify_otp(raw_phone: str, code: str) -> CustomUser:
     """
     phone = normalize_phone(raw_phone)
 
-    otp = (
-        OTPCode.objects
-        .filter(phone=phone, is_verified=False)
-        .order_by('-created_at')
-        .first()
-    )
+    otp = OTPCode.objects.filter(phone=phone, is_verified=False).order_by('-created_at').first()
 
     if otp is None:
-        raise OTPError('Kod topilmadi. Qayta SMS so\'rang.')
+        raise OTPError("Kod topilmadi. Qayta SMS so'rang.")
 
     if otp.is_expired:
-        raise OTPError('Kod muddati o\'tgan. Qayta SMS so\'rang.')
+        raise OTPError("Kod muddati o'tgan. Qayta SMS so'rang.")
 
     if otp.is_exhausted:
-        raise OTPError('Juda ko\'p noto\'g\'ri urinish. Qayta SMS so\'rang.')
+        raise OTPError("Juda ko'p noto'g'ri urinish. Qayta SMS so'rang.")
 
     if otp.code != code.strip():
         otp.attempts += 1
         otp.save(update_fields=['attempts'])
         remaining = 3 - otp.attempts
         if remaining > 0:
-            raise OTPError(f'Noto\'g\'ri kod. {remaining} ta urinish qoldi.')
+            raise OTPError(f"Noto'g'ri kod. {remaining} ta urinish qoldi.")
         else:
-            raise OTPError('Noto\'g\'ri kod. Urinishlar tugadi. Qayta SMS so\'rang.')
+            raise OTPError("Noto'g'ri kod. Urinishlar tugadi. Qayta SMS so'rang.")
 
     # Kod to'g'ri
     otp.is_verified = True
@@ -143,6 +139,7 @@ def verify_otp(raw_phone: str, code: str) -> CustomUser:
 
 
 # ── Private helpers ───────────────────────────────────────────
+
 
 def _otp_text(code: str) -> str:
     brand = getattr(settings, 'PROJECT_BRAND_NAME', 'Milliy Sertifikat')

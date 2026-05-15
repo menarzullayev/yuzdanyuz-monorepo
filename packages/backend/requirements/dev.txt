@@ -11,7 +11,8 @@ factory-boy==3.3.3             # Test fixture (User, Org, Question factory)
 coverage==7.8.0                # Test qamrovi hisoboti
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
-ruff==0.11.8                   # Linter + formatter (flake8 + isort o'rniga)
+ruff==0.15.13                  # Linter + formatter (flake8 + isort o'rniga)
+pre-commit==4.6.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────
 ipython==8.35.0                # Django shell uchun

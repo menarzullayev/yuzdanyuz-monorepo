@@ -12,8 +12,8 @@ Ishlatish:
 """
 
 from django.db import models
-from django.conf import settings as django_settings
-from .managers import TenantManager, GlobalManager
+
+from .managers import GlobalManager, TenantManager
 
 
 class TenantMixin(models.Model):
@@ -32,7 +32,7 @@ class TenantMixin(models.Model):
         verbose_name='Tashkilot',
     )
 
-    objects        = TenantManager()
+    objects = TenantManager()
     global_objects = GlobalManager()
 
     class Meta:

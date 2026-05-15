@@ -129,7 +129,7 @@ def user_type(self):
         return 'platform_admin'
     if self.is_staff:
         return 'platform_staff'
-    
+
     membership = self.membership_set.filter(organization=current_org).first()
     return membership.role.name if membership else 'b2c'
 ```
@@ -263,7 +263,7 @@ Rate limit: 60 seconds
 class TenantMiddleware:
     # Sets organization context
     # Filters all queries by organization_id
-    
+
 class DeviceFingerprintMiddleware:
     # Checks device fingerprint (browser + OS + IP)
     # One user = one device at a time
@@ -313,4 +313,3 @@ def create_exam(request):
 5. **Redis for Sessions**: Device fingerprinting + rate limiting
 6. **Celery for Async**: Heavy lifting (AI parsing, notifications)
 7. **PostgreSQL Socket**: Local development security + performance
-

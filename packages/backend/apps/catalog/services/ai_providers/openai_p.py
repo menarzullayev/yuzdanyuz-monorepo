@@ -1,6 +1,6 @@
 import json
 
-from .base import BaseAIProvider, SYSTEM_PROMPT
+from .base import SYSTEM_PROMPT, BaseAIProvider
 
 
 class OpenAIProvider(BaseAIProvider):
@@ -16,20 +16,20 @@ class OpenAIProvider(BaseAIProvider):
             raise ImportError("openai paketi o'rnatilmagan. pip install openai")
 
         self.client = OpenAI(api_key=api_key, base_url=base_url or None)
-        self.model  = model
+        self.model = model
 
     def parse_text_block(self, text: str) -> dict:
         try:
             resp = self.client.chat.completions.create(
                 model=self.model,
-                response_format={"type": "json_object"},
+                response_format={'type': 'json_object'},
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": self._prompt(text)},
+                    {'role': 'system', 'content': SYSTEM_PROMPT},
+                    {'role': 'user', 'content': self._prompt(text)},
                 ],
             )
             return json.loads(resp.choices[0].message.content)
         except json.JSONDecodeError as exc:
-            return {"error": f"JSON parse xatosi: {exc}", "raw_text": text}
+            return {'error': f'JSON parse xatosi: {exc}', 'raw_text': text}
         except Exception as exc:
-            return {"error": str(exc), "raw_text": text}
+            return {'error': str(exc), 'raw_text': text}

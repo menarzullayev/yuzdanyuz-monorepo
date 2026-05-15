@@ -1,11 +1,11 @@
-import pytest
 from io import BytesIO
-from apps.catalog.models import (
-    Question, ImportBatch, QuestionDraft, Subject
-)
-from apps.catalog.services.bulk_import import bulk_import_from_file, BulkImportParser
-from core.tenant import tenant_context
+
 import openpyxl
+import pytest
+
+from apps.catalog.models import ImportBatch, Question, QuestionDraft, Subject
+from apps.catalog.services.bulk_import import BulkImportParser, bulk_import_from_file
+from core.tenant import tenant_context
 
 
 @pytest.mark.integration
@@ -56,11 +56,7 @@ class TestBulkImportParser:
 
     def test_bulk_import_creates_drafts(self, db, org):
         """Bulk import qatorlardan draft'lar yaratadi."""
-        subject = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
         csv_content = """question_text,type,subject,option_1,option_2,correct_1
 2 + 2 = ?,SC,Matematika,4,5,True
@@ -69,10 +65,7 @@ class TestBulkImportParser:
         file = BytesIO(csv_content.encode('utf-8'))
 
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv')
 
             result = bulk_import_from_file(file, 'csv', org, batch)
 
@@ -91,10 +84,7 @@ class TestBulkImportParser:
         file = BytesIO(csv_content.encode('utf-8'))
 
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv')
 
             result = bulk_import_from_file(file, 'csv', org, batch)
 
@@ -103,11 +93,7 @@ class TestBulkImportParser:
 
     def test_import_validation_catches_missing_question_text(self, db, org):
         """Bo'sh savol matni tekshiriladi."""
-        subject = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
         csv_content = """question_text,type,subject,option_1
 ,SC,Matematika,4"""
@@ -115,10 +101,7 @@ class TestBulkImportParser:
         file = BytesIO(csv_content.encode('utf-8'))
 
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv')
 
             result = bulk_import_from_file(file, 'csv', org, batch)
 
@@ -126,11 +109,7 @@ class TestBulkImportParser:
 
     def test_import_batch_status_tracking(self, db, org):
         """Import batch status'i to'g'ri o'zgaradi."""
-        subject = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
         csv_content = """question_text,type,subject
 2 + 2 = ?,SC,Matematika"""
@@ -139,9 +118,7 @@ class TestBulkImportParser:
 
         with tenant_context(org):
             batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv',
-                status=ImportBatch.Status.PENDING
+                organization=org, file_type='csv', status=ImportBatch.Status.PENDING
             )
 
             assert batch.status == ImportBatch.Status.PENDING
@@ -156,18 +133,10 @@ class TestBulkImportParser:
 class TestDraftPublishWorkflow:
     def test_draft_to_question_conversion(self, db, org, user):
         """Draft'ni question'ga aylantirib tekshirish."""
-        subject = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv',
-                created_by=user
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv', created_by=user)
 
             draft = QuestionDraft.objects.create(
                 batch=batch,
@@ -177,26 +146,23 @@ class TestDraftPublishWorkflow:
                     'text': '2 + 2 = ?',
                     'options': [
                         {'id': '1', 'text': '4', 'is_correct': True},
-                        {'id': '2', 'text': '5', 'is_correct': False}
-                    ]
+                        {'id': '2', 'text': '5', 'is_correct': False},
+                    ],
                 },
-                is_valid=True
+                is_valid=True,
             )
 
             # Question yaratish
-            question = Question.objects.create(
-                organization=org,
-                subject=subject,
-                type=draft.type
-            )
+            question = Question.objects.create(organization=org, subject=subject, type=draft.type)
 
             from apps.catalog.models import QuestionVersion
+
             version = QuestionVersion.objects.create(
                 question=question,
                 version_number=1,
                 content=draft.data,
                 options=draft.data['options'],
-                created_by=user
+                created_by=user,
             )
 
             # Draft'ni publish qilish
@@ -210,17 +176,10 @@ class TestDraftPublishWorkflow:
 
     def test_bulk_publish_invalid_drafts_skipped(self, db, org):
         """Invalid draft'lar publish qilinmaydi."""
-        subject = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv')
 
             # Valid draft
             valid_draft = QuestionDraft.objects.create(
@@ -228,7 +187,7 @@ class TestDraftPublishWorkflow:
                 type=Question.Type.SINGLE_CHOICE,
                 subject=subject,
                 data={'text': 'Valid', 'options': []},
-                is_valid=True
+                is_valid=True,
             )
 
             # Invalid draft
@@ -237,7 +196,7 @@ class TestDraftPublishWorkflow:
                 type=Question.Type.SINGLE_CHOICE,
                 subject=subject,
                 data={'text': '', 'options': []},
-                is_valid=False
+                is_valid=False,
             )
 
         assert valid_draft.is_valid is True
@@ -246,19 +205,13 @@ class TestDraftPublishWorkflow:
     def test_draft_with_validation_errors(self, db, org):
         """Draft validation xatolarini saqlaydi."""
         with tenant_context(org):
-            batch = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch = ImportBatch.objects.create(organization=org, file_type='csv')
 
             draft = QuestionDraft.objects.create(
                 batch=batch,
                 data={},
                 is_valid=False,
-                validation_errors=[
-                    "Savol matni bo'sh",
-                    "Fan tanlanmagan"
-                ]
+                validation_errors=["Savol matni bo'sh", 'Fan tanlanmagan'],
             )
 
         assert len(draft.validation_errors) == 2
@@ -268,38 +221,20 @@ class TestDraftPublishWorkflow:
 class TestMultiTenantImport:
     def test_import_isolation_between_orgs(self, db, org, org2):
         """Bir org ning import boshqa org ko'rsmaydi."""
-        subject1 = Subject.objects.create(
-            name="Matematika",
-            slug="matematika",
-            organization=org
-        )
+        subject1 = Subject.objects.create(name='Matematika', slug='matematika', organization=org)
 
-        subject2 = Subject.objects.create(
-            name="Fizika",
-            slug="fizika",
-            organization=org2
-        )
+        subject2 = Subject.objects.create(name='Fizika', slug='fizika', organization=org2)
 
         with tenant_context(org):
-            batch1 = ImportBatch.objects.create(
-                organization=org,
-                file_type='csv'
-            )
+            batch1 = ImportBatch.objects.create(organization=org, file_type='csv')
             draft1 = QuestionDraft.objects.create(
-                batch=batch1,
-                data={'text': 'Test'},
-                subject=subject1
+                batch=batch1, data={'text': 'Test'}, subject=subject1
             )
 
         with tenant_context(org2):
-            batch2 = ImportBatch.objects.create(
-                organization=org2,
-                file_type='csv'
-            )
+            batch2 = ImportBatch.objects.create(organization=org2, file_type='csv')
             draft2 = QuestionDraft.objects.create(
-                batch=batch2,
-                data={'text': 'Test2'},
-                subject=subject2
+                batch=batch2, data={'text': 'Test2'}, subject=subject2
             )
 
         # org1 dan faqat org1 batch ko'rish kerak

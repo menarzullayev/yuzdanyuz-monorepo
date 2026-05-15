@@ -4,8 +4,8 @@ Focus: permission derivation across roles, cross-org denial, membership status
 """
 
 import pytest
-from apps.catalog.models import Question
-from apps.organizations.models import OrgRole, Membership, MembershipStatus
+
+from apps.organizations.models import Membership, MembershipStatus, OrgRole
 from core.tenant import set_current_org
 
 
@@ -22,8 +22,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -44,8 +43,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -68,8 +66,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -85,8 +82,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -108,8 +104,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.ACTIVE, is_primary=True
+            user=user, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
         )
         m.activate()
 
@@ -125,8 +120,7 @@ class TestRBACEndToEnd:
         role.save()
 
         m = Membership.objects.create(
-            user=user, organization=org, role=role,
-            status=MembershipStatus.SUSPENDED
+            user=user, organization=org, role=role, status=MembershipStatus.SUSPENDED
         )
 
         # Suspended = no access

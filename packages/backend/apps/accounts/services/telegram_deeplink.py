@@ -30,6 +30,7 @@ SESSION_TTL = 300  # 5 daqiqa
 
 def _redis():
     import redis as _r
+
     return _r.Redis.from_url(
         getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
         decode_responses=True,
@@ -48,17 +49,19 @@ def _save(token: str, data: dict) -> None:
 
 # ── Session boshqaruv ─────────────────────────────────────────
 
+
 def create_session() -> dict:
     """
     Yangi deep link sessiya yaratadi.
     Returns: {token, deep_link}
     """
-    token        = uuid.uuid4().hex
+    token = uuid.uuid4().hex
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', '')
-    deep_link    = f'https://t.me/{bot_username}?start=tgauth_{token}'
+    deep_link = f'https://t.me/{bot_username}?start=tgauth_{token}'
 
     _redis().setex(
-        _key(token), SESSION_TTL,
+        _key(token),
+        SESSION_TTL,
         json.dumps({'status': 'pending', 'telegram_id': None, 'phone': None, 'user_pk': None}),
     )
     return {'token': token, 'deep_link': deep_link}
@@ -74,6 +77,7 @@ def expire_session(token: str) -> None:
 
 
 # ── Bot tomonidan chaqiriladi ─────────────────────────────────
+
 
 def on_bot_start(token: str, telegram_id: int) -> bool:
     """
@@ -116,6 +120,7 @@ def on_bot_contact(telegram_id: int, phone: str, contact_user_id: int | None) ->
 
     # E.164 formatga keltirish
     from apps.accounts.services.phone_utils import normalize_phone
+
     try:
         normalized_phone = normalize_phone(phone)
     except Exception:
@@ -141,6 +146,7 @@ def get_verified_user_pk(token: str) -> int | None:
 
 
 # ── Private helpers ───────────────────────────────────────────
+
 
 def _find_token_by_telegram_id(telegram_id: int) -> str | None:
     """Redis da ushbu telegram_id uchun 'waiting' sessiyani qidiradi."""

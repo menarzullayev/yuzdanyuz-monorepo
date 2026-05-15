@@ -3,10 +3,12 @@ Security tests for JWT token handling
 Focus: tamper detection, expiration, type validation, signature verification
 """
 
-import pytest
+from datetime import UTC, datetime, timedelta
+
 import jwt as pyjwt
-from datetime import datetime, timezone, timedelta
+import pytest
 from django.conf import settings
+
 from apps.accounts.services.token_service import verify_access_token
 
 
@@ -19,16 +21,20 @@ class TestJWTTokenSecurity:
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
         # Tamper with token (change sub)
         parts = token.split('.')
         tampered = pyjwt.encode(
-            {'sub': 'different-id', 'type': 'access', 'exp': datetime.now(timezone.utc) + timedelta(hours=1)},
+            {
+                'sub': 'different-id',
+                'type': 'access',
+                'exp': datetime.now(UTC) + timedelta(hours=1),
+            },
             settings.SECRET_KEY,
-            algorithm='HS256'
+            algorithm='HS256',
         )
 
         # Original valid
@@ -42,7 +48,7 @@ class TestJWTTokenSecurity:
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) - timedelta(hours=1)
+            'exp': datetime.now(UTC) - timedelta(hours=1),
         }
         expired_token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
@@ -53,7 +59,7 @@ class TestJWTTokenSecurity:
         payload = {
             'sub': str(user.pk),
             'type': 'access',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         # Encode with HS512
         token_hs512 = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS512')
@@ -67,7 +73,7 @@ class TestJWTTokenSecurity:
             'sub': str(user.pk),
             'type': 'access',
             'current_org': str(org.pk),
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         # Signed with wrong secret
         forged = pyjwt.encode(payload, 'different-secret', algorithm='HS256')
@@ -82,7 +88,7 @@ class TestJWTTokenSecurity:
         payload = {
             'sub': str(user.pk),
             'type': 'access',  # Not refresh
-            'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+            'exp': datetime.now(UTC) + timedelta(hours=1),
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 

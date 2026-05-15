@@ -1,6 +1,6 @@
 import json
 
-from .base import BaseAIProvider, SYSTEM_PROMPT
+from .base import SYSTEM_PROMPT, BaseAIProvider
 
 
 class GeminiProvider(BaseAIProvider):
@@ -13,13 +13,15 @@ class GeminiProvider(BaseAIProvider):
         try:
             import google.generativeai as genai
         except ImportError:
-            raise ImportError("google-generativeai paketi o'rnatilmagan. pip install google-generativeai")
+            raise ImportError(
+                "google-generativeai paketi o'rnatilmagan. pip install google-generativeai"
+            )
 
         genai.configure(api_key=api_key)
         self._model = genai.GenerativeModel(
             model_name=model,
             system_instruction=SYSTEM_PROMPT,
-            generation_config=genai.GenerationConfig(response_mime_type="application/json"),
+            generation_config=genai.GenerationConfig(response_mime_type='application/json'),
         )
 
     def parse_text_block(self, text: str) -> dict:
@@ -27,6 +29,6 @@ class GeminiProvider(BaseAIProvider):
             response = self._model.generate_content(self._prompt(text))
             return json.loads(response.text)
         except json.JSONDecodeError as exc:
-            return {"error": f"JSON parse xatosi: {exc}", "raw_text": text}
+            return {'error': f'JSON parse xatosi: {exc}', 'raw_text': text}
         except Exception as exc:
-            return {"error": str(exc), "raw_text": text}
+            return {'error': str(exc), 'raw_text': text}

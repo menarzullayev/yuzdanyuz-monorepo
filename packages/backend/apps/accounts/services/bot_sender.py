@@ -4,6 +4,7 @@ python-telegram-bot kutubxonasiz — to'g'ridan-to'g'ri HTTP (sodda va ishonchli
 """
 
 import logging
+
 import requests
 from django.conf import settings
 
@@ -23,9 +24,9 @@ def send_message(telegram_id: int, text: str) -> bool:
         resp = requests.post(
             TELEGRAM_API.format(token=token),
             json={
-                'chat_id'    : telegram_id,
-                'text'       : text,
-                'parse_mode' : 'HTML',
+                'chat_id': telegram_id,
+                'text': text,
+                'parse_mode': 'HTML',
             },
             timeout=8,
         )
@@ -53,17 +54,18 @@ def send_contact_request(telegram_id: int) -> bool:
             TELEGRAM_API.format(token=token),
             json={
                 'chat_id': telegram_id,
-                'text'   : (
-                    f'<b>{brand}</b> saytiga kirish uchun\n'
-                    f'telefon raqamingizni ulashing 👇'
-                ),
-                'parse_mode'  : 'HTML',
+                'text': (f'<b>{brand}</b> saytiga kirish uchun\ntelefon raqamingizni ulashing 👇'),
+                'parse_mode': 'HTML',
                 'reply_markup': {
-                    'keyboard': [[{
-                        'text'           : '📱 Telefon raqamni ulash',
-                        'request_contact': True,
-                    }]],
-                    'resize_keyboard' : True,
+                    'keyboard': [
+                        [
+                            {
+                                'text': '📱 Telefon raqamni ulash',
+                                'request_contact': True,
+                            }
+                        ]
+                    ],
+                    'resize_keyboard': True,
                     'one_time_keyboard': True,
                 },
             },
@@ -85,9 +87,9 @@ def send_success_message(telegram_id: int) -> bool:
         resp = requests.post(
             TELEGRAM_API.format(token=token),
             json={
-                'chat_id'     : telegram_id,
-                'text'        : f'✅ <b>{brand}</b> ga muvaffaqiyatli kirdingiz!',
-                'parse_mode'  : 'HTML',
+                'chat_id': telegram_id,
+                'text': f'✅ <b>{brand}</b> ga muvaffaqiyatli kirdingiz!',
+                'parse_mode': 'HTML',
                 'reply_markup': {'remove_keyboard': True},
             },
             timeout=8,

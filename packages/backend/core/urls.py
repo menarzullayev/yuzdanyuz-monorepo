@@ -1,30 +1,29 @@
-from django.contrib import admin
-from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.contrib import admin
 from django.http import HttpResponse
-from django.views.generic import RedirectView
+from django.urls import include, path
 
 
 def ping_view(request):
-    return HttpResponse("pong")
+    return HttpResponse('pong')
 
 
 from django.shortcuts import redirect
 
+
 def home_view(request):
     if request.user.is_authenticated:
-        return HttpResponse("<h1>YuzdanYuz Dashboard</h1><p>Tizimga muvaffaqiyatli kirdingiz!</p>")
+        return HttpResponse('<h1>YuzdanYuz Dashboard</h1><p>Tizimga muvaffaqiyatli kirdingiz!</p>')
     return redirect('accounts:login')
+
 
 urlpatterns = [
     path('', home_view, name='home'),
     path('admin/', admin.site.urls),
     path('ping/', ping_view, name='ping'),
-
     # Google OAuth (django-allauth)
     path('accounts/', include('allauth.urls')),
-
     # Domain apps
     path('', include('apps.accounts.urls', namespace='accounts')),
     path('org/', include('apps.organizations.urls', namespace='organizations')),

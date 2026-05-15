@@ -18,7 +18,6 @@ Block bo'lsa: HTTP 429 + Retry-After header.
 import logging
 
 from django.http import JsonResponse
-from django.urls import resolve, Resolver404
 
 from core.utils import rate_limiter as rl
 
@@ -88,7 +87,7 @@ class RateLimitMiddleware:
             return self._too_many_requests(request, e)
         except Exception as e:
             # Redis ishlamayotgan bo'lsa, request'ni o'tkazib yuboramiz
-            log.error("Rate limit middleware error: %s", e)
+            log.error('Rate limit middleware error: %s', e)
 
         return self.get_response(request)
 
