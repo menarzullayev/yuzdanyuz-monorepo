@@ -1,0 +1,71 @@
+version: 2
+
+updates:
+  # Backend Python dependencies
+  - package-ecosystem: pip
+    directory: /packages/backend/requirements
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tashkent
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    labels:
+      - dependencies
+      - backend
+    groups:
+      django:
+        patterns:
+          - "django*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "factory-boy"
+          - "coverage"
+
+  # Frontend Web dependencies (Next.js)
+  - package-ecosystem: npm
+    directory: /packages/frontend-web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    labels:
+      - dependencies
+      - frontend-web
+    groups:
+      next:
+        patterns:
+          - "next"
+          - "react*"
+          - "@types/react*"
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "postcss*"
+          - "autoprefixer"
+
+  # Monorepo root
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - monorepo
+
+  # GitHub Actions (workflow versiyalari)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - ci
