@@ -483,7 +483,7 @@ Return error to user
 
 ## Task 5 — Leaderboard va Redis Reyting Tizimi
 
-**Status**: 🟢 **Core + WebSocket ✅** (PR #31, #32). Celery archive 🔵 PENDING.
+**Status**: 🟢 **BACKEND COMPLETE** — Core + WebSocket + Archive ✅ (PR #31, #32, #33). Frontend leaderboard sahifasi 🔵 alohida workstream.
 
 **Maqsad**: 50,000+ bir vaqtdagi foydalanuvchida ham qotmaydigan real-time reyting.
 
@@ -512,9 +512,19 @@ Return error to user
 - [x] Channel layer: Redis prod, InMemoryChannelLayer test
 - [x] 5 ta async test (385 jami)
 
-**Pending** 🔵 (kelajakdagi PR'lar):
-- [ ] **Haftalik/oylik/yillik reyting** — Celery cron orqali Redis ZSET → DB snapshot arxivlash
-- [ ] **Leaderboard HTMX/Next.js sahifasi** — Frontend tomon
+**Archive** ✅ COMPLETE (PR #33, 2026-05-16):
+- [x] `LeaderboardSnapshot` model — `(period, period_key, scope_kind, scope_id)` unique
+- [x] period_key formatlari: `2026-W19` (weekly), `2026-05` (monthly), `2026` (yearly)
+- [x] Celery task `archive_leaderboards(period)` — Redis SCAN orqali aktiv scope'larni topib snapshot qiladi
+- [x] `update_or_create` — idempotent (qayta run faqat yangilaydi)
+- [x] Top-N (default 1000) entries JSONField'da
+- [x] REST API `GET /api/leaderboard/history/` — period/scope_kind/period_key bilan filter
+- [x] Beat schedule — django-celery-beat admin'da boshqariladi (har dushanba/oy 1-kuni/1-yanvar)
+- [x] 13 ta test (398 jami)
+
+**Frontend** 🔵 (alohida workstream):
+- [ ] **Leaderboard Next.js sahifasi** — top-100 + me payload, WebSocket subscribe → auto-refresh
+- [ ] **History viewer** — period selector + snapshot navigation
 
 ### Tech Stack
 `Redis` · `django-channels` · `Celery Beat`
@@ -685,7 +695,7 @@ Return error to user
 | 2 | Auth + Device Fingerprinting | ⭐⭐⭐ | ✅ COMPLETE | ✅ 246 test (95%+) |
 | 3 | Question Bank + Kontent Himoya | ⭐⭐⭐ | ✅ COMPLETE (10/10) | ✅ 49 test (99%+) |
 | 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟢 Backend ✅ (data+celery+API+WS+RLS) / Frontend 🔵 | ✅ 53 test (Task 4) |
-| 5 | Redis Leaderboard | ⭐⭐ | 🟢 Core ✅ / WS ✅ / archive 🔵 | ✅ 19 test |
+| 5 | Redis Leaderboard | ⭐⭐ | 🟢 Backend ✅ (core+WS+archive) / Frontend 🔵 | ✅ 32 test |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🔵 Planned |  |
@@ -722,16 +732,18 @@ Return error to user
 - Login + Dashboard pages
 - Production startup scripts
 
-**Task 5** (2026-05-16): 🟢 **CORE + WS COMPLETE** (PR #31, #32)
+**Task 5** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #31, #32, #33)
 - Service: `apps/engagement/leaderboard.py` — Redis ZSET wrapper + Channels broadcast
 - 4 ta scope: `lb:mock:<id>`, `lb:global`, `lb:region:<id>`, `lb:tenant:<id>`
 - Best-of semantics: GT modifier (Redis 6.2+) + fallback compare-and-swap
 - Signal: ExamAttempt SUBMITTED + score → leaderboard.record_attempt()
-- REST API: 5 endpoint, N+1 yo'q (single SQL prefetch)
+- REST API: **6 endpoint** (top + history), N+1 yo'q (single SQL prefetch)
 - WebSocket consumer: `ws/leaderboard/<scope>/` — auth + scope authorization
 - Real-time push: ZADD → channel layer `group_send` → subscribed clients
-- Tests: 19/19 ✅ (385 jami)
-- Celery archive (kelajak PR): 🔵
+- **Archive**: `LeaderboardSnapshot` model + `archive_leaderboards` Celery beat task
+  (weekly/monthly/yearly snapshot, idempotent via update_or_create, Top-1000)
+- Tests: **32/32 ✅** (398 jami)
+- Frontend Next.js sahifa (kelajak): 🔵
 
 **Task 4** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #25, #27, #28, #29 + RLS)
 - Models: 7/7 ✅ + custom manager + 1 migration
@@ -752,13 +764,14 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       385 ✅ (100% passing)
-Models:             42 ✅ (all tenant-aware: 35 + 7 exam)
+Total Tests:       398 ✅ (100% passing)
+Models:             43 ✅ (35 + 7 exam + LeaderboardSnapshot)
 Services:          28+ ✅ (+ leaderboard ZSET service)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     58+ ✅ (+ /api/leaderboard/* 5 ta)
+API Endpoints:     59+ ✅ (+ /api/leaderboard/* 6 ta — list/region/tenant/mock/me/history)
 WebSocket:          5  ✅ (ws/exams/attempt/<id>/, ws/leaderboard/{global|region|tenant|mock}/)
-Celery tasks:       3  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score)
+Celery tasks:       4  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score,
+                          archive_leaderboards)
 Redis ZSETs:        4  ✅ scope (lb:mock, lb:global, lb:region, lb:tenant)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
