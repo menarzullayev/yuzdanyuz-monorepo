@@ -1,0 +1,16 @@
+{
+  "name": "yuzdanyuz-monorepo",
+  "version": "1.0.0",
+  "description": "YuzDanYuz - DTM Simulator Super-App Monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "axios": "^1.16.1",
+    "classnames": "^2.5.1",
+    "date-fns": "^4.1.0",
+    "jwt-decode": "^4.0.0",
+    "zustand": "^5.0.13"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@yuzdanyuz/shared",
+  "version": "1.0.0",
+  "description": "Shared TypeScript utilities for web + mobile",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "jwt-decode": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
