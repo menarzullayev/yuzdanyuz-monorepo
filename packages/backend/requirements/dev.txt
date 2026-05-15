@@ -4,12 +4,12 @@
 django-debug-toolbar==5.2.0    # SQL query va performance nazorat
 
 # ── Testing ───────────────────────────────────────────────────────────────────
-pytest==8.3.5
-pytest-django==4.10.0
-pytest-asyncio==0.26.0         # Async view va channel testlari
-pytest-cov==6.0.0              # Coverage reporting plugin
+pytest==9.0.3
+pytest-django==4.12.0
+pytest-asyncio==1.3.0         # Async view va channel testlari
+pytest-cov==7.1.0              # Coverage reporting plugin
 factory-boy==3.3.3             # Test fixture (User, Org, Question factory)
-coverage==7.8.0                # Test qamrovi hisoboti
+coverage==7.14.0                # Test qamrovi hisoboti
 fakeredis==2.35.1              # Redis mock for tests (conftest mock_redis fixture)
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
