@@ -44,10 +44,28 @@ npm run dev
 
 ## Documentation
 
-- **Backend**: [packages/backend/CLAUDE.md](packages/backend/CLAUDE.md) · [packages/backend/docs/](packages/backend/docs/)
-- **Frontend**: [packages/frontend-web/docs/](packages/frontend-web/docs/)
+- **Project rules** (Claude Code): [.claude/CLAUDE.md](.claude/CLAUDE.md)
+- **Lessons learned**: [.claude/LESSONS.md](.claude/LESSONS.md)
+- **Backend docs**: [packages/backend/docs/](packages/backend/docs/)
+- **Frontend docs**: [packages/frontend-web/docs/](packages/frontend-web/docs/)
 - **Roadmap**: [packages/backend/docs/roadmap.md](packages/backend/docs/roadmap.md)
 - **Deployment**: [/home/hsm/docs/deployment/](../../docs/deployment/)
+
+## Claude Code Agent Setup
+
+This repo includes a full Claude Code agent configuration in [.claude/](.claude/):
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| **Memory** | `.claude/CLAUDE.md`, `.claude/LESSONS.md` | Project rules + self-improvement log |
+| **Hooks** | `.claude/hooks/*.sh` | PostToolUse format/validate, SessionStart context, PreCompact save |
+| **Skills** | `.claude/skills/*/SKILL.md` | Auto-invoked domain expertise (multitenant-rls, auth-jwt) |
+| **Agents** | `.claude/agents/*.md` | Subagents (migration-validator, tenant-auditor, test-runner) |
+| **Commands** | `.claude/commands/*.md` | Slash commands (`/verify`, `/ship`, `/new-task`, `/audit-tenant`, `/db-snapshot`) |
+| **Statusline** | `.claude/statusline` | Bottom bar: branch, dirty count, CI status, test count |
+| **Plugin** | `.claude/plugins/manifest.json` | Package metadata for redistribution |
+
+New developers: clone the repo, hooks/skills/commands work automatically when using Claude Code.
 
 ## Tech Stack
 
