@@ -1,0 +1,56 @@
+#!/bin/bash
+# Custom statusline — shows project status in Claude Code bottom bar.
+# Receives JSON on stdin with model, cwd, etc.
+
+set -euo pipefail
+cd /home/hsm/apps/yuzdanyuz-monorepo 2>/dev/null || cd "$(pwd)"
+
+# Branch + dirty indicator
+BRANCH=$(git branch --show-current 2>/dev/null || echo "?")
+DIRTY=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+DIRTY_IND=""
+[ "$DIRTY" -gt 0 ] && DIRTY_IND="●${DIRTY}"
+
+# Ahead/behind
+AHEAD=""
+BEHIND=""
+if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
+  A=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+  B=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
+  [ "$A" != "0" ] && AHEAD="↑$A"
+  [ "$B" != "0" ] && BEHIND="↓$B"
+fi
+
+# CI status (cached, refresh every 60s)
+CI_CACHE=/tmp/.claude-ci-status
+CI_FRESH=0
+if [ -f "$CI_CACHE" ]; then
+  AGE=$(($(date +%s) - $(stat -c %Y "$CI_CACHE" 2>/dev/null || echo 0)))
+  [ "$AGE" -lt 60 ] && CI_FRESH=1
+fi
+if [ "$CI_FRESH" = "0" ] && command -v gh >/dev/null 2>&1; then
+  gh run list --branch "$BRANCH" --limit 1 --json conclusion,status 2>/dev/null \
+    | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    if d:
+        c=d[0].get('conclusion') or d[0].get('status')
+        print({'success':'✅','failure':'❌','in_progress':'⏳','queued':'⏸'}.get(c,'❓'))
+    else:
+        print('—')
+except: print('—')
+" > "$CI_CACHE" 2>/dev/null || echo "—" > "$CI_CACHE"
+fi
+CI=$(cat "$CI_CACHE" 2>/dev/null || echo "—")
+
+# Test count (from pytest cache)
+TESTS=""
+if [ -d packages/backend/.pytest_cache/v/cache ]; then
+  TESTS=$(find packages/backend/.pytest_cache/v/cache -name "nodeids" -exec wc -l {} \; 2>/dev/null \
+    | awk '{s+=$1} END {print s}')
+  [ -n "$TESTS" ] && [ "$TESTS" -gt 0 ] && TESTS=" ✓${TESTS}t"
+fi
+
+# Compose
+echo "[${BRANCH}] ${DIRTY_IND}${AHEAD}${BEHIND}  CI:${CI}${TESTS}"
