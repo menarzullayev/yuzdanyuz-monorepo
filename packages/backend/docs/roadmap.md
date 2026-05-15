@@ -374,7 +374,7 @@ Return error to user
 
 ## Task 4 — Exam Engine: Test va Imtihon Dvigateli
 
-**Status**: 🟡 **IN PROGRESS** — Data layer ✅ COMPLETE (PR #25), application layer 🔵 PENDING
+**Status**: 🟢 **BACKEND COMPLETE** — Data + Celery + REST API + WebSocket + RLS migration ✅ (PR #25, #27, #28, #29 + RLS PR). Frontend Next.js qism alohida workstream.
 
 **Maqsad**: Haqiqiy DTM simulyatori + cheksiz mashg'ulot rejimi.
 
@@ -392,21 +392,35 @@ Return error to user
 - [x] **Auto-Quarantine foundation** — `QuestionDispute` model + `auto_correct` field UserAnswer'da
 - [x] 20 ta unit test (PublicOrTenantManager 7, MockExamQuestion 3, ExamAttempt 2, PracticeSession 1, UserAnswer XOR 4, AntiCheatEvent 1, QuestionDispute 2)
 
-**Application Layer** 🔵 PENDING (kelajakdagi PR'lar):
-- [ ] **Views + serializers** — REST API (mock list/detail, attempt start/submit, practice generate, dispute file)
-- [ ] **WebSocket consumer** (Django Channels) — heartbeat processor + 3-strike auto-cancel + timer sync
-- [ ] **Celery task'lar**:
-  - Weekly mock auto-publish (yakshanba 10:00)
-  - Quarantine recompute (>5% disputes → `Question.is_quarantined=True` + `UserAnswer.auto_correct=True` for all affected)
-  - Score finalize (submit'dan keyin `score` va `correct_count` recompute)
-- [ ] **Strict Browser Lock** (Next.js Frontend):
+**Application Layer** ✅ COMPLETE (PR #27, #28, #29, RLS — 2026-05-16):
+- [x] **Celery task'lar** (PR #27):
+  - `publish_scheduled_mocks` — beat har 5 daqiqada (django-celery-beat admin)
+  - `quarantine_check` — QuestionDispute post_save signal'dan, ratio >= 5% AND disputes >= 5 trigger
+  - `finalize_attempt_score` — submit'dan keyin score recompute (auto_correct ham hisoblanadi)
+- [x] **REST API** (PR #28) — 12 ta endpoint, DRF SessionAuthentication + IsAuthenticated:
+  - `GET/POST /api/exams/mocks/` (list, detail, start)
+  - `GET/POST /api/exams/attempts/{id}/` (detail, answer, submit, anticheat, dispute)
+  - `GET/POST /api/exams/practice/{id}/` (create, detail, answer, finish)
+  - 9 ta serializer (`is_correct` stripped — cheat himoya)
+  - Cross-user 403, blueprint validation, idempotent start
+- [x] **WebSocket consumer** (PR #29) — Django Channels + ProtocolTypeRouter:
+  - URL: `ws/exams/attempt/<id>/`
+  - Client: heartbeat / anticheat / request_timer
+  - Server: timer / heartbeat_ack / strike / cancelled / expired
+  - Connection guards (close codes): 4401 anonymous / 4404 not yours / 4409 not in_progress / 4408 expired / 4410 cancelled
+  - `select_for_update` atomic strike — concurrent race himoyasi
+- [x] **RLS migration** — 6 ta exam table uchun PostgreSQL RLS policies (catalog.0003_enable_rls pattern):
+  - `exams_mockexam` (org OR is_public=true), `exams_mockexamquestion` (parent mock_exam orqali)
+  - `exams_examattempt`, `exams_practicesession`, `exams_useranswer`, `exams_anticheatevent`, `exams_questiondispute` — standard tenant policy
+
+**Frontend / Out-of-scope** 🔵 (alohida workstream):
+- [ ] **Strict Browser Lock** (Next.js):
   - Fullscreen API majburiy
   - `Alt+Tab`, `Ctrl+C`, `Ctrl+V`, `F12`, `PrtScr` blokirovka
   - `Page Visibility API` — tab o'zgarishini sezish
-  - WebSocket'ga AntiCheatEvent jo'natish
-- [ ] **Vaqt hisoblagich** — WebSocket orqali server↔client time sync
+  - WebSocket'ga `{type: 'anticheat', event: ...}` jo'natish
+- [ ] **Vaqt hisoblagich** — Server-driven (WebSocket `timer` event'ini ko'rsatish)
 - [ ] **B2B Custom Exam UI** — Frontend Next.js admin paneli (mock yaratish, savol biriktirish)
-- [ ] **RLS migration** — 6 ta yangi exam table uchun PostgreSQL RLS policies (catalog.0003_enable_rls pattern bo'yicha)
 
 ### Tech Stack
 `Django Channels` · `WebSockets` · `Celery` · `Redis` · `PostgreSQL JSONB` · `PostgreSQL CHECK constraints`
@@ -414,17 +428,54 @@ Return error to user
 ### Arxitektura qaror
 > **Gibrid Dvigatel** — Statik Mock (adolatli reyting) + Dinamik Practice (cheksiz mashq) (Bosqich 3, 4, 23)
 
-### Task 4 — Data Layer (2026-05-16) ✅
+### Task 4 — Backend To'liq (2026-05-16) ✅
 
-**Maqsad**: Exam Engine ma'lumotlar bazasi qatlamini tayyorlash.
+**Maqsad**: Exam Engine ma'lumotlar bazasi + business logic + real-time + RLS qatlamlari.
 
-**Ishlab chiqilgan qismlar**:
-- 7 ta yangi model (`apps/exams/models.py`, 416 qator)
-- 1 ta custom manager (`apps/exams/managers.py`)
-- 1 ta migration (`apps/exams/migrations/0001_initial.py` — 7 model, 8 index, 4 unique constraint, 1 CHECK constraint)
-- Django admin barchasi ro'yxatga olindi (raw_id_fields + `MockExamQuestionInline`)
-- 20 ta unit test (333 jami, ham regression yo'q)
-- CheckConstraint Django 6.0 `.condition` keyword bilan future-proof
+**Ishlab chiqilgan PR'lar**:
+
+**PR #25 — Data Layer** (1090 +ins)
+- 7 ta yangi model (`apps/exams/models.py`)
+- 1 ta custom manager (`apps/exams/managers.py` — PublicOrTenantManager)
+- 1 ta migration (`0001_initial.py` — 7 model, 8 index, 4 unique, 1 CHECK constraint)
+- Django admin (raw_id_fields + `MockExamQuestionInline`)
+- 20 ta unit test
+- CheckConstraint Django 6.0 `.condition` keyword
+
+**PR #27 — Celery Tasks** (130+ ins)
+- `core/celery.py` Celery app + autodiscover
+- 3 ta task: `publish_scheduled_mocks`, `quarantine_check`, `finalize_attempt_score`
+- Signal: `QuestionDispute.post_save` → `quarantine_check.delay()`
+- Catalog migration `0004_questionversion_is_quarantined`
+- **Critical fix**: TenantManager order qayta tartiblandi (`is_unscoped_allowed()` AVVAL) + autouse `reset_tenant_context` fixture (test isolation)
+- 12 ta unit test
+
+**PR #28 — REST API** (1017 +ins)
+- DRF wiring (SessionAuthentication + IsAuthenticated default + PageNumberPagination)
+- 12 ta endpoint (mocks/attempts/practice/dispute/anticheat)
+- 9 ta serializer (`is_correct` stripped — cheat himoya)
+- Permission helpers (cross-user 403)
+- Answer evaluation (`_evaluate_answer` SC/MC support)
+- 11 ta integration test
+
+**PR #29 — WebSocket Consumer** (433 +ins)
+- Channels wiring (ProtocolTypeRouter, RedisChannelLayer prod, InMemoryChannelLayer test)
+- `core/asgi.py` ASGI + WebSocket route
+- `ExamAttemptConsumer` — heartbeat / strikes / timer
+- 5 ta close code (4401/4404/4408/4409/4410)
+- `select_for_update` atomic strike — concurrent race himoyasi
+- `daphne==4.2.1` requirements'ga
+- 6 ta async integration test
+
+**PR (RLS migration) — Defense-in-Depth L3**
+- `apps/exams/migrations/0002_enable_rls.py` (catalog.0003_enable_rls pattern)
+- 7 ta exam table RLS yoqildi
+- MockExam policy: `org=current OR is_public=true` (cross-tenant platform mocks)
+- MockExamQuestion: parent mock_exam orqali filter (through table pattern)
+- 5 ta standard table: `org=current` strict
+- 4 ta security test (graceful — DB role BYPASSRLS bo'lsa skip)
+
+**Yakuniy: 366 test pass, 0 regression. Backend Task 4 to'liq tayyor.**
 
 **Hujjat**: `docs/milliy_sertifikat_django.md` Bosqich 3+4+23 + roadmap'ning Task 4 bo'limi
 
@@ -613,7 +664,7 @@ Return error to user
 | 1 | Foundation & Multi-Tenant | ⭐⭐ | ✅ COMPLETE | ✅ 111 test (95%+) |
 | 2 | Auth + Device Fingerprinting | ⭐⭐⭐ | ✅ COMPLETE | ✅ 246 test (95%+) |
 | 3 | Question Bank + Kontent Himoya | ⭐⭐⭐ | ✅ COMPLETE (10/10) | ✅ 49 test (99%+) |
-| 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟡 Data layer ✅ / App layer 🔵 | ✅ 20 test (data) |
+| 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟢 Backend ✅ (data+celery+API+WS+RLS) / Frontend 🔵 | ✅ 53 test (Task 4) |
 | 5 | Redis Leaderboard | ⭐⭐ | 🔵 Planned |  |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
@@ -651,12 +702,14 @@ Return error to user
 - Login + Dashboard pages
 - Production startup scripts
 
-**Task 4** (2026-05-16): 🟡 **DATA LAYER COMPLETE** (PR #25)
-- Models: 7/7 ✅ (MockExam, MockExamQuestion, ExamAttempt, PracticeSession, UserAnswer, AntiCheatEvent, QuestionDispute)
-- Manager: PublicOrTenantManager (Q(is_public) | Q(org=current)) ✅
-- Migration: 0001_initial — 7 model, 8 index, 4 unique, 1 CHECK ✅
-- Tests: 20/20 ✅ (333 jami, ham regression yo'q)
-- App layer (views, Channels, Celery, Frontend): 🔵 **Pending — keyingi PR'lar**
+**Task 4** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #25, #27, #28, #29 + RLS)
+- Models: 7/7 ✅ + custom manager + 1 migration
+- Celery: 3 task ✅ (auto-publish, quarantine, finalize_score) + signal trigger
+- REST API: 12 endpoint ✅ (DRF SessionAuth + IsAuthenticated)
+- WebSocket: ExamAttemptConsumer ✅ (heartbeat + strikes + timer + 5 close codes)
+- L3 RLS: 7 exam table ✅ (catalog pattern)
+- Tests: 53 Task 4 tests / **366 jami** (regression yo'q)
+- Frontend (Next.js browser lock + UI): 🔵 alohida workstream
 
 ### 🛡️ Hardening (post-Task 1, 2026-05-16)
 
@@ -668,21 +721,25 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       333 ✅ (100% passing)
+Total Tests:       366 ✅ (100% passing)
 Models:             42 ✅ (all tenant-aware: 35 + 7 exam)
-Services:          24+ ✅ (+ watermark, dom_shuffle, rate_limiter, membership_cache)
+Services:          27+ ✅ (+ watermark, dom_shuffle, rate_limiter, membership_cache,
+                            celery tasks, websocket consumer)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     41+ ✅ (+ /catalog/wm.png) — exam endpoints pending
+API Endpoints:     53+ ✅ (+ /api/exams/* 12 ta)
+WebSocket:          1  ✅ (ws/exams/attempt/<id>/)
+Celery tasks:       3  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 
 Security Stack (Defense-in-Depth):
   L1 — JWT + Device Fingerprinting (Task 2)
   L2 — RBAC + Tenant Isolation + TenantManager fail-closed (Task 1 + PR #22)
-  L3 — PostgreSQL RLS (DB-level, fixed in PR #22, fail-closed in middleware)
+  L3 — PostgreSQL RLS (catalog: PR #22, exams: yangi RLS PR — Task 4 backend)
   L4 — Rate Limiting (Redis, progressive ban)
   L5 — Content Protection (Watermark + DOM Shuffle)
 ```
 
-> **Izoh**: Birinchi 3 task to'liq. Task 4 — data layer tayyor, app layer (Channels/Celery/Views/Frontend) keyingi PR'larda.
+> **Izoh**: Birinchi 3 task to'liq. Task 4 — backend to'liq tayyor (data + celery + API + WS + RLS).
+> Frontend qism (Next.js browser lock + UI) alohida workstream.
 > AI agentlar (Claude Code + Gemini) yordamida tezlashtirilgan implementatsiya.
