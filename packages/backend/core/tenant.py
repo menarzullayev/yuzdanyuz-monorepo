@@ -1,5 +1,11 @@
 """
-Tenant context — thread-local storage orqali joriy organization ni saqlaydi.
+Tenant context — joriy organization'ni ContextVar orqali saqlaydi.
+
+ContextVar tanlovi:
+  - threading.local() o'rniga — chunki async view'larda noto'g'ri ishlaydi
+    (bir thread ichida bir nechta corutine bir-birining org'ini ko'radi).
+  - ContextVar PEP 567 standarti — sync va async ikkalasida to'g'ri.
+  - Token-based reset (set/reset) — to'g'ri nesting'ni avtomat ta'minlaydi.
 
 Ishlatish:
     from core.tenant import get_current_org, set_current_org, tenant_context
@@ -14,45 +20,46 @@ Ishlatish:
 Unscoped (admin/worker uchun, tenant filter'siz):
     from core.tenant import unscoped_context
     with unscoped_context():
-        Question.objects.all()  # barcha tenantlar (faqat explicit holatda)
+        Question.objects.all()  # barcha tenantlar
 """
 
-import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 
-_thread_locals = threading.local()
+# `Optional` annotation atayyin yozilmagan — None bo'lishi runtime'da yetarlicha aniq.
+_current_org: ContextVar = ContextVar('tenant_current_org', default=None)
+_unscoped_allowed: ContextVar = ContextVar('tenant_unscoped_allowed', default=False)
 
 
 def get_current_org():
-    """Joriy thread dagi aktiv organization ni qaytaradi. Yo'q bo'lsa None."""
-    return getattr(_thread_locals, 'current_org', None)
+    """Joriy aktiv organization'ni qaytaradi. Yo'q bo'lsa None."""
+    return _current_org.get()
 
 
 def set_current_org(org):
-    """Joriy thread uchun aktiv organization ni o'rnatadi."""
-    _thread_locals.current_org = org
+    """Joriy aktiv organization'ni o'rnatadi (middleware request boshida chaqiradi)."""
+    _current_org.set(org)
 
 
 def clear_current_org():
-    """Thread local ni tozalaydi. Middleware request tugaganda chaqiradi."""
-    _thread_locals.current_org = None
+    """Context'ni tozalaydi (middleware request oxirida chaqiradi)."""
+    _current_org.set(None)
 
 
 @contextmanager
 def tenant_context(org):
     """
-    Test va management command larda tenant ni vaqtinchalik o'rnatish uchun.
+    Test va management command'larda tenant'ni vaqtinchalik o'rnatish.
 
     with tenant_context(org):
         qs = Question.objects.all()   # faqat org savollari
-    # blokdan chiqqanda avtomatik tozalanadi
+    # blokdan chiqqanda Token avtomatik reset qiladi (nesting xavfsiz)
     """
-    previous = get_current_org()
-    set_current_org(org)
+    token = _current_org.set(org)
     try:
         yield
     finally:
-        set_current_org(previous)
+        _current_org.reset(token)
 
 
 # ── Unscoped context (admin/worker bypass) ────────────────────
@@ -62,11 +69,11 @@ def tenant_context(org):
 
 
 def is_unscoped_allowed() -> bool:
-    return getattr(_thread_locals, 'unscoped_allowed', False)
+    return _unscoped_allowed.get()
 
 
 def set_unscoped_allowed(allowed: bool):
-    _thread_locals.unscoped_allowed = allowed
+    _unscoped_allowed.set(allowed)
 
 
 @contextmanager
@@ -83,9 +90,8 @@ def unscoped_context():
         - Bootstrap / data migration script
         - TenantMiddleware ichida _resolve_org (chicken-and-egg)
     """
-    previous = is_unscoped_allowed()
-    set_unscoped_allowed(True)
+    token = _unscoped_allowed.set(True)
     try:
         yield
     finally:
-        set_unscoped_allowed(previous)
+        _unscoped_allowed.reset(token)
