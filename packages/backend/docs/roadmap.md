@@ -599,32 +599,79 @@ Return error to user
 
 ## Task 7 — Monetizatsiya va Billing Tizimi
 
+**Status**: 🟢 **BACKEND COMPLETE** (PR #35, 2026-05-16). Frontend checkout UI 🔵 alohida workstream.
+
 **Maqsad**: B2C hamyon + B2B obuna + White-Label litsenziya — to'liq pul aylanishi.
 
-### Deliverables
-- [ ] **Wallet Engine**:
-  - `Wallet` modeli — `balance` (Sertifikat Coin)
-  - Pessimistic Locking — `SELECT FOR UPDATE` bir vaqtda ikki marta yechilmasin
-  - `WalletTransaction` modeli — audit trail
-- [ ] **Payme/Click integratsiyasi** — hamyon to'ldirish uchun
-- [ ] **B2C Freemium**:
-  - Bepul: test ishlash, reyting ko'rish
-  - Premium (Coin): AI diagnostika, detailed tahlil
-- [ ] **B2B Per-Seat litsenziyasi**:
-  - `OrganizationSubscription` modeli
-  - Har bir o'quvchi uchun oylik to'lov
-  - Auto-renewal Celery task
-- [ ] **White-Label / Enterprise** — bir martalik litsenziya + invoice
-- [ ] **Affiliate/Referral**:
-  - Mikro: o'quvchi referral → Coin
-  - Makro: 50+ referral → naqd pul yechish (`is_withdrawable`)
-- [ ] Checkout HTMX flow — silliq UX
+### Deliverables ✅ COMPLETE
+
+- [x] **Wallet Engine**:
+  - `Wallet` modeli — `balance_coins` (Sertifikat Coin) + `pending_cash_uzs` (affiliate)
+  - **Pessimistic Locking** — `SELECT FOR UPDATE` har spend/topup'da (apps/commerce/wallet_service.py)
+  - `WalletTransaction` audit trail — har op'da snapshot post-update saqlanadi
+  - Operations: top_up, spend, refund, add_cash_uzs, withdraw_cash_uzs
+  - InsufficientFunds exception
+- [x] **Payme/Click integratsiyasi** (Stub mode):
+  - `apps/commerce/payment_providers.py` — BaseProvider abstraction
+  - PaymeProvider, ClickProvider — stub (real SDK toggling: `ENABLE_REAL_PAYMENTS`)
+  - `PaymentIntent` model — provider_tx_id, status lifecycle
+  - Webhook handlers (`/api/wallet/webhooks/payme/`, `/click/`) — signature verify, idempotent
+- [x] **B2C Freemium** — `wallet_service.spend()` + InsufficientFunds → 402 Payment Required
+  (premium feature gating REST API'da `wallet/spend/` orqali)
+- [x] **B2B Subscription** (dinamik flexible):
+  - `SubscriptionPlan`: billing_period (monthly/yearly/**lifetime**) + pricing_model (flat/per_seat)
+  - `OrganizationSubscription` — TRIALING → ACTIVE → CANCELLED/EXPIRED
+  - `subscription_service`: subscribe, activate, cancel, renew, expire
+  - `calculate_charge(active_user_count)` — flat ignores, per_seat = price * count
+  - Auto-renew Celery beat task (`commerce.auto_renew_subscriptions`) — har kun 03:00
+  - Lifetime: current_period_ends_at=NULL, hech qachon expire bo'lmaydi
+- [x] **White-Label / Enterprise** — Lifetime plan (flat, bir martalik 50M UZS misoli)
+- [x] **Affiliate/Referral**:
+  - `ReferralCode` (auto-gen 8-char), `Referral` (audit + duplicate prevent)
+  - `claim_referral(code, new_user)`: invitor wallet'ga REFERRAL_COIN_BONUS=50 Coin
+  - 50+ referrals → `is_withdrawable=True` + naqd UZS bonus (`pending_cash_uzs`)
+  - Self-referral va duplicate rejected
+
+**Frontend** 🔵 (alohida workstream):
+- [ ] Checkout flow (Next.js) — Payme/Click checkout_url'ni ochish
+- [ ] Wallet balance widget
+- [ ] Affiliate dashboard (code QR + stats)
+
+### REST API (12 endpoint)
+
+| Method | Path | Maqsad |
+|---|---|---|
+| GET | `/api/wallet/` | balance |
+| GET | `/api/wallet/transactions/` | audit trail |
+| POST | `/api/wallet/topup/` | init payment (Payme/Click) |
+| POST | `/api/wallet/spend/` | spend Coin |
+| POST | `/api/wallet/webhooks/payme/` | Payme callback |
+| POST | `/api/wallet/webhooks/click/` | Click callback |
+| GET | `/api/subscriptions/plans/` | available plans |
+| GET | `/api/subscriptions/current/` | org's active subscription |
+| POST | `/api/subscriptions/subscribe/` | subscribe (org admin only) |
+| POST | `/api/subscriptions/cancel/` | cancel (org admin only) |
+| GET | `/api/affiliate/code/` | get/create my referral code |
+| GET | `/api/affiliate/stats/` | my referrals + earnings |
 
 ### Tech Stack
-`Payme SDK` · `Click SDK` · `Celery` · `PostgreSQL transactions`
+`Payme/Click stub` (real SDK kelajakda) · `Celery` · `PostgreSQL SELECT FOR UPDATE`
 
 ### Arxitektura qaror
-> **Gibrid Billing** — Hamyon (B2C konversiya) + Direct subscription (B2B) + Affiliate viral loop (Bosqich 6, 11, 24)
+> **Gibrid Billing** — Hamyon (B2C konversiya) + Direct subscription (B2B) +
+> Affiliate viral loop (Bosqich 6, 11, 24).
+> **Subscription Flexible**: monthly/yearly/lifetime + flat/per_seat har qanday
+> kombinatsiyada — org admin tanlaydi.
+
+### Tests (36 ta yangi, 459 jami)
+- Wallet service (7) — topup/spend/refund/audit/cash UZS/atomicity
+- Payment providers (3) — Payme stub, Click stub, signature
+- Webhook flow (3) — credit wallet, idempotent, invalid sig 401
+- Subscription service (5) — trialing, lifetime, activate, cancel, per_seat calc
+- Auto-renew Celery (3) — renew, expire, lifetime skip
+- Affiliate (5) — code, claim, self-rejected, duplicate, invalid
+- REST API (8) — wallet, topup, spend 402, plans, subscribe 403, code, stats
+- Atomicity (1) — double-spend prevention
 
 ---
 
@@ -733,7 +780,7 @@ Return error to user
 | 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟢 Backend ✅ (data+celery+API+WS+RLS) / Frontend 🔵 | ✅ 53 test (Task 4) |
 | 5 | Redis Leaderboard | ⭐⭐ | 🟢 Backend ✅ (core+WS+archive) / Frontend 🔵 | ✅ 32 test |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 25 test |
-| 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
+| 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 36 test |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🔵 Planned |  |
 | 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🔵 Planned |  |
 | 10 | K8s + Monitoring + Xavfsizlik | ⭐⭐⭐⭐⭐ | 🔵 Planned |  |
@@ -767,6 +814,18 @@ Return error to user
 - API client with JWT interceptors
 - Login + Dashboard pages
 - Production startup scripts
+
+**Task 7** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #35)
+- 7 ta yangi model (Wallet, WalletTransaction, PaymentIntent, SubscriptionPlan,
+  OrganizationSubscription, ReferralCode, Referral)
+- Wallet service — SELECT FOR UPDATE atomic ops + audit trail
+- Payment providers (Payme/Click stub mode) + webhook handlers (idempotent + signature)
+- Subscription service — flexible (monthly/yearly/lifetime, flat/per_seat)
+- Auto-renew Celery beat task
+- Affiliate (referral code + Coin bonus + 50+ threshold cash withdrawal)
+- 12 ta REST endpoint (wallet, payments, subscriptions, affiliate)
+- Tests: 36/36 ✅ (459 jami)
+- Frontend checkout UI: 🔵
 
 **Task 6** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #34)
 - 4 ta yangi model: SkillTag, UserSkillProfile (Bayesian), AIFeedback, OpenEndedSubmission
@@ -811,17 +870,17 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       423 ✅ (100% passing)
-Models:             47 ✅ (35 + 7 exam + LeaderboardSnapshot + 4 intelligence)
-Services:          30+ ✅ (+ Bayesian engine, AI Tutor, Open-Ended scoring)
+Total Tests:       459 ✅ (100% passing)
+Models:             54 ✅ (47 + 7 commerce: Wallet/WalletTx/PaymentIntent/SubPlan/
+                          OrgSubscription/ReferralCode/Referral)
+Services:          35+ ✅ (+ Wallet, Payment, Subscription, Affiliate)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     66+ ✅ (+ /api/intelligence/* 7 ta)
+API Endpoints:     78+ ✅ (+ /api/wallet/*, /api/subscriptions/*, /api/affiliate/* 12 ta)
 WebSocket:          5  ✅ (ws/exams/attempt/<id>/, ws/leaderboard/{global|region|tenant|mock}/)
-Celery tasks:       6  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score,
-                          archive_leaderboards, generate_ai_tutor_feedback,
-                          evaluate_openended_submission)
+Celery tasks:       7  ✅ (+ commerce.auto_renew_subscriptions)
 Redis ZSETs:        4  ✅ scope (lb:mock, lb:global, lb:region, lb:tenant)
 LLM integrations:   2  ✅ (AI Tutor on-demand, Open-Ended rubric scoring)
+Payment providers:  2  ✅ (Payme stub, Click stub — `ENABLE_REAL_PAYMENTS` toggle)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 

@@ -1,2 +1,359 @@
-# Bu yerda: Wallet, WalletTransaction, Subscription, AffiliateLink
-# Keyingi tasklarda implement qilinadi.
+"""
+Task 7 — Billing/Wallet/Subscription modellari.
+
+Architecture (docs/milliy_sertifikat_django.md, Bosqich 6+11+24):
+  Gibrid Billing — Hamyon (B2C konversiya) + Direct subscription (B2B) +
+  Affiliate viral loop.
+
+Models:
+  - Wallet                     — per-user Sertifikat Coin balance
+  - WalletTransaction          — audit trail (debit/credit, kind)
+  - PaymentIntent              — Payme/Click charge attempt
+  - SubscriptionPlan           — flexible (monthly/yearly/lifetime, flat/per_seat)
+  - OrganizationSubscription   — org-level active subscription
+  - ReferralCode               — user'ning referral code
+  - Referral                   — invitation tracking
+"""
+
+import secrets
+import uuid
+from decimal import Decimal
+
+from django.conf import settings
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+# ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
+
+
+class Wallet(models.Model):
+    """
+    Per-user Sertifikat Coin balance. SELECT FOR UPDATE bilan atomic ops.
+
+    Coin = integer. Top-up: 10000 UZS → 100 Coin (1 Coin = 100 UZS, default rate).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wallet',
+    )
+    balance_coins = models.PositiveIntegerField(
+        default=0, verbose_name=_('Sertifikat Coin balansi')
+    )
+    pending_cash_uzs = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Affiliate withdraw'ga tayyor naqd UZS"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Wallet')
+        verbose_name_plural = _('Wallets')
+
+    def __str__(self):
+        return f'{self.user} wallet ({self.balance_coins} Coin)'
+
+
+class WalletTransaction(models.Model):
+    """Audit trail. Immutable: har wallet o'zgarishi bu yerda yoziladi."""
+
+    class Kind(models.TextChoices):
+        TOPUP = 'topup', _("To'ldirish (Payme/Click)")
+        SPEND = 'spend', _('Sarflash (premium feature)')
+        REFUND = 'refund', _('Qaytarish')
+        REFERRAL_BONUS = 'referral_bonus', _('Referral bonus')
+        AFFILIATE_PAYOUT = 'affiliate_payout', _('Affiliate cash-out (UZS)')
+        ADJUSTMENT = 'adjustment', _('Admin sozlash')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wallet = models.ForeignKey(Wallet, on_delete=models.PROTECT, related_name='transactions')
+    kind = models.CharField(max_length=24, choices=Kind.choices, db_index=True)
+
+    # Coin delta (signed: +ve = credit, -ve = debit)
+    coins_delta = models.IntegerField(default=0)
+    cash_uzs_delta = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    # Snapshot post-update — audit clarity
+    balance_after_coins = models.PositiveIntegerField()
+    balance_after_cash_uzs = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00')
+    )
+
+    description = models.CharField(max_length=255, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    payment_intent = models.ForeignKey(
+        'PaymentIntent',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='wallet_transactions',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = _('Wallet Transaction')
+        verbose_name_plural = _('Wallet Transactions')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['wallet', '-created_at']),
+            models.Index(fields=['kind', '-created_at']),
+        ]
+
+    def __str__(self):
+        sign = '+' if self.coins_delta >= 0 else ''
+        return f'{self.wallet.user} {sign}{self.coins_delta} Coin ({self.kind})'
+
+
+# ── 2. PaymentIntent ─────────────────────────────────────────────────────────
+
+
+class PaymentIntent(models.Model):
+    """
+    Payme/Click charge initiatsiyasidan webhook qaytishigacha bo'lgan
+    holatni saqlaydi. Idempotent (provider, provider_tx_id) unique.
+    """
+
+    class Provider(models.TextChoices):
+        PAYME = 'payme', _('Payme')
+        CLICK = 'click', _('Click')
+        STUB = 'stub', _('Stub (dev/test)')
+
+    class Status(models.TextChoices):
+        CREATED = 'created', _('Yaratilgan')
+        PROCESSING = 'processing', _('Ishlanmoqda')
+        SUCCEEDED = 'succeeded', _('Muvaffaqiyatli')
+        FAILED = 'failed', _('Muvaffaqiyatsiz')
+        CANCELLED = 'cancelled', _('Bekor qilingan')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='payment_intents',
+    )
+    provider = models.CharField(max_length=8, choices=Provider.choices, db_index=True)
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.CREATED, db_index=True
+    )
+
+    amount_uzs = models.DecimalField(max_digits=12, decimal_places=2)
+    coins_to_credit = models.PositiveIntegerField(
+        help_text=_("Muvaffaqiyatli bo'lsa user wallet'iga shu Coin qo'shiladi")
+    )
+
+    # Provider tx ID (Payme transaction ID, Click payment_id) — webhook'dan keladi
+    provider_tx_id = models.CharField(max_length=128, blank=True, db_index=True)
+
+    target_subscription_plan = models.ForeignKey(
+        'SubscriptionPlan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    target_organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    metadata = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Payment Intent')
+        verbose_name_plural = _('Payment Intents')
+        ordering = ['-created_at']
+        unique_together = [('provider', 'provider_tx_id')]
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.user} {self.amount_uzs} UZS ({self.provider}/{self.status})'
+
+
+# ── 3. SubscriptionPlan + OrganizationSubscription ───────────────────────────
+
+
+class SubscriptionPlan(models.Model):
+    """
+    Flexible plan tuzilishi:
+      billing_period: monthly / yearly / lifetime
+      pricing_model:
+        flat       — org bir marta to'laydi, barcha o'quvchilar bepul
+        per_seat   — har faol o'quvchi uchun price_uzs * count
+    """
+
+    class BillingPeriod(models.TextChoices):
+        MONTHLY = 'monthly', _('Oylik')
+        YEARLY = 'yearly', _('Yillik')
+        LIFETIME = 'lifetime', _('Butun umr')
+
+    class PricingModel(models.TextChoices):
+        FLAT = 'flat', _('Belgilangan summa (org)')
+        PER_SEAT = 'per_seat', _("O'quvchi soni bo'yicha")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=80, unique=True)
+    description = models.TextField(blank=True)
+
+    billing_period = models.CharField(max_length=10, choices=BillingPeriod.choices)
+    pricing_model = models.CharField(max_length=10, choices=PricingModel.choices)
+
+    price_uzs = models.DecimalField(max_digits=12, decimal_places=2)
+
+    max_users = models.PositiveIntegerField(
+        null=True, blank=True, help_text=_('Cheksiz uchun null')
+    )
+    features = models.JSONField(
+        default=dict,
+        help_text=_("Misol: {'ai_diagnostic': true, 'analytics': true}"),
+    )
+
+    is_active = models.BooleanField(default=True, db_index=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Subscription Plan')
+        verbose_name_plural = _('Subscription Plans')
+        ordering = ['sort_order', 'price_uzs']
+
+    def __str__(self):
+        return f'{self.name} ({self.billing_period}, {self.pricing_model})'
+
+    def calculate_charge(self, *, active_user_count: int = 0) -> Decimal:
+        """Plan turidan kelib chiqib joriy charge'ni hisoblash."""
+        if self.pricing_model == self.PricingModel.PER_SEAT:
+            return self.price_uzs * Decimal(active_user_count)
+        return self.price_uzs
+
+
+class OrganizationSubscription(models.Model):
+    """Org'ning aktiv subscription'i."""
+
+    class Status(models.TextChoices):
+        TRIALING = 'trialing', _('Trial davri')
+        ACTIVE = 'active', _('Faol')
+        PAST_DUE = 'past_due', _("To'lov muddati o'tgan")
+        CANCELLED = 'cancelled', _('Bekor qilingan')
+        EXPIRED = 'expired', _('Muddati tugagan')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='subscriptions',
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.PROTECT, related_name='subscriptions'
+    )
+
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.TRIALING, db_index=True
+    )
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    current_period_started_at = models.DateTimeField()
+    # Lifetime: null
+    current_period_ends_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    auto_renew = models.BooleanField(default=True)
+
+    last_payment_intent = models.ForeignKey(
+        PaymentIntent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Organization Subscription')
+        verbose_name_plural = _('Organization Subscriptions')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['organization', 'status']),
+            models.Index(fields=['status', 'current_period_ends_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.organization} → {self.plan.name} ({self.status})'
+
+
+# ── 4. Referral system ───────────────────────────────────────────────────────
+
+
+def _gen_code() -> str:
+    return secrets.token_urlsafe(6).replace('-', '').replace('_', '')[:8].upper()
+
+
+class ReferralCode(models.Model):
+    """User'ning referral code (signup'da ishlatiladigan)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='referral_code',
+    )
+    code = models.CharField(max_length=16, unique=True, default=_gen_code)
+    is_withdrawable = models.BooleanField(
+        default=False,
+        help_text=_('50+ referrals → naqd UZS yechib olish ochiladi'),
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Referral Code')
+
+    def __str__(self):
+        return f'{self.user} → {self.code}'
+
+
+class Referral(models.Model):
+    """Signup voqeasi: invited_user invited_by'ning code'ini ishlatib qo'shilgan."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inviter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sent_referrals',
+    )
+    invited = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='joined_referral',
+    )
+    coin_reward = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = _('Referral')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.inviter} → {self.invited}'

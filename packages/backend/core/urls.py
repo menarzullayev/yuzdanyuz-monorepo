@@ -29,7 +29,7 @@ urlpatterns = [
     path('api/exams/', include('apps.exams.urls', namespace='exams')),
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),
     path('api/intelligence/', include('apps.intelligence.urls', namespace='intelligence')),
-    path('billing/', include('apps.commerce.urls', namespace='commerce')),
+    path('api/', include('apps.commerce.urls', namespace='commerce')),
     path('analytics/', include('apps.analytics.urls', namespace='analytics')),
 ]
 
