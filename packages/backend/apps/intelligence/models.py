@@ -193,9 +193,12 @@ class OpenEndedSubmission(SoftDeleteMixin, models.Model):
         FAILED = 'failed', _('AI xato')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # ISSUE-103: SET_NULL bilan — User.delete() audit'ni yo'q qilmaydi (AI grading saqlanadi)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='openended_submissions',
     )
     submission_type = models.CharField(max_length=8, choices=Type.choices)

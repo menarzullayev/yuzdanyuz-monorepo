@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 SEND_RATE_WINDOW = 600  # 10 daqiqa (soniyada)
 SEND_RATE_LIMIT = 3  # 10 daqiqada max 3 ta SMS
 
+# ISSUE-106: IP-tier limit — bitta IP'dan ko'p telefon bilan SMS spamga qarshi
+IP_RATE_WINDOW = 3600  # 1 soat
+IP_RATE_LIMIT = 20  # soatiga 20 OTP request bitta IP'dan
+
 
 class OTPError(Exception):
     pass
@@ -46,7 +50,7 @@ def _redis():
 
 
 def _check_send_rate(phone: str) -> None:
-    """10 daqiqada 3 dan ko'p yuborishni bloklaydi."""
+    """10 daqiqada 3 dan ko'p yuborishni bloklaydi (per-phone)."""
     r = _redis()
     key = f'otp:send_count:{phone}'
     count = r.get(key)
@@ -55,47 +59,84 @@ def _check_send_rate(phone: str) -> None:
         raise OTPRateLimitError(f"Juda ko'p urinish. {ttl} soniyadan keyin qayta urinib ko'ring.")
 
 
-def _increment_send_count(phone: str) -> None:
+def _check_ip_rate(ip: str | None) -> None:
+    """ISSUE-106: bitta IP'dan soatiga 20 dan ko'p OTP request'ni bloklaydi.
+
+    Hujum stsenariysi: 1 IP × 1000 unique telefon = 1000 SMS × ~50 UZS = 50K UZS.
+    Per-phone limit yetarli emas. IP-tier qo'shimcha himoya.
+    """
+    if not ip:
+        return  # IP aniqlanmagan — skip (test/internal)
     r = _redis()
-    key = f'otp:send_count:{phone}'
+    key = f'otp:send_count:ip:{ip}'
+    count = r.get(key)
+    if count and int(count) >= IP_RATE_LIMIT:
+        ttl = r.ttl(key)
+        raise OTPRateLimitError(
+            f"IP rate limit. {ttl} soniyadan keyin qayta urinib ko'ring (yoki CAPTCHA)."
+        )
+
+
+def _increment_send_count(phone: str, ip: str | None = None) -> None:
+    r = _redis()
     pipe = r.pipeline()
+    # Per-phone counter
+    key = f'otp:send_count:{phone}'
     pipe.incr(key)
     pipe.expire(key, SEND_RATE_WINDOW)
+    # Per-IP counter (ISSUE-106)
+    if ip:
+        ip_key = f'otp:send_count:ip:{ip}'
+        pipe.incr(ip_key)
+        pipe.expire(ip_key, IP_RATE_WINDOW)
     pipe.execute()
 
 
 # ── Asosiy funksiyalar ────────────────────────────────────────
 
 
-def send_otp(raw_phone: str) -> str:
+def send_otp(raw_phone: str, *, ip: str | None = None) -> str:
     """
     Telefon raqamga OTP yuboradi.
 
     Args:
         raw_phone: Har qanday formatdagi telefon raqam
+        ip: ISSUE-106 — client IP (rate-limit per-IP uchun)
 
     Returns:
         Normallashtrilgan E.164 telefon raqam
 
     Raises:
         PhoneValidationError: noto'g'ri format
-        OTPRateLimitError:    juda ko'p urinish
+        OTPRateLimitError:    juda ko'p urinish (per-phone yoki per-IP)
         OTPError:             SMS yuborishda xato
     """
     phone = normalize_phone(raw_phone)
     _check_send_rate(phone)
+    _check_ip_rate(ip)
 
     otp = OTPCode.create_for_phone(phone)
     text = _otp_text(otp.code)
 
     backend = get_sms_backend()
     sent = backend.send(phone, text)
+
+    # ISSUE-104: business metric (cost tracking)
+    from django.conf import settings as _settings
+
+    from core.metrics import SMS_SENT
+
+    SMS_SENT.labels(
+        backend=getattr(_settings, 'SMS_BACKEND', 'unknown'),
+        status='ok' if sent else 'failed',
+    ).inc()
+
     if not sent:
         otp.delete()
         raise OTPError("SMS yuborishda xato yuz berdi. Keyinroq urinib ko'ring.")
 
-    _increment_send_count(phone)
-    log.info('OTP yuborildi: phone=%s id=%s', phone, otp.pk)
+    _increment_send_count(phone, ip=ip)
+    log.info('OTP yuborildi: phone=%s id=%s ip=%s', phone, otp.pk, ip or '-')
     return phone
 
 

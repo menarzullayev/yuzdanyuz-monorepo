@@ -175,6 +175,9 @@ def _process_webhook(provider_name: str, request) -> Response:
         # Idempotent — already processed
         return Response({'detail': 'Already processed'}, status=200)
 
+    # ISSUE-104: business metric
+    from core.metrics import PAYMENTS_COMPLETED
+
     if parsed.get('status') == 'succeeded':
         # Credit user wallet
         wallet = wallet_service.get_or_create_wallet(intent.user)
@@ -194,10 +197,12 @@ def _process_webhook(provider_name: str, request) -> Response:
                 subscription_service.activate(sub)
             except OrganizationSubscription.DoesNotExist:
                 pass
+        PAYMENTS_COMPLETED.labels(provider=provider_name, status='succeeded').inc()
     else:
         intent.status = PaymentIntent.Status.FAILED
         intent.error_message = parsed.get('error', '')[:500]
         intent.save(update_fields=['status', 'error_message', 'updated_at'])
+        PAYMENTS_COMPLETED.labels(provider=provider_name, status='failed').inc()
 
     return Response({'detail': 'OK', 'intent_status': intent.status})
 

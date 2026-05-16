@@ -163,9 +163,12 @@ class ExamAttempt(SoftDeleteMixin, TenantTimestampMixin):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     exam = models.ForeignKey(MockExam, on_delete=models.PROTECT, related_name='attempts')
+    # ISSUE-103: SET_NULL bilan — User.delete() audit row'ni yo'q qilmaydi
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='exam_attempts',
     )
 

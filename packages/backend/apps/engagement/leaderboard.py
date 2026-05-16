@@ -99,6 +99,16 @@ def record_attempt(user_id, score: float, *, mock_id, region_id=None, org_id=Non
         # Leaderboard fail = analytics layer fail. Asosiy flow buzilmaydi.
         return
 
+    # ISSUE-104: business metric
+    from core.metrics import LEADERBOARD_UPDATES
+
+    LEADERBOARD_UPDATES.labels(scope='mock').inc()
+    LEADERBOARD_UPDATES.labels(scope='global').inc()
+    if region_id is not None:
+        LEADERBOARD_UPDATES.labels(scope='region').inc()
+    if org_id is not None:
+        LEADERBOARD_UPDATES.labels(scope='tenant').inc()
+
     # Real-time push (sync → async via async_to_sync) — har scope guruhiga
     try:
         _broadcast_update('global')

@@ -187,6 +187,14 @@ def finalize_attempt_score(attempt_id: str):
         attempt.score = round((achieved / max_points) * 100, 2) if max_points > 0 else 0
         attempt.save(update_fields=['correct_count', 'total_points', 'score', 'updated_at'])
 
+        # ISSUE-104: business metric
+        from core.metrics import EXAMS_SUBMITTED
+
+        EXAMS_SUBMITTED.labels(
+            org_id=str(attempt.organization_id),
+            is_public=str(attempt.exam.is_public).lower(),
+        ).inc()
+
         return {
             'status': 'finalized',
             'attempt_id': str(attempt_id),

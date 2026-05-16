@@ -39,8 +39,12 @@ class OTPSendHTMXView(View):
 
     def post(self, request):
         raw_phone = request.POST.get('phone', '').strip()
+        # ISSUE-106: IP-tier rate limit
+        client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[
+            0
+        ].strip() or request.META.get('REMOTE_ADDR')
         try:
-            phone = send_otp(raw_phone)
+            phone = send_otp(raw_phone, ip=client_ip)
         except PhoneValidationError as e:
             return render(request, 'accounts/partials/phone_step1.html', {'error': str(e)})
         except OTPRateLimitError as e:
