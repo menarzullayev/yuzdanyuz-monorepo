@@ -3,8 +3,7 @@
 # ── WSGI Server ───────────────────────────────────────────────────────────────
 gunicorn==23.0.0               # Production WSGI server
 
-# ── Static Files ──────────────────────────────────────────────────────────────
-whitenoise==6.9.0              # Static fayllarni Nginx-siz serve qilish (K8s)
+# Static fayllar uchun WhiteNoise base.txt'ga ko'chirildi (middleware base.py'da).
 
 # ── Monitoring & Logging ──────────────────────────────────────────────────────
 sentry-sdk[django]==2.25.1     # Task 10: Error tracking + performance tracing

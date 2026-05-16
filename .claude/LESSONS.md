@@ -256,6 +256,31 @@ Keyin Celery worker'ni restart (settings cache).
 
 ---
 
+## Lesson 17 — settings/base.py MIDDLEWARE'ga import qo'shsang, requirements/base.txt'ga ham qo'sh
+
+**Mistake**: PR #39'da `core/settings/base.py` MIDDLEWARE ro'yxatiga `'whitenoise.middleware.WhiteNoiseMiddleware'` qo'shildi, lekin `whitenoise==6.9.0` faqat `requirements/prod.txt`'da edi. CI test job `dev.txt` o'rnatadi → whitenoise yo'q → ASGI handler init paytida ImportError:
+```
+ModuleNotFoundError: No module named 'whitenoise'
+ERROR collecting tests/integration/test_exam_websocket.py
+ERROR collecting tests/integration/test_leaderboard_websocket.py
+```
+
+Pre-push hook lokal venv'da o'tdi (men `pip install whitenoise` qilib qo'ygan edim manual). Lesson 03'ning aniq qaytarilishi — "local venvs lie".
+
+**Why it broke**: `settings/base.py` butun MIDDLEWARE zanjirini ifodalaydi (test settings ham `from .base import *`). MIDDLEWARE'da ko'rsatilgan har bir module SARTAN import qilinadi `load_middleware()` chaqirig'i paytida. Test env'da pip faqat `dev.txt` o'rnatadi (`-r base.txt` orqali base'ni qamrab oladi, lekin prod.txt'ni emas).
+
+**Fix**: `whitenoise==6.9.0`'ni `base.txt`'ga ko'chirish — middleware sifatida har env'da kerak. `prod.txt`'da kommentariy qoldirish (manbai ko'chgan).
+
+**Pattern**:
+1. `base.py` MIDDLEWARE / INSTALLED_APPS / DATABASE ENGINE — har bir paketga `requirements/base.txt`'da nuqta bo'lishi shart
+2. `prod.txt`'da faqat **runtime-only** paketlar (gunicorn, sentry, opentelemetry-distro) — ular settings/base.py'da import qilinmaydi, faqat env-conditional kod orqali ishlatiladi
+3. **CI vs local test**: GitHub Actions har turin yangi venv yaratadi va faqat `requirements/<env>.txt` ishlatadi → manual `pip install`'lar local venv'da yashiringan dependency'larni qoplaydi. Pre-push hook bu xatoga tushib qoladi
+4. **Audit pattern**: yangi import qo'shilganda, `grep -E "^[a-z]" requirements/base.txt`'da paket borligini tekshirish. IDE diagnostika ham yordam beradi ("Package X not installed")
+
+**Caught by**: GitHub Actions CI run #63 va #64 (PR #39 merged'dan keyin ham post-merge CI'da).
+
+---
+
 ## Capture Template
 
 When the user corrects you, append:
