@@ -1,9 +1,14 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import include, path
+
+from apps.engagement.sitemaps import PublicQuestionsSitemap
+
+sitemaps = {'questions': PublicQuestionsSitemap}
 
 
 def ping_view(request):
@@ -31,6 +36,8 @@ urlpatterns = [
     path('api/intelligence/', include('apps.intelligence.urls', namespace='intelligence')),
     path('api/', include('apps.commerce.urls', namespace='commerce')),
     path('api/analytics/', include('apps.analytics.urls', namespace='analytics')),
+    # Task 9 — SEO sitemap
+    path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='sitemap'),
 ]
 
 if settings.DEBUG:

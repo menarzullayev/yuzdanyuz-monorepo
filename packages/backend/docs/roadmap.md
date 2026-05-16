@@ -736,28 +736,41 @@ Return error to user
 **Maqsad**: Kunlik kirishni ta'minlovchi psixologik "hook" + organik traffic.
 
 ### Deliverables
-- [ ] **Daily Streak**:
-  - `UserStreak` modeli — kun, maksimum, joriy zanjir
-  - Celery Beat: har kecha soat 00:00 da tekshirish
-  - Zanjir uzilsa → Telegram bot orqali "ogohlantirish"
-- [ ] **Leagues Engine**:
-  - `League` modeli: Bronza, Kumush, Oltin, Olmos
-  - Haftalik Celery task — pastki 10 tushadi, yuqori 10 ko'tariladi
-  - WebSocket — poyga vaqtida jonli yangilanish
-- [ ] **Coin Rewards**: liga oshganda / streak milestones → Coin sovg'a
-- [ ] **SEO Architecture**:
-  - B2C savollari: `/questions/<id>/` — ochiq HTML, Google indekslaydi
-  - B2B testlar: `noindex` meta tag
-  - `django-sitemaps` — avtomatik sitemap.xml
-  - OG meta tags — Telegram/WhatsApp ulashuv preview
-- [ ] **Meilisearch** integratsiyasi — typo-tolerant instant qidiruv
-- [ ] **Omni-Channel Notifications** (Celery):
-  - Telegram bot xabari (birinchi)
-  - Push Notification (ikkinchi)
-  - SMS PlayMobile (faqat muhim + o'qilmagan bo'lsa)
+- [x] **Daily Streak**:
+  - `UserStreak` modeli — kun, maksimum, joriy zanjir ✅
+  - `streak_service.update_on_activity()` — yangi/consecutive/broken logikasi ✅
+  - Milestone reward: 7→50, 30→200, 100→1000 Coin ✅
+  - Celery: `check_broken_streaks_task` (Beat-ready) — Notification queue ✅
+- [x] **Leagues Engine**:
+  - `League` modeli: Bronza, Kumush, Oltin, Olmos (rank_order 1–4) ✅
+  - `LeagueMembership` (per-(user, week)) + idempotent `get_or_create_membership` ✅
+  - `leagues_service.add_points()` ✅
+  - Haftalik Celery: `leagues_weekly_recalc_task` — top 10 promote, bottom 10 demote, Coin reward ✅
+  - WebSocket — Task 5 leaderboard consumer'i ham qo'shimcha real-time qatlam (jonli liga reytingi alohida deferred) 🔵
+- [x] **Coin Rewards**: liga promotion + streak milestone → wallet credit (audit trail) ✅
+- [x] **SEO Architecture**:
+  - `django.contrib.sitemaps` faollashtirildi ✅
+  - `PublicQuestionsSitemap` — quarantined yo'q + organization=None public, max 5000 ✅
+  - `/sitemap.xml` URL ✅
+  - OG meta tags / `noindex` markup — frontend (Next.js) qatlamida 🔵
+- [x] **Meilisearch** integratsiyasi (stub mode):
+  - `search_service.search_questions(query, *, org)` ✅
+  - PG ICONTAINS fallback (QuestionVersion.content JSONB) ✅
+  - Quarantined exclusion ✅
+  - Production toggle: `MEILISEARCH_URL` + `MEILISEARCH_ENABLED` 🔵
+- [x] **Omni-Channel Notifications** (Celery sequential fan-out):
+  - `Notification` model (channel/priority/status/metadata) ✅
+  - In-app har doim queue qilinadi ✅
+  - Telegram (birinchi) — user.telegram_id mavjud bo'lsa stub ✅
+  - Push placeholder (ikkinchi) ✅
+  - SMS PlayMobile — faqat IMPORTANT/URGENT + boshqa channel'lar fail qilsa ✅
+  - REST: list / unread filter / mark-as-read ✅
+- [x] **REST API**: 6 endpoint (streak, leagues/current, leagues/history, notifications, notification-read, search) ✅
+- [x] **Tests**: 26 ta integration test (TestStreak, TestLeagues, TestNotifications, TestSearch, TestEngagementAPI, TestSEO) ✅
+- [x] **Signal**: `apps/exams/signals.py` SUBMITTED → streak update + league points (best-effort, swallow) ✅
 
 ### Tech Stack
-`Meilisearch` · `Celery Beat` · `django-sitemaps` · `python-telegram-bot`
+`Meilisearch (stub)` · `Celery` · `django-sitemaps` · `Telegram bot (stub)` · `PlayMobile SMS (stub)`
 
 ### Arxitektura qaror
 > **Gibrid Geymifikatsiya + SEO Dvigateli** — Duolingo + Brainly kombinatsiyasi (Bosqich 21, 22, 15, 16)
@@ -813,7 +826,7 @@ Return error to user
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 25 test |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 36 test |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 20 test |
-| 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🔵 Planned |  |
+| 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 26 test |
 | 10 | K8s + Monitoring + Xavfsizlik | ⭐⭐⭐⭐⭐ | 🔵 Planned |  |
 
 ### ✅ Completed Phases
@@ -845,6 +858,21 @@ Return error to user
 - API client with JWT interceptors
 - Login + Dashboard pages
 - Production startup scripts
+
+**Task 9** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #37)
+- 4 ta yangi model: UserStreak, League, LeagueMembership, Notification
+- 4 ta service modul: streak_service, leagues_service, notifications_service, search_service
+- Streak engine — Duolingo style consecutive/broken + milestone Coin reward (7/30/100)
+- Leagues engine — 4 daraja (Bronza→Olmos), idempotent membership, weekly recalc (top 10 promote / bottom 10 demote)
+- Omni-channel notifications — sequential fan-out (in-app + Telegram + Push + SMS escalation)
+- Search — Meilisearch stub + PG ICONTAINS fallback (quarantined exclusion, JSONB)
+- SEO — django.contrib.sitemaps + PublicQuestionsSitemap (`/sitemap.xml`)
+- 2 ta yangi Celery task: check_broken_streaks_task, leagues_weekly_recalc_task
+- 6 ta REST endpoint (streak, leagues/current, leagues/history, notifications, notification-read, search)
+- Signal: ExamAttempt SUBMITTED → streak.update_on_activity + leagues.add_points (best-effort)
+- Tests: 26/26 ✅ (505 jami)
+- Frontend Next.js streak/leagues/notifications UI: 🔵
+- Real Meilisearch + Telegram bot live integration: 🔵 (stub mode default)
 
 **Task 8** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #36)
 - 2 ta yangi model: ExamEvent (denormalized analytics snapshot) + ReportExport
@@ -913,17 +941,19 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       479 ✅ (100% passing)
-Models:             56 ✅ (54 + ExamEvent + ReportExport)
-Services:          37+ ✅ (+ analytics aggregation + reports export)
+Total Tests:       505 ✅ (100% passing)
+Models:             60 ✅ (+ UserStreak + League + LeagueMembership + Notification)
+Services:          41+ ✅ (+ streak + leagues + notifications + search)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     85+ ✅ (+ /api/analytics/* 7 ta)
+API Endpoints:     91+ ✅ (+ /api/leaderboard/* engagement 6 ta)
 WebSocket:          5  ✅
-Celery tasks:       8  ✅ (+ analytics.generate_export)
+Celery tasks:      10  ✅ (+ check_broken_streaks, leagues_weekly_recalc)
 Redis ZSETs:        4  ✅
 LLM integrations:   2  ✅
 Payment providers:  2  ✅ (stub mode)
 ClickHouse:         stub abstraction (CLICKHOUSE_ENABLED toggle for prod)
+Search:            Meilisearch stub + PG ICONTAINS fallback
+Sitemap:           /sitemap.xml (django.contrib.sitemaps)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 
