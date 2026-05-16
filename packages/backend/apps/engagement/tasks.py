@@ -17,6 +17,8 @@ from datetime import datetime
 from celery import shared_task
 from django.utils import timezone
 
+from core.locks import single_runner_lock
+
 from . import leaderboard
 from .models import LeaderboardSnapshot
 
@@ -121,41 +123,48 @@ def archive_leaderboards(period: str = 'weekly', top_n: int = DEFAULT_TOP_N) -> 
     Args:
       period: "weekly" / "monthly" / "yearly"
       top_n: snapshotda saqlanadigan top entries soni
+
+    ISSUE-102: distributed lock (TTL 1h) — beat failover'da duplicate snapshot
+    bo'lmasligi uchun. Per-period alohida lock (weekly/monthly/yearly parallel).
     """
     if period not in ('weekly', 'monthly', 'yearly'):
         raise ValueError(f'Invalid period: {period}')
 
-    period_key = _period_key(period)
-    client = leaderboard._redis()
-    scopes = _discover_active_scopes(client)
+    with single_runner_lock(f'archive_leaderboards:{period}', expire=3600) as acquired:
+        if not acquired:
+            return {'status': 'skipped_lock_busy', 'period': period}
 
-    saved = 0
-    for kind, scope_id in scopes:
-        try:
-            _snapshot_one(period, period_key, kind, scope_id, top_n=top_n)
-            saved += 1
-        except Exception as e:
-            logger.warning(
-                'archive_leaderboards: snapshot %s/%s/%s failed: %s',
-                period_key,
-                kind,
-                scope_id,
-                e,
-            )
+        period_key = _period_key(period)
+        client = leaderboard._redis()
+        scopes = _discover_active_scopes(client)
 
-    logger.info(
-        'archive_leaderboards %s/%s: %d/%d scopes archived',
-        period,
-        period_key,
-        saved,
-        len(scopes),
-    )
-    return {
-        'period': period,
-        'period_key': period_key,
-        'scopes_found': len(scopes),
-        'snapshots_saved': saved,
-    }
+        saved = 0
+        for kind, scope_id in scopes:
+            try:
+                _snapshot_one(period, period_key, kind, scope_id, top_n=top_n)
+                saved += 1
+            except Exception as e:
+                logger.warning(
+                    'archive_leaderboards: snapshot %s/%s/%s failed: %s',
+                    period_key,
+                    kind,
+                    scope_id,
+                    e,
+                )
+
+        logger.info(
+            'archive_leaderboards %s/%s: %d/%d scopes archived',
+            period,
+            period_key,
+            saved,
+            len(scopes),
+        )
+        return {
+            'period': period,
+            'period_key': period_key,
+            'scopes_found': len(scopes),
+            'snapshots_saved': saved,
+        }
 
 
 # ── Task 9 — Streak + Leagues beat tasks ─────────────────────────────────────
@@ -163,16 +172,30 @@ def archive_leaderboards(period: str = 'weekly', top_n: int = DEFAULT_TOP_N) -> 
 
 @shared_task(name='engagement.check_broken_streaks')
 def check_broken_streaks_task() -> dict:
-    """Beat: every night 00:05. Broken streak'larga warning yuboradi."""
+    """Beat: every night 00:05. Broken streak'larga warning yuboradi.
+
+    ISSUE-102: distributed lock (TTL 30min). Beat failover'da SMS notification
+    duplikati bo'lmasligi uchun (bir kun 1 marta yetadi).
+    """
     from . import streak_service
 
-    queued = streak_service.check_broken_streaks()
-    return {'warnings_queued': queued}
+    with single_runner_lock('check_broken_streaks', expire=1800) as acquired:
+        if not acquired:
+            return {'status': 'skipped_lock_busy'}
+        queued = streak_service.check_broken_streaks()
+        return {'warnings_queued': queued}
 
 
 @shared_task(name='engagement.leagues_weekly_recalc')
 def leagues_weekly_recalc_task() -> dict:
-    """Beat: every Monday 00:10. Tugagan haftaning promote/demote."""
+    """Beat: every Monday 00:10. Tugagan haftaning promote/demote.
+
+    ISSUE-102: distributed lock (TTL 1h). Promote rewards Coin wallet'ga
+    yozadi — duplikat run 2x reward bersa, foydalanuvchi balansi noto'g'ri.
+    """
     from . import leagues_service
 
-    return leagues_service.weekly_recalc()
+    with single_runner_lock('leagues_weekly_recalc', expire=3600) as acquired:
+        if not acquired:
+            return {'status': 'skipped_lock_busy'}
+        return leagues_service.weekly_recalc()

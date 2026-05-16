@@ -16,16 +16,19 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import TenantTimestampMixin
+from core.mixins import SoftDeleteMixin, TenantTimestampMixin
 
 
-class ExamEvent(TenantTimestampMixin):
+class ExamEvent(SoftDeleteMixin, TenantTimestampMixin):
     """
     Denormalized event — har ExamAttempt SUBMITTED bo'lganda yoziladi.
     Analytics queries (avg/weekly/distribution) shu jadvaldan ishlaydi.
 
     Production: ClickHouse'ga ham parallel yoziladi (kelajakda toggle).
     Hozir: faqat PostgreSQL.
+
+    ISSUE-103: soft-delete bilan — GDPR erasure'da analytics aggregation
+    saqlanadi (anonim user'dan ham ICDL/DTM compliance hisoboti tayyorlanadi).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -23,6 +23,8 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from core.mixins import SoftDeleteMixin
+
 # ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
 
 
@@ -59,8 +61,14 @@ class Wallet(models.Model):
         return f'{self.user} wallet ({self.balance_coins} Coin)'
 
 
-class WalletTransaction(models.Model):
-    """Audit trail. Immutable: har wallet o'zgarishi bu yerda yoziladi."""
+class WalletTransaction(SoftDeleteMixin, models.Model):
+    """Audit trail. Immutable: har wallet o'zgarishi bu yerda yoziladi.
+
+    ISSUE-103: soft-delete bilan — GDPR erasure'da user PII anonimlashtirildi,
+    lekin tx ID + amount + kind + timestamp saqlanadi (UZ buxgalteriya 5 yil).
+    """
+
+    pii_fields = ('description',)  # description'da user-typed text bo'lishi mumkin
 
     class Kind(models.TextChoices):
         TOPUP = 'topup', _("To'ldirish (Payme/Click)")
@@ -114,11 +122,16 @@ class WalletTransaction(models.Model):
 # ── 2. PaymentIntent ─────────────────────────────────────────────────────────
 
 
-class PaymentIntent(models.Model):
+class PaymentIntent(SoftDeleteMixin, models.Model):
     """
     Payme/Click charge initiatsiyasidan webhook qaytishigacha bo'lgan
     holatni saqlaydi. Idempotent (provider, provider_tx_id) unique.
+
+    ISSUE-103: soft-delete + PII redaction. Provider tx_id va amount saqlanadi
+    (financial reconciliation), faqat metadata redacted.
     """
+
+    pii_fields = ('metadata',)  # JSON: provider request/response (user IP, headers)
 
     class Provider(models.TextChoices):
         PAYME = 'payme', _('Payme')

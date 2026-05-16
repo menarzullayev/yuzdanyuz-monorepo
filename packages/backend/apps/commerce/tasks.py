@@ -10,6 +10,8 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
+from core.locks import single_runner_lock
+
 from . import subscription_service
 from .models import OrganizationSubscription
 
@@ -24,7 +26,17 @@ def auto_renew_subscriptions() -> dict:
       - auto_renew=False → expire(sub) (EXPIRED status)
 
     Lifetime sub'lar (current_period_ends_at=NULL) ko'rilmaydi.
+
+    ISSUE-102: distributed lock (TTL 1h). Beat failover'da duplikat charge
+    bo'lmasligi uchun (har sub 2x renew = 2x to'lov).
     """
+    with single_runner_lock('auto_renew_subscriptions', expire=3600) as acquired:
+        if not acquired:
+            return {'status': 'skipped_lock_busy'}
+        return _auto_renew_subscriptions_impl()
+
+
+def _auto_renew_subscriptions_impl() -> dict:
     now = timezone.now()
     expired_qs = OrganizationSubscription.objects.filter(
         status__in=[

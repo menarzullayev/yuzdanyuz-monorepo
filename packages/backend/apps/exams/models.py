@@ -22,7 +22,7 @@ from django.db import models
 from django.db.models import CheckConstraint, Q
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import TenantTimestampMixin
+from core.mixins import SoftDeleteMixin, TenantTimestampMixin
 
 from .managers import PublicOrTenantManager
 
@@ -137,11 +137,16 @@ class MockExamQuestion(models.Model):
 
 
 # ── 3. ExamAttempt ─────────────────────────────────────────────────
-class ExamAttempt(TenantTimestampMixin):
+class ExamAttempt(SoftDeleteMixin, TenantTimestampMixin):
     """
     Bir foydalanuvchi bir MockExam'ni topshirganda. Anti-cheat fields
     (heartbeat, strikes) shu yerda. Bir user — bir mock — bir attempt.
+
+    ISSUE-103: soft-delete bilan — GDPR erasure'da score + status saqlanadi
+    (DTM compliance + leaderboard tarixi anonim user bilan ham haqiqiy qoladi).
     """
+
+    pii_fields = ()  # ExamAttempt'da direct PII yo'q (faqat user FK + score)
 
     class Status(models.TextChoices):
         IN_PROGRESS = 'in_progress', _('Davom etmoqda')
@@ -258,12 +263,18 @@ class PracticeSession(TenantTimestampMixin):
 
 
 # ── 5. UserAnswer ──────────────────────────────────────────────────
-class UserAnswer(TenantTimestampMixin):
+class UserAnswer(SoftDeleteMixin, TenantTimestampMixin):
     """
     Bir savolga bir javob. XOR constraint: yo `attempt` yo `session` to'ldirilgan.
 
     auto_correct=True bo'lsa — savol quarantined va bonus ball berilgan.
+
+    ISSUE-103: soft-delete + PII redaction. selected (essay matni bo'lishi
+    mumkin) redacted, lekin is_correct + time_spent saqlanadi (skill mastery
+    aggregation uchun).
     """
+
+    pii_fields = ('selected',)  # OE savolda essay matni bo'lishi mumkin
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
