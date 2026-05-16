@@ -32,7 +32,9 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+# TODO ISSUE-404: migrate to get_org_setting(attempt.organization, 'anti_cheat.max_strikes')
 MAX_STRIKES = 3
+# TODO ISSUE-404: migrate to get_org_setting(attempt.organization, 'anti_cheat.heartbeat_timeout_seconds')
 HEARTBEAT_TIMEOUT_SECONDS = 60  # frontend 10s'da ping → 60s'da 6 ta o'tkazish max
 
 

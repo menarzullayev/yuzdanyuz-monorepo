@@ -1,8 +1,10 @@
 from uuid import uuid4
 
 from django.conf import settings as django_settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from simple_history.models import HistoricalRecords
 
 # ─── Org settings default qiymatlari ─────────────────────────────────────────
 # effective_settings() orqali har doim to'liq holda o'qiladi.
@@ -178,6 +180,9 @@ class Organization(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # ISSUE-401: SOC2 audit trail (historical_organization shadow table)
+    history = HistoricalRecords()
+
     class Meta:
         verbose_name = 'Tashkilot'
         verbose_name_plural = 'Tashkilotlar'
@@ -210,6 +215,15 @@ class Organization(models.Model):
     def get_setting(self, key: str):
         return self.effective_settings.get(key)
 
+    def clean(self):
+        # ISSUE-404: validate per-tenant config override keys against core.config.DEFAULTS
+        from core.config import validate_org_settings
+
+        super().clean()
+        errors = validate_org_settings(self.settings)
+        if errors:
+            raise ValidationError({'settings': errors})
+
 
 # ─── OrgRole (RBAC) ───────────────────────────────────────────────────────────
 
@@ -236,6 +250,9 @@ class OrgRole(models.Model):
         help_text="Tizimiy rollar o'chirib bo'lmaydi",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # ISSUE-401: SOC2 audit trail
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = 'Rol'
@@ -318,6 +335,9 @@ class Membership(models.Model):
     joined_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # ISSUE-401: SOC2 audit trail (kim qachon kimga rol berdi/oldi)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = "A'zolik"

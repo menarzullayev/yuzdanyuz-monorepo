@@ -4,6 +4,7 @@ from uuid import uuid4
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
+from simple_history.models import HistoricalRecords
 
 # ─── Region / District ────────────────────────────────────────────────────────
 # Leaderboard (viloyat reytingi), analitika va org joylashuvi uchun umumiy jadval.
@@ -148,6 +149,11 @@ class CustomUser(AbstractUser):
     # ── Django AbstractUser REQUIRED_FIELDS ni tozalaymiz ────────────────────
     # Multi-auth da email majburiy emas.
     REQUIRED_FIELDS = []
+
+    # ISSUE-401: SOC2 audit trail (historical_customuser shadow table)
+    # excluded_fields: password hash, last_login — har login'da yangi row
+    # yaratilmasin (kerakmas, security loglarda allaqachon).
+    history = HistoricalRecords(excluded_fields=['password', 'last_login'])
 
     class Meta:
         verbose_name = 'Foydalanuvchi'

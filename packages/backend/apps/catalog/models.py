@@ -3,8 +3,9 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
-from core.mixins import TenantTimestampMixin
+from core.mixins import AuditUserMixin, TenantTimestampMixin
 
 
 class Subject(models.Model):
@@ -78,7 +79,7 @@ class Tag(models.Model):
         return self.name
 
 
-class Question(TenantTimestampMixin):
+class Question(AuditUserMixin, TenantTimestampMixin):
     """
     Savolning asosiy meta-ma'lumotlari.
     TenantTimestampMixin → organization FK + TenantManager + created_at/updated_at.
@@ -128,6 +129,9 @@ class Question(TenantTimestampMixin):
 
     shuffling_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+
+    # ISSUE-401: SOC2 audit trail (content — 2 yil retention)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _('Savol')

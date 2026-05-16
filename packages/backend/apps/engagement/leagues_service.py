@@ -25,7 +25,9 @@ from .models import League, LeagueMembership
 
 logger = logging.getLogger(__name__)
 
+# TODO ISSUE-404: migrate to get_org_setting(org, 'rewards.league_promote_top')
 PROMOTE_TOP = 10
+# TODO ISSUE-404: migrate to get_org_setting(org, 'rewards.league_demote_bottom')
 DEMOTE_BOTTOM = 10
 
 
@@ -124,8 +126,9 @@ def weekly_recalc() -> dict:
     Yangi hafta uchun membershipslar yaratilmaydi (lazy: get_or_create_membership
     birinchi activity'da chaqiriladi).
     """
-    from apps.commerce import wallet_service
+    from core.interfaces.reward import get_reward_service
 
+    reward = get_reward_service()
     week_start, _ = _previous_week_bounds()
     leagues = list(League.objects.order_by('rank_order'))
     if not leagues:
@@ -149,13 +152,13 @@ def weekly_recalc() -> dict:
                 m.promoted = True
                 m.next_league = next_league
                 m.save(update_fields=['promoted', 'next_league'])
-                # Coin reward
+                # Coin reward via interface
                 try:
-                    wallet = wallet_service.get_or_create_wallet(m.user)
-                    wallet_service.top_up(
-                        wallet,
+                    reward(
+                        m.user.pk,
                         next_league.promote_reward_coins,
-                        description=f'Promoted to {next_league.name}',
+                        reason=f'Promoted to {next_league.name}',
+                        ref_id=f'league:{next_league.slug}:{week_start.isoformat()}',
                     )
                 except Exception as e:
                     logger.warning('promote reward failed for %s: %s', m.user, e)

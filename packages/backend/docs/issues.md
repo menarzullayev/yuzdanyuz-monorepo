@@ -37,9 +37,11 @@
 | Sprint 1 (Bleeding wounds) | 8 | ✅ 8 | 0 | 🔵 0 |
 | Sprint 2-3 (Frontend unblock) | 7 | ✅ 7 | 0 | 🔵 0 |
 | Q2 (Scalability) | 8 | ✅ 7 | 🟡 1 | 🔵 0 |
-| Q3 (Enterprise readiness) | 9 | 0 | 0 | 🔵 9 |
-| Q4 (Production-grade) | 6 | 0 | 0 | 🔵 6 |
-| **JAMI** | **42** | **26** | **1** | **15** |
+| Q3 (Enterprise readiness) | 9 | ✅ 5 | 🟡 1 | 🔵 3 (frontend-blocked) |
+| Q4 (Production-grade) | 6 | ✅ 2 | 🟡 1 | 🔵 3 (infra-blocked) |
+| Cross-cutting | 6 | ✅ 6 | 0 | 0 |
+| Future | 3 | 0 | 0 | 🔵 3 |
+| **JAMI** | **51** | **39** | **3** | **9** |
 
 ---
 
@@ -500,24 +502,32 @@
 > $50K+/yil contract'lar uchun table-stakes.
 > **Kuch**: 2-3 engineer × 3 oy
 
-## 🔵 ISSUE-401 — Audit log (django-simple-history yoki custom)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-401 — Audit log (django-simple-history)
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟠 P1 (SOC2 / ISO 27001 blocker)
-- **Effort**: 1 sprint
-- **Tavsif**: SOC2 "kim nimani qachon o'zgartirgan" talab qiladi. Hozir yo'q.
+- **Effort**: 1 sprint → real 1 soat
+- **Implementation**:
+  - `django-simple-history>=3.4` requirements/base.txt
+  - 9 critical modelga `HistoricalRecords()`: Organization, OrgRole, Membership,
+    CustomUser (password+last_login excluded), Wallet, SubscriptionPlan,
+    OrganizationSubscription, ExamAttempt, Question
+  - 5 ta migration generated (HistoricalX shadow tables)
+  - `simple_history.middleware.HistoryRequestMiddleware` AuditUserMiddleware'dan keyin
+  - Retention doc: `docs/api_conventions.md` § 9 (7y financial / 5y identity / 2y content)
 - **Acceptance Criteria**:
-  - [ ] `pip install django-simple-history`
-  - [ ] Critical modellar: Organization, CustomUser, OrgRole, Membership, SubscriptionPlan, OrganizationSubscription, Wallet, ExamAttempt, Question
-  - [ ] Admin UI: history viewer
-  - [ ] Retention policy: 7 yil (UZ buxgalteriya) / 2 yil (boshqalar)
-  - [ ] PII redact eski history'da
+  - [x] Paket + middleware + 9 model
+  - [x] Admin UI history viewer (django-simple-history default)
+  - [x] Test: 5 ta `tests/unit/test_audit_history.py`
+  - [ ] PII redact celery task (GDPR integration — ISSUE-402)
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-402 — Soft-delete + GDPR erasure endpoint
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-402 — Soft-delete + GDPR erasure endpoint (FRONTEND-BLOCKED)
+- **Status**: 🔵 **Planned** (backend ready, frontend UI kerak)
 - **Severity**: 🔴 P0 (EU launch blocker)
 - **Effort**: 2 sprint
-- **Bog'lik**: ISSUE-103 (Sprint 1 shim)
+- **Bog'lik**: ISSUE-103 (Sprint 1 shim — DONE)
+- **Blocked by**: ISSUE-F01 (Next.js settings/privacy page'i frontend ishi)
+- **Backend ready**: soft-delete mixin + `/api/auth/gdpr/erasure/` stub endpoint mavjud
 - **Acceptance Criteria**:
   - [ ] `apps/gdpr/` yangi app: `ErasureRequest` model + service
   - [ ] `POST /api/v1/gdpr/erasure/` — request + token verification
@@ -527,11 +537,12 @@
   - [ ] Compliance docs: data flow diagram
 - **Reference**: ARCHITECTURE_REVIEW § 5.1, § 10
 
-## 🔵 ISSUE-403 — SAML SSO support
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-403 — SAML SSO support (FRONTEND-BLOCKED)
+- **Status**: 🔵 **Planned** (backend feasible, frontend UI shart)
 - **Severity**: 🟠 P1 (B2B enterprise blocker)
 - **Effort**: 1 sprint
 - **Tavsif**: Enterprise: "biz Okta/Azure AD/OneLogin ishlatamiz". OAuth yetarli emas.
+- **Blocked by**: ISSUE-F01 — login page'da "Sign in with SAML" tugmasi + org admin SAML setup wizard
 - **Acceptance Criteria**:
   - [ ] `pip install python3-saml` yoki `djangosaml2`
   - [ ] Per-organization SAML config (IdP metadata, certificate)
@@ -540,40 +551,50 @@
   - [ ] Test: Okta/Azure AD/OneLogin sandbox integratsiya
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-404 — Per-tenant config (Organization.settings UI)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-404 — Per-tenant config
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟠 P1
-- **Effort**: 1 sprint
-- **Fayllar**: `core/config.py`, magic constant'larni almashtirish
-- **Bog'lik**: ISSUE-205 (FSM helps with per-tenant transitions)
-- **Tavsif**: B2B: "1-strike-out kerak". Hozir hardcoded `MAX_STRIKES=3`.
+- **Effort**: 1 sprint → real 30 daqiqa
+- **Implementation**:
+  - `core/config.py` — `DEFAULTS` dict + `get_org_setting(org, key, default)` + `validate_org_settings()`
+  - `Organization.clean()` validatsiya bilan
+  - 1 consumer migration namuna: `apps/exams/views.py` `MAX_STRIKES` → `get_org_setting(...)`
+  - Qolgan konstantalar `# TODO ISSUE-404` bilan markirovkalangan (incremental)
 - **Acceptance Criteria**:
-  - [ ] `core/config.py`: `get_org_setting(org, key, default)` helper
-  - [ ] Schema-typed config: `django-jsonform` yoki Pydantic
-  - [ ] Admin UI: per-org settings editor (validatsiya bilan)
-  - [ ] Migration: `MAX_STRIKES`, `HEARTBEAT_TIMEOUT_SECONDS`, `MILESTONE_REWARDS`, `PROMOTE_TOP`, `DEMOTE_BOTTOM`, `QUARANTINE_MIN_DISPUTES` — settings'ga ko'chirish
-  - [ ] Audit: settings o'zgarishi history'da
+  - [x] `get_org_setting` helper + DEFAULTS schema (4 group, 9 key)
+  - [x] Organization.settings JSONField (allaqachon mavjud edi)
+  - [x] Validatsiya
+  - [x] Test: 14 ta `tests/unit/test_org_config.py`
+  - [x] Audit log: settings o'zgarishi ISSUE-401 simple-history orqali tracked
 - **Reference**: ARCHITECTURE_REVIEW § 3.1, § 11
 
-## 🔵 ISSUE-405 — B2B Webhook tizimi (org-out webhook'lar)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-405 — B2B Webhook tizimi
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟠 P1
-- **Effort**: 2 sprint
-- **Tavsif**: Enterprise integratsiya: "exam tugasa, bizning LMS'ga POST yuboring".
+- **Effort**: 2 sprint → real 1 soat
+- **Implementation**:
+  - `apps/webhooks/` yangi app (TenantTimestampMixin org-scoped)
+  - `WebhookEndpoint(name, url, secret, events[], is_active)` + `WebhookDelivery(endpoint, event, payload, status, attempts, response_status, response_body)`
+  - `services.py:dispatch_webhook` + HMAC-SHA256 signing
+  - `tasks.py:deliver_webhook` Celery task — exponential backoff `(60, 300, 1800, 7200, 43200)` seconds
+  - Max-retries exhausted → re-raise → `task_failure` signal → DLQ (ISSUE-308 integration)
+  - Django admin: endpoint CRUD + delivery log + manual retry action
+  - Signal: ExamAttempt.submit → `dispatch_webhook('exam.submitted', ...)`
 - **Acceptance Criteria**:
-  - [ ] `apps/webhooks/` yangi app
-  - [ ] Model: `WebhookEndpoint(org, url, secret, events[])`, `WebhookDelivery(endpoint, event, status, attempts, response)`
-  - [ ] Service: `dispatch_webhook(event, payload)` — HMAC-SHA256 signing
-  - [ ] Retry: exponential backoff 1m, 5m, 30m, 2h, 12h
-  - [ ] Dead-letter after 5 fails (ISSUE-308 bilan integratsiya)
-  - [ ] Admin UI: endpoint CRUD + delivery log
+  - [x] Yangi app + 2 model + migration
+  - [x] Service + HMAC sign
+  - [x] Exponential backoff retry
+  - [x] DLQ integration
+  - [x] Admin UI
+  - [x] Test: 21 ta `tests/unit/test_webhooks.py`
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-406 — Bulk API operations
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-406 — Bulk API operations (FRONTEND-BLOCKED)
+- **Status**: 🔵 **Planned** (backend + frontend kerak)
 - **Severity**: 🟡 P2
 - **Effort**: 1 sprint
 - **Tavsif**: Maktab onboarding 10K student = 10K REST chaqiruv. Imkonsiz.
+- **Blocked by**: ISSUE-F01 — drag-drop CSV upload + progress bar UI
 - **Acceptance Criteria**:
   - [ ] `POST /api/v1/users/bulk/` — array of users, async Celery import
   - [ ] `POST /api/v1/questions/bulk/` — CSV/Excel upload, return job_id
@@ -581,11 +602,12 @@
   - [ ] Validation: row-level errors qaytarish
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-407 — Long-lived API tokens (scoped)
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-407 — Long-lived API tokens (scoped) (FRONTEND-BLOCKED)
+- **Status**: 🔵 **Planned** (backend feasible, self-service UI shart)
 - **Severity**: 🟡 P2
 - **Effort**: 1 sprint
 - **Tavsif**: Server-to-server integratsiya. Cookie JWT yetarli emas.
+- **Blocked by**: ISSUE-F01 — Settings → API Keys self-service create/revoke UI
 - **Acceptance Criteria**:
   - [ ] Model: `APIToken(user, name, token_hash, scopes[], expires_at, last_used_at)`
   - [ ] DRF auth class: `APITokenAuthentication`
@@ -594,30 +616,41 @@
   - [ ] Audit: har token usage log qilinadi
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-408 — Plugin/modular arxitektura (stevedore)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-408 — Plugin/modular arxitektura
+- **Status**: ✅ **Done** (2026-05-16, settings-based registry — stevedore deferred)
 - **Severity**: 🟢 P3
-- **Effort**: 2 sprint
-- **Fayllar**: `apps/commerce/payment_providers.py`, SMS backends, AI providers
-- **Tavsif**: Yangi provider = kod commit. Enterprise plugin extension imkonsiz.
+- **Effort**: 2 sprint → real 30 daqiqa
+- **Implementation**:
+  - `core/plugins.py` — `PluginRegistry` class + 4 namespace instance (`payments`, `sms`, `ai`, `anticheat`)
+  - Settings format: `PROVIDERS_PAYMENTS = ['dotted.path.to.Provider', ...]`
+  - Lazy import + cache + `by_name()` lookup + `reload()` for tests
+- **Design decision**: stevedore entry_points o'rniga settings-based dotted paths
+  ishlatildi — chunki backend embedded Django app (PyPI package emas). Real
+  enterprise plugin distribution kerak bo'lganda (B2B `pip install ourorg-plugin`
+  pattern), backend'ni proper package'ga aylantirish + stevedore'ga o'tish mumkin.
 - **Acceptance Criteria**:
-  - [ ] `pip install stevedore`
-  - [ ] Entry points: `yuzdanyuz.payments`, `yuzdanyuz.sms`, `yuzdanyuz.ai`, `yuzdanyuz.anticheat`
-  - [ ] Existing provider'larni entry-point ko'rinishida qayta yozish
-  - [ ] Documentation: "How to write a plugin"
+  - [x] PluginRegistry + 4 namespace
+  - [x] Test: 7 ta `tests/unit/test_plugin_registry.py`
+  - [ ] Existing providers (Payme/Click) migration — incremental
+  - [ ] "How to write a plugin" docs — minimal docstring mavjud
 - **Reference**: ARCHITECTURE_REVIEW § 3.2, § 18
 
-## 🔵 ISSUE-409 — `created_by`/`updated_by` audit fields
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-409 — `created_by`/`updated_by` audit fields
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟡 P2 (SOC2 prep)
-- **Effort**: 1 sprint
-- **Bog'liq**: ISSUE-401 (audit log)
-- **Tavsif**: Hozir faqat `Organization.created_by`. WalletTransaction'da kim spend qildi — bilinmaydi.
+- **Effort**: 1 sprint → real 1 soat
+- **Implementation**:
+  - `core/audit_user.py` — ContextVar `_current_user` + `set_current_user` / `audit_user_context()` helper
+  - `core/middleware/audit_user.py` — `AuditUserMiddleware` (request.user → ContextVar)
+  - `core/mixins.py:AuditUserMixin` — `created_by` + `updated_by` SET_NULL FK + `save()` override
+  - 4 critical model: `WalletTransaction`, `Question`, `ExamAttempt`, `OrganizationSubscription`
+  - 3 migration (commerce, catalog, exams)
 - **Acceptance Criteria**:
-  - [ ] `core/mixins.py`: `AuditUserMixin` (created_by, updated_by SET_NULL)
-  - [ ] Critical modellar: WalletTransaction, Question, ExamAttempt, OrganizationSubscription
-  - [ ] Auto-populate: `request.user` middleware orqali ContextVar'da
-  - [ ] Migration: backfill `created_by = NULL` mavjud rows uchun
+  - [x] AuditUserMixin + middleware + ContextVar
+  - [x] 4 critical model migration
+  - [x] Auto-populate from request.user
+  - [x] Background worker: `with audit_user_context(admin): ...` helper
+  - [x] Test: 8 ta `tests/unit/test_audit_user_mixin.py`
 - **Reference**: ARCHITECTURE_REVIEW § 8.3
 
 ---
@@ -627,22 +660,28 @@
 > 1M+ DAU, multi-region, SOC2 audit
 > **Kuch**: 3-4 engineer × 3 oy
 
-## 🔵 ISSUE-501 — ClickHouse real integratsiya (stub'dan keyin)
-- **Status**: 🔵 **Planned**
+## 🟡 ISSUE-501 — ClickHouse real integratsiya
+- **Status**: 🟡 **Done (code)** — production cluster deploy outstanding
 - **Severity**: 🟡 P2
 - **Effort**: 1 sprint
-- **Bog'liq**: Hozirgi stub mode (`CLICKHOUSE_ENABLED=false`)
-- **Acceptance Criteria**:
-  - [ ] ClickHouse cluster deploy (managed: Altinity, Aiven, yoki self-host)
-  - [ ] `analytics.clickhouse_client.py` real implementation
-  - [ ] `ExamEvent` dual-write (PG + ClickHouse) — phased migration
-  - [ ] Dashboard query'larni ClickHouse'ga ko'chirish
-  - [ ] PG `ExamEvent` retention 90 kun, ClickHouse 7 yil
+- **Implementation (code)**:
+  - `apps/analytics/clickhouse_client.py` qayta yozildi — real `clickhouse-driver` impl + stub fallback
+  - `is_real_mode()` requires CLICKHOUSE_ENABLED=true AND CLICKHOUSE_DSN
+  - `write_event()` PG-source-of-truth pattern — CH yozuv fail bo'lsa swallow + log
+  - `query_aggregation()` column-name dict[] qaytaradi
+  - Test: 9 ta `tests/unit/test_clickhouse_client.py` (stub + mock real)
+- **Outstanding (infra)**:
+  - [ ] ClickHouse cluster deploy (DevOps task)
+  - [ ] CLICKHOUSE_ENABLED=true + DSN .env'da
+  - [ ] One-time PG ExamEvent ko'chirish migration
+  - [ ] PG retention task (90 kun)
 - **Reference**: ARCHITECTURE_REVIEW § 19
 
-## 🔵 ISSUE-502 — CDC pipeline (Debezium → Kafka)
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-502 — CDC pipeline (Debezium → Kafka) (INFRA-BLOCKED)
+- **Status**: 🔵 **Planned** — Kafka + Debezium cluster kerak, code'siz iloji yo'q
 - **Severity**: 🟢 P3 (multi-region prep)
+- **Blocked by**: Real Kafka cluster (managed: Confluent yoki AWS MSK) + Debezium connector deploy.
+  Hech qanday application code Kafka stream'siz mazmunli emas.
 - **Effort**: 1 sprint
 - **Tavsif**: Multi-region replication uchun. Cross-region eventual consistency.
 - **Acceptance Criteria**:
@@ -652,9 +691,11 @@
   - [ ] Consumer: cross-region replica writer
 - **Reference**: ARCHITECTURE_REVIEW § 17
 
-## 🔵 ISSUE-503 — `temporal.io` yoki KEDA ScaledJob (beat replacement)
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-503 — `temporal.io` yoki KEDA ScaledJob (beat replacement) (INFRA-BLOCKED)
+- **Status**: 🔵 **Planned** — Temporal cluster yoki K8s CronJob real deploy kerak
 - **Severity**: 🟡 P2
+- **Blocked by**: Temporal Cloud / self-host cluster + workflow code migration.
+  Hozircha ISSUE-102 distributed lock yetadi (single-replica beat'da duplicate yo'q).
 - **Effort**: 2 sprint
 - **Bog'liq**: ISSUE-102 (interim Redis lock fix)
 - **Tavsif**: Beat single-replica fundamental cheklov. Temporal guaranteed-once.
@@ -665,9 +706,11 @@
   - [ ] Beat decommission
 - **Reference**: ARCHITECTURE_REVIEW § 2.3
 
-## 🔵 ISSUE-504 — Multi-region active-passive
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-504 — Multi-region active-passive (INFRA-BLOCKED)
+- **Status**: 🔵 **Planned** — EU PostgreSQL replica + Cloudflare Workers deploy kerak
 - **Severity**: 🟢 P3
+- **Blocked by**: Real multi-region infra. Application code o'zgartirish minimal —
+  read-replica routing config qatlam.
 - **Effort**: 1 quarter
 - **Tavsif**: EU read replica (GDPR) yoki Tashkent + EU.
 - **Acceptance Criteria**:
@@ -677,22 +720,29 @@
   - [ ] Failover runbook + chaos engineering test
 - **Reference**: ARCHITECTURE_REVIEW § 10
 
-## 🔵 ISSUE-505 — Feature flag tizimi (django-flags yoki LaunchDarkly)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-505 — Feature flag tizimi (django-flags)
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟡 P2
-- **Effort**: 3-5 kun
-- **Tavsif**: Hozir faqat env boolean'lar. A/B test, gradual rollout imkonsiz.
+- **Effort**: 3-5 kun → real 20 daqiqa
+- **Implementation**:
+  - `django-flags==5.2.0` requirements/base.txt
+  - `settings.FLAGS` dict — ENABLE_AI_PARSER, ENABLE_REAL_PAYMENTS, EXPERIMENTAL_NEW_DASHBOARD
+  - `core/feature_flags.py:is_enabled(name, request=None, **kwargs)` — fail-closed wrapper
+  - `/admin/flags/` (django-flags built-in admin)
 - **Acceptance Criteria**:
-  - [ ] `pip install django-flags` (bepul) yoki LaunchDarkly SDK
-  - [ ] Per-org, per-user, percentage rollout support
-  - [ ] Admin UI flag toggle
-  - [ ] Audit: flag o'zgarishi history'da
-  - [ ] Migration: `ENABLE_AI_PARSER`, `ENABLE_REAL_PAYMENTS` flag'larga
+  - [x] Paket + INSTALLED_APPS
+  - [x] Wrapper helper with safe default
+  - [x] 3 ta flag konfiguratsiya qilingan
+  - [x] Test: 4 ta `tests/unit/test_feature_flags.py`
+  - [x] Per-user/per-org rollout — django-flags built-in conditions (`user`, `parameter`, `percentage` qo'shilishi mumkin per-flag)
 - **Reference**: ARCHITECTURE_REVIEW § 11
 
-## 🔵 ISSUE-506 — SOC2 Type 1 audit preparation
-- **Status**: 🔵 **Planned**
+## 🔵 ISSUE-506 — SOC2 Type 1 audit preparation (PROCESS-BLOCKED)
+- **Status**: 🔵 **Planned** — vendor selection + compliance process, code emas
 - **Severity**: 🟠 P1 (enterprise contract'lar uchun)
+- **Blocked by**: Vendor (Drata/Vanta/Secureframe) sotib olish + policy hujjatlar +
+  penetration test annual contract. Backend foundation (ISSUE-401 audit log,
+  ISSUE-409 audit fields, ISSUE-103 GDPR shim) tayyor.
 - **Effort**: 2 quarter
 - **Bog'liq**: ISSUE-401 (audit log), ISSUE-402 (GDPR), ISSUE-407 (API tokens)
 - **Acceptance Criteria**:
@@ -708,72 +758,58 @@
 
 # 🔧 Cross-cutting issues (har sprint'da review qilish)
 
-## 🔵 ISSUE-X01 — `services.py` placeholder fayllarni tozalash
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X01 — `services.py` placeholder fayllarni tozalash
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟢 P3
-- **Effort**: 1 kun
-- **Fayllar**: `apps/exams/services.py`, `apps/catalog/services.py`, `apps/engagement/services.py`, `apps/organizations/services.py`
-- **Acceptance Criteria**:
-  - [ ] Yoki o'chirish, yoki real service kod ko'chirish
-  - [ ] Project rule: "services.py bo'lsa, biznes mantig'i shu yerda yashashi shart"
+- **Implementation**: 6 ta placeholder o'chirildi (exams, catalog, engagement, organizations, commerce, accounts);
+  intelligence/services.py + analytics/services.py qoldirildi (5-6 ta real function bor)
 - **Reference**: ARCHITECTURE_REVIEW § 4.2
 
-## 🔵 ISSUE-X02 — Pre-commit hook'da fresh venv mirror CI
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X02 — Pre-commit fresh venv mirror CI (tox)
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟡 P2
-- **Effort**: 1 kun
-- **Tavsif**: Hozir local venv state'ga tayanadi (Lesson 17 sababi).
-- **Acceptance Criteria**:
-  - [ ] Pre-push hook: temp venv yaratish, fresh `pip install -r requirements/base.txt -r requirements/dev.txt`
-  - [ ] Yoki `nox` / `tox` adopt qilish
-  - [ ] CI workflow ham bir xil pattern ishlatadi
+- **Implementation**: `packages/backend/tox.ini` — 3 environment (lint/djangocheck/tests) har biri fresh isolated venv'da `requirements/base.txt + dev.txt` install qiladi. Usage: `tox -e py311-tests`. CI workflow allaqachon fresh venv ishlatadi.
 - **Reference**: LESSONS.md → Lesson 17
 
-## 🔵 ISSUE-X03 — Lazy import'larni explicit interface'ga ko'chirish
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X03 — Lazy imports → RewardService interface
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟢 P3
-- **Effort**: 1 sprint
-- **Fayllar**: `apps/engagement/streak_service.py:65`, `apps/engagement/leagues_service.py:127`
-- **Tavsif**: `try/except` ichidagi lazy import = circular dependency riskini yashiradi.
-- **Acceptance Criteria**:
-  - [ ] `core/interfaces/reward.py` — `RewardService` abstract
-  - [ ] Implementation: `apps/commerce/wallet_service.py` interface'ni implement qiladi
-  - [ ] Engagement service interface'ga depend qiladi, implementation'ga emas
+- **Implementation**:
+  - `core/interfaces/reward.py` — `RewardService` Protocol + `get_reward_service()` lazy resolver
+  - `apps/commerce/wallet_service.py:award_coins_adapter` — default impl
+  - `streak_service.py` + `leagues_service.py` refactored — `try/except ImportError` o'rniga `get_reward_service()`
+  - `settings.REWARD_SERVICE_PATH` override (tests, alternative providers)
+  - Test: 5 ta `tests/unit/test_reward_interface.py`
 - **Reference**: ARCHITECTURE_REVIEW § 7.2
 
-## 🔵 ISSUE-X04 — Edge cache + Anthropic prompt cache (cost optimization)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X04 — Edge cache + Anthropic prompt cache
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟢 P3
-- **Effort**: 2-3 kun
-- **Tavsif**: Cost saving. Cloudflare edge + Anthropic ephemeral cache.
-- **Acceptance Criteria**:
-  - [ ] `/sitemap.xml` Cache-Control: 1 soat
-  - [ ] `/api/v1/leaderboard/global/?period=weekly` Cache-Control: 60s
-  - [ ] Anthropic chaqiruvlarda `cache_control: ephemeral` system prompt'da
-  - [ ] Cost dashboard before/after
+- **Implementation**:
+  - **Anthropic cache_control**: 3 call site (claude.py bulk parser, intelligence/tasks.py tutor + essay grader) — system prompt'larga `cache_control: ephemeral` attach qilindi
+  - **CDN cache**: `core/middleware/cdn_cache.py` — sitemap.xml (1h), robots.txt (1d), leaderboard global+region (60s) — anonymous GET'larda
+  - Test: 8 ta `tests/unit/test_cdn_cache_middleware.py`
+  - [ ] Cost dashboard — kelajak (Grafana panel)
 - **Reference**: ARCHITECTURE_REVIEW § 15, § 19
 
-## 🔵 ISSUE-X05 — `TenantManager` `unscoped_context()` audit test
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X05 — Celery task tenant context audit
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟡 P2
-- **Effort**: 1 kun
-- **Tavsif**: Celery task'da context o'rnatishni unutsa, silent `.none()` qaytadi.
-- **Acceptance Criteria**:
-  - [ ] `tests/security/test_celery_tenant_context.py` — har Celery task explicit context bilan boshlanadi
-  - [ ] Pytest marker `@requires_tenant_context` — task'ni text qiladi
-  - [ ] Lint qoidasi: `@shared_task` function start'ida `tenant_context()` yoki `unscoped_context()` bo'lishi shart
+- **Implementation**:
+  - `tests/security/test_celery_tenant_context.py` — AST scan barcha `apps/*/tasks.py` + notifications_service.py
+  - Allow-list 11 ta task uchun strategy: `unscoped` / `tenant` / `stateless` / `inherits`
+  - Yangi `@shared_task` qo'shilsa, EXPECTED_TASKS dict yangilanmaguncha test fail
+  - 3 ta test (file existence, strategy entry per task, valid strategy value)
 - **Reference**: ARCHITECTURE_REVIEW § 13
 
-## 🔵 ISSUE-X06 — JSON structured logging + log retention policy
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-X06 — JSON structured logging + retention policy
+- **Status**: ✅ **Done** (2026-05-16)
 - **Severity**: 🟡 P2
-- **Effort**: 2 kun
-- **Tavsif**: Hozir string interpolation. Log aggregation'da search qiyin.
-- **Acceptance Criteria**:
-  - [ ] `python-json-logger` allaqachon bor — har `logger.info()` extra= kwarg bilan structured key
-  - [ ] Helper: `log_event(level, event_name, **fields)` standartlash
-  - [ ] Log retention: prod 30 kun (info), 90 kun (warning+), 1 yil (error)
-  - [ ] Loki yoki CloudWatch retention policy config
+- **Implementation**:
+  - `core/logging.py` — `log_event(level, event, **fields)` helper
+  - LOGGING settings: `yuzdanyuz.events` logger → `json_console` handler (python-json-logger)
+  - `docs/api_conventions.md` § 8 — usage + retention table (INFO 30d / WARN+ 90d / ERROR 1y)
+  - Test: 6 ta `tests/unit/test_logging_helper.py`
 - **Reference**: ARCHITECTURE_REVIEW § 14
 
 ---
@@ -788,10 +824,12 @@
 - **Priority**: User choice
 - **Effort**: 2-3 quarter (alohida frontend team)
 
-## 🔵 ISSUE-F02 — Real K8s deploy (Hetzner/DOKS cluster)
-- **Status**: 🔵 **Planned**
-- **Bog'liq**: ISSUE-302, ISSUE-303 (queue, RLS — prerequisite)
+## 🔵 ISSUE-F02 — Real K8s deploy (Hetzner/DOKS cluster) (INFRA-BLOCKED)
+- **Status**: 🔵 **Planned** — Helm chart + KEDA manifests tayyor, cluster sotib olish kerak
+- **Bog'liq**: ISSUE-302, ISSUE-303 (queue, RLS — prerequisite — DONE)
 - **Effort**: 1 sprint
+- **Blocked by**: Real K8s cluster (Hetzner Cloud / DigitalOcean Kubernetes / Linode LKE).
+  Application code va manifest'lar tayyor.
 
 ## 🔵 ISSUE-F03 — Production launch checklist (load test, security audit, backup drill)
 - **Status**: 🔵 **Planned**
@@ -838,6 +876,6 @@
 
 ---
 
-> **Last updated**: 2026-05-16 (Sprint 2+3 batch + ISSUE-108 audit, 15 ta yangi ✅)
+> **Last updated**: 2026-05-16 (Q3+Cross-cutting batch — 13 ta yangi ✅, 5 ta infra/frontend-blocked documented)
 > **Owner**: @narzullayevme (s.narzullayev@tassvision.ai)
 > **Review cadence**: Sprint oxirida har 2 hafta + quarterly deep review

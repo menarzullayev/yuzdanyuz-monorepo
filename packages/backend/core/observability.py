@@ -79,6 +79,13 @@ def json_logging_dict(level: str = 'INFO') -> dict[str, Any]:
                 'propagate': False,
             },
             'celery': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+            # ISSUE-X06: structured key-value events via core.logging.log_event().
+            # propagate=False — avoid double-emission through root.
+            'yuzdanyuz.events': {
+                'handlers': ['console'],
+                'level': os.getenv('EVENTS_LOG_LEVEL', 'INFO'),
+                'propagate': False,
+            },
         },
         'root': {'handlers': ['console'], 'level': level},
     }

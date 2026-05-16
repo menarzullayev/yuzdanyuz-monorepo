@@ -22,6 +22,7 @@ from .models import UserStreak
 
 logger = logging.getLogger(__name__)
 
+# TODO ISSUE-404: migrate to get_org_setting(user.organization, 'rewards.streak_milestone_coins')
 MILESTONE_REWARDS = {7: 50, 30: 200, 100: 1000}
 
 
@@ -62,12 +63,15 @@ def update_on_activity(user, activity_date=None) -> UserStreak:
 
     if awarded_milestone:
         try:
-            from apps.commerce import wallet_service
+            from core.interfaces.reward import get_reward_service
 
-            wallet = wallet_service.get_or_create_wallet(user)
+            reward = get_reward_service()
             coins = MILESTONE_REWARDS[streak.current_streak]
-            wallet_service.top_up(
-                wallet, coins, description=f'Streak milestone {streak.current_streak} days'
+            reward(
+                user.pk,
+                coins,
+                reason=f'Streak milestone {streak.current_streak} days',
+                ref_id=f'streak:{streak.current_streak}',
             )
         except Exception as e:
             logger.warning('streak milestone Coin reward failed: %s', e)

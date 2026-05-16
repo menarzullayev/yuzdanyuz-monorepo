@@ -22,8 +22,9 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
-from core.mixins import SoftDeleteMixin
+from core.mixins import AuditUserMixin, SoftDeleteMixin
 
 # ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ class Wallet(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # ISSUE-401: SOC2 audit trail (financial — 7 yil retention)
+    history = HistoricalRecords()
+
     class Meta:
         verbose_name = _('Wallet')
         verbose_name_plural = _('Wallets')
@@ -61,7 +65,7 @@ class Wallet(models.Model):
         return f'{self.user} wallet ({self.balance_coins} Coin)'
 
 
-class WalletTransaction(SoftDeleteMixin, models.Model):
+class WalletTransaction(SoftDeleteMixin, AuditUserMixin, models.Model):
     """Audit trail. Immutable: har wallet o'zgarishi bu yerda yoziladi.
 
     ISSUE-103: soft-delete bilan — GDPR erasure'da user PII anonimlashtirildi,
@@ -295,6 +299,9 @@ class SubscriptionPlan(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # ISSUE-401: SOC2 audit trail (price changes — financial reconciliation)
+    history = HistoricalRecords()
+
     class Meta:
         verbose_name = _('Subscription Plan')
         verbose_name_plural = _('Subscription Plans')
@@ -310,7 +317,7 @@ class SubscriptionPlan(models.Model):
         return self.price_uzs
 
 
-class OrganizationSubscription(models.Model):
+class OrganizationSubscription(AuditUserMixin, models.Model):
     """Org'ning aktiv subscription'i."""
 
     class Status(models.TextChoices):
@@ -354,6 +361,9 @@ class OrganizationSubscription(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # ISSUE-401: SOC2 audit trail (subscription lifecycle — 7 yil retention)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _('Organization Subscription')

@@ -180,3 +180,18 @@ def withdraw_cash_uzs(
         cash_uzs_delta=-amount_uzs,
         description=description,
     )
+
+
+def award_coins_adapter(user_id, amount: int, *, reason: str, ref_id: str = '') -> None:
+    """RewardService Protocol adapter — engagement service'lar shu funksiyaga depend qiladi.
+
+    `core.interfaces.reward.get_reward_service()` default sifatida shuni resolve
+    qiladi. Engagement → commerce yo'nalishidagi yagona kirish nuqtasi.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    user = User.objects.get(pk=user_id)
+    wallet = get_or_create_wallet(user)
+    description = f'{reason} [ref={ref_id}]' if ref_id else reason
+    top_up(wallet, coins=amount, description=description)

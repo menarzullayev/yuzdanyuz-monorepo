@@ -21,8 +21,9 @@ from django.conf import settings
 from django.db import models
 from django.db.models import CheckConstraint, Q
 from django.utils.translation import gettext_lazy as _
+from simple_history.models import HistoricalRecords
 
-from core.mixins import SoftDeleteMixin, TenantTimestampMixin
+from core.mixins import AuditUserMixin, SoftDeleteMixin, TenantTimestampMixin
 
 from .managers import PublicOrTenantManager
 
@@ -173,7 +174,7 @@ class MockExamQuestion(models.Model):
 
 
 # ── 3. ExamAttempt ─────────────────────────────────────────────────
-class ExamAttempt(SoftDeleteMixin, TenantTimestampMixin):
+class ExamAttempt(SoftDeleteMixin, AuditUserMixin, TenantTimestampMixin):
     """
     Bir foydalanuvchi bir MockExam'ni topshirganda. Anti-cheat fields
     (heartbeat, strikes) shu yerda. Bir user — bir mock — bir attempt.
@@ -237,6 +238,9 @@ class ExamAttempt(SoftDeleteMixin, TenantTimestampMixin):
         null=True,
         blank=True,
     )
+
+    # ISSUE-401: SOC2 audit trail (DTM compliance — 2 yil retention)
+    history = HistoricalRecords()
 
     class Meta:
         verbose_name = _('Exam Attempt')

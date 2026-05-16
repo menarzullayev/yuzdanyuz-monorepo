@@ -14,10 +14,18 @@ class AnthropicProvider(BaseAIProvider):
 
     def parse_text_block(self, text: str) -> dict:
         try:
+            # ISSUE-X04: ephemeral prompt cache on system block — reduces token
+            # cost on repeated parser calls (system prompt is identical every call).
             msg = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=[
+                    {
+                        'type': 'text',
+                        'text': SYSTEM_PROMPT,
+                        'cache_control': {'type': 'ephemeral'},
+                    },
+                ],
                 messages=[{'role': 'user', 'content': self._prompt(text)}],
             )
             return json.loads(msg.content[0].text)
