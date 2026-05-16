@@ -54,11 +54,18 @@ repos:
         stages: [pre-push]
         files: ^packages/backend/
 
+      # pre-commit framework runs hooks of the same stage in parallel by default.
+      # All three pytest hooks share one Postgres test DB (test_yuzdanyuz_db with
+      # --reuse-db); concurrent runs deadlock on unique constraints
+      # (organizations_organization_slug_key) and duplicate-insert
+      # django_content_type rows. require_serial: true forces them to run one at
+      # a time so each pytest invocation has the DB to itself.
       - id: pytest-unit
         name: Pytest — unit tests
         entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/unit/ apps/*/tests.py -x --tb=short -q'
         language: system
         pass_filenames: false
+        require_serial: true
         stages: [pre-push]
         files: ^packages/backend/
 
@@ -67,6 +74,7 @@ repos:
         entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/integration/ -x --tb=short -q'
         language: system
         pass_filenames: false
+        require_serial: true
         stages: [pre-push]
         files: ^packages/backend/
 
@@ -75,5 +83,6 @@ repos:
         entry: bash -c 'cd packages/backend && ./venv/bin/python -m pytest tests/security/ -x --tb=short -q'
         language: system
         pass_filenames: false
+        require_serial: true
         stages: [pre-push]
         files: ^packages/backend/
