@@ -1,10 +1,11 @@
 """
-Auth views — Telegram TMA login, token refresh, logout.
+Auth views — Telegram TMA login, token refresh, logout, current user.
 
 Endpoints:
   POST /api/auth/telegram/   — TMA initData → JWT cookie
   POST /api/auth/refresh/    — Refresh token rotation
   POST /api/auth/logout/     — Cookie tozalash
+  GET  /api/auth/me/         — Current user + primary org
 """
 
 import json
@@ -14,6 +15,9 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.services.telegram_auth import (
     TelegramAuthError,
@@ -159,3 +163,53 @@ class LogoutView(View):
         response = JsonResponse({'ok': True})
         clear_auth_cookies(response)
         return response
+
+
+class MeView(APIView):
+    """
+    GET /api/auth/me/
+
+    Returns the authenticated user's profile + primary organization.
+    Frontend invokes this immediately after login (or on app boot) to bootstrap
+    the user shell (display name, role, org switcher, locale).
+
+    Authentication: JWTAuthMiddleware reads the `access_token` HttpOnly cookie
+    and populates request.user. SessionAuthentication (DRF default) then passes
+    through. 401 when anonymous, 200 with payload when authenticated.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        org = user.primary_organization
+        return Response(
+            {
+                'id': str(user.pk),
+                'email': user.email or None,
+                'phone_number': user.phone_number or None,
+                'display_name': user.display_name,
+                'first_name': user.first_name or None,
+                'last_name': user.last_name or None,
+                'avatar': user.avatar.url if user.avatar else None,
+                'preferred_lang': user.preferred_lang,
+                'user_type': user.user_type,
+                'is_profile_complete': user.is_profile_complete,
+                'telegram': {
+                    'id': user.telegram_id,
+                    'username': user.telegram_username,
+                    'photo_url': user.telegram_photo_url,
+                }
+                if user.telegram_id
+                else None,
+                'primary_organization': {
+                    'id': str(org.id),
+                    'name': org.name,
+                    'slug': getattr(org, 'slug', None),
+                }
+                if org
+                else None,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+            }
+        )
