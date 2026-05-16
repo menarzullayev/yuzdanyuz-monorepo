@@ -51,6 +51,8 @@ MIDDLEWARE = [
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'core.middleware.fix_prefix.ForceScriptNameMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise — serve /static/ in WSGI without nginx (works under gunicorn/daphne)
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -257,3 +259,7 @@ PROJECT_BRAND_NAME = os.getenv('PROJECT_BRAND_NAME', 'Milliy Sertifikat')
 # AI parser yoqilsa → tuzilmagan matn bloklari AI ga yuboriladi (narxi bor).
 # O'chirilsa → faqat regex parser ishlaydi (bepul, lekin murakkab savollarni topa olmaydi).
 ENABLE_AI_PARSER = os.getenv('ENABLE_AI_PARSER', 'true').lower() == 'true'
+
+# Anthropic AI — Task 3 bulk import parser + Task 6 AI tutor + open-ended grading
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-5')

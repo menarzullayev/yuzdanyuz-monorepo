@@ -21,11 +21,16 @@ except ImportError:
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
-# PHP proxy orqali https://hsm.sammu.uz/yuzdanyuz/ da ishlash uchun
+# PHP proxy orqali https://hsm.sammu.uz/yuzdanyuz/ da ishlash uchun.
+# Faqat FORCE_SCRIPT_NAME env mavjud bo'lganda yoqamiz — direct gunicorn
+# (lokal :8001) kirishida bu yo'q va Django URL'larni prefix'siz generate qiladi.
 CSRF_TRUSTED_ORIGINS = ['https://hsm.sammu.uz']
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-FORCE_SCRIPT_NAME = '/yuzdanyuz'
-STATIC_URL = '/yuzdanyuz/static/'
-LOGIN_REDIRECT_URL = '/yuzdanyuz/'
-LOGIN_URL = '/yuzdanyuz/login/'
+
+_script_name = os.getenv('FORCE_SCRIPT_NAME', '').rstrip('/')
+if _script_name:
+    FORCE_SCRIPT_NAME = _script_name
+    STATIC_URL = f'{_script_name}/static/'
+    LOGIN_REDIRECT_URL = f'{_script_name}/'
+    LOGIN_URL = f'{_script_name}/login/'

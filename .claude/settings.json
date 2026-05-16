@@ -21,8 +21,6 @@
       "Bash(*--no-verify*)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
-      "Read(.env)",
-      "Read(.env.*)",
       "Read(*credentials*)",
       "Read(*.key)",
       "Read(~/.ssh/id_*)",
