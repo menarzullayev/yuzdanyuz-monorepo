@@ -61,6 +61,17 @@ def update_leaderboard_on_submit(sender, instance, created, update_fields=None, 
     except Exception as e:
         logger.warning('record_exam_event failed for attempt %s: %s', instance.id, e)
 
+    # Task 9 — streak + leagues update
+    try:
+        from apps.engagement import leagues_service, streak_service
+
+        streak_service.update_on_activity(user)
+        # Leagues: score qiymati pointga aylanadi (round)
+        if instance.score is not None:
+            leagues_service.add_points(user, int(round(float(instance.score))))
+    except Exception as e:
+        logger.warning('streak/leagues update failed for attempt %s: %s', instance.id, e)
+
 
 @receiver(post_save, sender=UserAnswer)
 def update_mastery_on_answer(sender, instance, created, **kwargs):

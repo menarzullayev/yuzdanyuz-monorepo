@@ -24,6 +24,8 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
     'allauth.socialaccount.providers.apple',
+    # SEO (Task 9)
+    'django.contrib.sitemaps',
     # Celery infrastructure (admin'da beat schedule + result tracking)
     'django_celery_beat',
     'django_celery_results',
