@@ -27,6 +27,16 @@ tsconfig.tsbuildinfo
 *.swp
 .DS_Store
 
+# Stabilization / deploy backup artifacts (local agent ops work)
+*.STABILIZE_BAK
+*.SUBPATH_BAK
+*.DEPLOY_BAK
+
+# Design exports — large binary + HTML previews, kept in Claude skill folder
+# (~/.claude/skills/yuzdanyuz-design/) and Claude Design canvas as source of truth.
+# Only the index README.md is tracked here for navigation.
+docs/design/claude-design-export/
+
 # VS Code — share workspace settings, ignore personal data
 .vscode/*
 !.vscode/settings.json

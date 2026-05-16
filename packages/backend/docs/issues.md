@@ -868,6 +868,8 @@
 # 🔗 Bog'liq hujjatlar
 
 - [ARCHITECTURE_REVIEW_2026-05-16.md](ARCHITECTURE_REVIEW_2026-05-16.md) — to'liq audit (697 satr)
+- [**pre_launch_checklist.md**](pre_launch_checklist.md) — 🚨 **CTO checklist** (BLOCKER + HIGH + MEDIUM items launch'gacha)
+- [api_conventions.md](api_conventions.md) — API standards (envelope, naming, RLS, FSM)
 - [roadmap.md](roadmap.md) — Task 1-10 feature roadmap (allaqachon bajarilgan)
 - [LESSONS.md](../../.claude/LESSONS.md) — 18 ta dars (Task 1-10 + E2E'dan)
 - [CELERY_TASKS.md](CELERY_TASKS.md) — task inventory + schedule
