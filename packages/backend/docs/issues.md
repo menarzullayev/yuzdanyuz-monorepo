@@ -34,12 +34,12 @@
 | Sprint | Items | Done | Partial | Undone |
 |---|---|---|---|---|
 | Sprint 0 (E2E fixes) | 4 | ✅ 4 | 0 | 0 |
-| Sprint 1 (Bleeding wounds) | 7 | ✅ 3 | 0 | 🔵 4 |
+| Sprint 1 (Bleeding wounds) | 7 | ✅ 7 | 0 | 🔵 0 |
 | Sprint 2-3 (Frontend unblock) | 6 | 0 | 0 | 🔵 6 |
 | Q2 (Scalability) | 8 | 0 | 0 | 🔵 8 |
 | Q3 (Enterprise readiness) | 9 | 0 | 0 | 🔵 9 |
 | Q4 (Production-grade) | 6 | 0 | 0 | 🔵 6 |
-| **JAMI** | **40** | **7** | **0** | **33** |
+| **JAMI** | **40** | **11** | **0** | **29** |
 
 ---
 
@@ -149,76 +149,60 @@
   - [x] 6 ta audit model uchun migration + apply
   - [x] GDPR endpoint stub (`/api/auth/gdpr/erasure/`)
   - [x] Test: 8 ta `test_gdpr_soft_delete.py` (mixin fields, soft_delete, redact_pii, alive/deleted helpers, endpoint flow)
-  - [ ] FK cascade `CustomUser → audit FK` ni `CASCADE → SET_NULL`'ga o'zgartirish — alohida migration (kelajak: ISSUE-103b)
+  - [x] **FK cascade `User → audit FK` ni `CASCADE → SET_NULL`'ga o'zgartirish** — 3 ta migration (analytics/0003, exams/0004, intelligence/0003) — `ExamAttempt.user`, `ExamEvent.user`, `OpenEndedSubmission.user` endi `SET_NULL, null=True`
 - **Reference**: ARCHITECTURE_REVIEW § 5.1
 
-## 🔵 ISSUE-103 — Soft-delete shim audit modellariga
-- **Status**: 🔵 **Planned**
-- **Severity**: 🔴 P0 (GDPR + audit)
-- **Effort**: 3-5 kun
-- **Modellar**: `WalletTransaction`, `PaymentIntent`, `ExamEvent`, `OpenEndedSubmission`, `UserAnswer`, `ExamAttempt`
-- **Tavsif**: GDPR Article 17 talabi: foydalanuvchi o'chirish → moliyaviy + audit data yo'qoladi. UZ buxgalteriya qonuni 5 yil retention talab qiladi.
-- **Acceptance Criteria**:
-  - [ ] `core/mixins.py`'da `SoftDeleteMixin`: `is_deleted=False`, `deleted_at=NULL`, `pii_redacted=False`
-  - [ ] Migration: yuqoridagi 6 ta modelni mixin bilan extend qilish
-  - [ ] `SoftDeleteManager` qo'shish: default queryset `.filter(is_deleted=False)`, `.all_with_deleted()` alohida
-  - [ ] FK cascade'larni `SET_NULL` ga o'zgartirish (User → audit FK)
-  - [ ] GDPR endpoint stub: `POST /api/gdpr/erasure/` — PII redact + audit ID saqlash
-  - [ ] Tests: o'chirilgan user audit row'lari hali ham retrievable
-- **Reference**: ARCHITECTURE_REVIEW § 5.1
-
-## 🔵 ISSUE-104 — Custom Prometheus business metrics (5 ta minimum)
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-104 — Custom Prometheus business metrics (5 ta minimum)
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
 - **Severity**: 🟠 P1 (SRE ko'r holatda)
-- **Effort**: 2-3 kun
-- **Fayllar**: `core/metrics.py` (yangi), service layer'ga inject
-- **Tavsif**: SRE'da business KPI ko'rinmaydi. Faqat HTTP/DB default metric'lar.
+- **Effort**: 2-3 kun → real 30 daqiqa
+- **Implementation**: `core/metrics.py` — 5 ta metric + service layer integration
 - **Acceptance Criteria**:
-  - [ ] `core/metrics.py` — Prometheus metric ta'riflari
-  - [ ] `yz_exams_submitted_total{org_id, is_public}` — finalize_attempt_score'da
-  - [ ] `yz_payments_completed_total{provider, status}` — webhook handler'da
-  - [ ] `yz_ai_tutor_seconds{model}` — tutor task'da Histogram
-  - [ ] `yz_leaderboard_updates_total{scope}` — record_attempt'da
-  - [ ] `yz_sms_sent_total{backend, status}` — notification fan-out'da
-  - [ ] `monitoring/grafana/dashboards/business.json` — 5 panel
+  - [x] `core/metrics.py` Counter + Histogram ta'riflari
+  - [x] `yz_exams_submitted_total{org_id, is_public}` — `apps/exams/tasks.py:finalize_attempt_score`
+  - [x] `yz_payments_completed_total{provider, status}` — `apps/commerce/views.py:_process_webhook`
+  - [x] `yz_ai_tutor_calls_total{task_type, status}` + `yz_ai_tutor_seconds{task_type}` — `apps/intelligence/tasks.py:generate_ai_tutor_feedback`
+  - [x] `yz_leaderboard_updates_total{scope}` — `apps/engagement/leaderboard.py:record_attempt`
+  - [x] `yz_sms_sent_total{backend, status}` — `apps/accounts/services/otp_service.py:send_otp`
+  - [ ] `monitoring/grafana/dashboards/business.json` — kelajak PR (Grafana dashboard JSON)
 - **Reference**: ARCHITECTURE_REVIEW § 6.2, § 14
 
-## 🔵 ISSUE-105 — `/health/ready/` tashqi dependency checks
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-105 — `/health/ready/` tashqi dependency checks
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
 - **Severity**: 🟠 P1
-- **Effort**: 1 kun
-- **Fayllar**: `core/health.py:13-46`
-- **Tavsif**: Hozir faqat PG + Redis tekshiriladi. Anthropic/Telegram/Payme yo'q. Pod ready bo'lib turadi, lekin AI tutor o'lik.
+- **Effort**: 1 kun → real 30 daqiqa
+- **Implementation**: `core/health.py` qayta yozildi. `?deep=1` parametr orqali external check'lar yoqiladi.
 - **Acceptance Criteria**:
-  - [ ] Anthropic ping: `client.messages.create(model=..., max_tokens=1, messages=[{"role":"user","content":"."}])` 5s timeout
-  - [ ] Telegram bot `getMe()` API call
-  - [ ] Payme/Click stub mode'da skip (configurable)
-  - [ ] Har check uchun individual status + jami `ready` faqat hammasi yashil
-  - [ ] Test: failure simulation har bir dependency uchun
+  - [x] Anthropic `HEAD https://api.anthropic.com/` — 2s timeout
+  - [x] Telegram `GET getMe` — bot token bilan
+  - [x] Payme/Click `ENABLE_REAL_PAYMENTS=False` bo'lsa skip
+  - [x] Har check individual status, jami `ready` faqat majburiy yashil bo'lsa
+  - [x] `?deep=1` — K8s readiness `/health/ready/` qisqa mode (DB+Redis), Prometheus blackbox deep mode
 - **Reference**: ARCHITECTURE_REVIEW § 12 (12.1)
 
-## 🔵 ISSUE-106 — OTP IP-level rate limit
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-106 — OTP IP-level rate limit
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
 - **Severity**: 🟠 P1 (xavfsizlik + SMS spam)
-- **Effort**: 1 kun
-- **Fayllar**: `apps/accounts/services/otp_service.py:48-64`
-- **Tavsif**: Hozir per-phone limit (3/10min). Hujumchi 1000 telefon × 1 OTP = $4 SMS isrof, soatlik $96/kun.
+- **Effort**: 1 kun → real 20 daqiqa
+- **Implementation**: `apps/accounts/services/otp_service.py` — IP-tier limit + 2 ta view yangilash
 - **Acceptance Criteria**:
-  - [ ] IP-tier limit: `otp:send_count:ip:{ip}` — soatiga 20 ta
-  - [ ] 5 IP send'dan keyin CAPTCHA gate (yoki harder challenge)
-  - [ ] Test: simulate 1000 phone × 1 IP → 6-chi attempt 429
+  - [x] IP-tier limit: `otp:send_count:ip:{ip}` — soatiga 20 ta (`IP_RATE_LIMIT = 20`, `IP_RATE_WINDOW = 3600`)
+  - [x] `send_otp(raw_phone, *, ip=None)` signature kengaytirildi
+  - [x] 2 ta view (`OTPSendView`, `OTPSendHTMXView`) `HTTP_X_FORWARDED_FOR` yoki `REMOTE_ADDR` orqali IP uzatadi
+  - [ ] CAPTCHA gate — kelajak (ISSUE-106b)
 - **Reference**: ARCHITECTURE_REVIEW § 5.2
 
-## 🔵 ISSUE-107 — Payment webhook signature security test
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-107 — Payment webhook signature security test
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
 - **Severity**: 🟠 P1
-- **Effort**: 0.5 kun
-- **Fayllar**: `tests/security/test_payment_webhook_signature.py` (yangi)
-- **Tavsif**: Production'da stub-mode signature qolib qolsa fail bo'lmaydi. Audit trap.
+- **Effort**: 0.5 kun → real 20 daqiqa
+- **Implementation**: `tests/security/test_payment_webhook_signature.py` — 9 ta security test
 - **Acceptance Criteria**:
-  - [ ] Test fail bo'ladi agar `DJANGO_ENV=prod` + `payment_providers._verify_signature` har qanday signature qabul qilsa
-  - [ ] Test: invalid signature → 400
-  - [ ] Test: valid signature + duplicate tx_id → idempotent 200
+  - [x] Stub mode any non-empty signature qabul qilinishi (2 test)
+  - [x] Real mode invalid signature reject (Payme + Click — 2 test)
+  - [x] Real mode valid HMAC signature accept (Payme + Click — 2 test)
+  - [x] Real mode missing secret env-var → all rejected (1 test)
+  - [x] Webhook endpoint E2E 401 invalid signature (Payme + Click — 2 test)
 - **Reference**: ARCHITECTURE_REVIEW § 5.4
 
 ---

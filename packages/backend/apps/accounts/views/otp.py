@@ -48,8 +48,12 @@ class OTPSendView(View):
         if not raw_phone:
             return JsonResponse({'error': 'phone required'}, status=400)
 
+        # ISSUE-106: IP-tier rate limit uchun client IP
+        client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[
+            0
+        ].strip() or request.META.get('REMOTE_ADDR')
         try:
-            normalized = send_otp(raw_phone)
+            normalized = send_otp(raw_phone, ip=client_ip)
         except PhoneValidationError as e:
             return JsonResponse({'error': str(e)}, status=400)
         except OTPRateLimitError as e:

@@ -32,8 +32,13 @@ class ExamEvent(SoftDeleteMixin, TenantTimestampMixin):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # ISSUE-103: SET_NULL bilan — User.delete() analytics event'ni yo'q qilmaydi
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='exam_events'
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='exam_events',
     )
 
     exam_attempt_id = models.UUIDField(db_index=True)

@@ -108,14 +108,19 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
     if fb.status == AIFeedback.Status.READY:
         return {'status': 'already_ready'}
 
+    # ISSUE-104: business metric — Anthropic call counter + latency
+    from core.metrics import AI_TUTOR_CALLS, AI_TUTOR_LATENCY
+
     try:
         prompt = _build_tutor_prompt(fb.summary)
-        text = _generate_text(prompt)
+        with AI_TUTOR_LATENCY.labels(task_type='tutor').time():
+            text = _generate_text(prompt)
 
         fb.content = text
         fb.status = AIFeedback.Status.READY
         fb.completed_at = timezone.now()
         fb.save(update_fields=['content', 'status', 'completed_at'])
+        AI_TUTOR_CALLS.labels(task_type='tutor', status='ok').inc()
         return {'status': 'ready', 'feedback_id': str(fb.id)}
     except Exception as e:
         logger.exception('AI Tutor LLM failed for %s', feedback_id)
@@ -123,6 +128,7 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
         fb.error = str(e)[:1000]
         fb.completed_at = timezone.now()
         fb.save(update_fields=['status', 'error', 'completed_at'])
+        AI_TUTOR_CALLS.labels(task_type='tutor', status='failed').inc()
         return {'status': 'failed', 'error': str(e)[:200]}
 
 
