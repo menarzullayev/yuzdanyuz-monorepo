@@ -53,6 +53,14 @@ def update_leaderboard_on_submit(sender, instance, created, update_fields=None, 
         org_id=instance.organization_id,
     )
 
+    # Task 8 — analytics event recording
+    try:
+        from apps.analytics.services import record_exam_event
+
+        record_exam_event(instance)
+    except Exception as e:
+        logger.warning('record_exam_event failed for attempt %s: %s', instance.id, e)
+
 
 @receiver(post_save, sender=UserAnswer)
 def update_mastery_on_answer(sender, instance, created, **kwargs):
