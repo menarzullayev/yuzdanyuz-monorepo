@@ -5,6 +5,11 @@ from django.contrib.sitemaps.views import sitemap
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import include, path
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 
 from apps.engagement.sitemaps import PublicQuestionsSitemap
 from core import health as health_views
@@ -32,10 +37,19 @@ urlpatterns = [
     path('', include('django_prometheus.urls')),  # /metrics endpoint
     # Google OAuth (django-allauth)
     path('accounts/', include('allauth.urls')),
-    # Domain apps
+    # Domain apps (HTMX + REST aralash — accounts'da auth view'lar)
     path('', include('apps.accounts.urls', namespace='accounts')),
     path('org/', include('apps.organizations.urls', namespace='organizations')),
     path('catalog/', include('apps.catalog.urls', namespace='catalog')),
+    # ISSUE-203: /api/v1/ versioning — yangi mount yo'l. Eski path'lar
+    # back-compat sifatida saqlanadi (6 oy Sunset header bilan deprecate).
+    # Yangi REST client'lar /api/v1/ ishlatishi shart.
+    path('api/v1/exams/', include('apps.exams.urls', namespace='exams-v1')),
+    path('api/v1/leaderboard/', include('apps.engagement.urls', namespace='engagement-v1')),
+    path('api/v1/intelligence/', include('apps.intelligence.urls', namespace='intelligence-v1')),
+    path('api/v1/', include('apps.commerce.urls', namespace='commerce-v1')),
+    path('api/v1/analytics/', include('apps.analytics.urls', namespace='analytics-v1')),
+    # Eski (unversioned) — deprecate kelajakda
     path('api/exams/', include('apps.exams.urls', namespace='exams')),
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),
     path('api/intelligence/', include('apps.intelligence.urls', namespace='intelligence')),
@@ -43,6 +57,18 @@ urlpatterns = [
     path('api/analytics/', include('apps.analytics.urls', namespace='analytics')),
     # Task 9 — SEO sitemap
     path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='sitemap'),
+    # ISSUE-201: OpenAPI schema + interactive docs
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path(
+        'api/schema/swagger/',
+        SpectacularSwaggerView.as_view(url_name='schema'),
+        name='swagger-ui',
+    ),
+    path(
+        'api/schema/redoc/',
+        SpectacularRedocView.as_view(url_name='schema'),
+        name='redoc',
+    ),
 ]
 
 if settings.DEBUG:

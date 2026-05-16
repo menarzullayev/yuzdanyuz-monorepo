@@ -99,6 +99,42 @@ class MockExam(TenantTimestampMixin):
             models.Index(fields=['is_public', 'status']),
         ]
 
+    # ISSUE-205: state machine
+    #   DRAFT ──publish()──► PUBLISHED ──close()──► CLOSED
+    #     │                     │
+    #     └──cancel()──► CANCELLED ◄──cancel()──┘
+    _ALLOWED_TRANSITIONS = {
+        Status.DRAFT: {Status.PUBLISHED, Status.CANCELLED},
+        Status.PUBLISHED: {Status.CLOSED, Status.CANCELLED},
+        Status.CLOSED: set(),
+        Status.CANCELLED: set(),
+    }
+
+    def _validate_transition(self, target: 'MockExam.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def publish(self) -> None:
+        """DRAFT → PUBLISHED. Questions M2M snapshot mock'ga bog'lanadi."""
+        self._validate_transition(self.Status.PUBLISHED)
+        self.status = self.Status.PUBLISHED
+        self.save(update_fields=['status', 'updated_at'])
+
+    def close(self) -> None:
+        """PUBLISHED → CLOSED. closes_at vaqti tugagandan keyin yangi attempt yo'q."""
+        self._validate_transition(self.Status.CLOSED)
+        self.status = self.Status.CLOSED
+        self.save(update_fields=['status', 'updated_at'])
+
+    def cancel(self) -> None:
+        """{DRAFT, PUBLISHED} → CANCELLED. Admin bekor qilganda."""
+        self._validate_transition(self.Status.CANCELLED)
+        self.status = self.Status.CANCELLED
+        self.save(update_fields=['status', 'updated_at'])
+
     def __str__(self):
         return f'{self.title} ({self.scheduled_at:%Y-%m-%d %H:%M})'
 
@@ -212,6 +248,72 @@ class ExamAttempt(SoftDeleteMixin, TenantTimestampMixin):
             models.Index(fields=['exam', 'status']),
         ]
 
+    # ISSUE-205: state machine transitions (django-fsm-2 pattern, library
+    # wrapper kelajak refactor'da). Har transition aniq source/target validate
+    # qiladi. Race-condition + invalid state'dan himoya.
+    #
+    # State diagram:
+    #   IN_PROGRESS ──submit()──► SUBMITTED
+    #               │
+    #               ├──cancel_for_cheating()──► CANCELLED
+    #               │
+    #               ├──expire()──► EXPIRED
+    #               │
+    #               └──open_dispute()──► DISPUTED
+    #
+    # SUBMITTED, CANCELLED, EXPIRED — terminal (transition'lar yo'q)
+    # DISPUTED'dan SUBMITTED/CANCELLED'ga admin orqali qaytarish mumkin (resolve_dispute)
+
+    _ALLOWED_TRANSITIONS = {
+        Status.IN_PROGRESS: {Status.SUBMITTED, Status.CANCELLED, Status.EXPIRED, Status.DISPUTED},
+        Status.SUBMITTED: {Status.DISPUTED},  # nizo ochilishi mumkin
+        Status.DISPUTED: {Status.SUBMITTED, Status.CANCELLED},  # resolve
+        Status.CANCELLED: set(),  # terminal
+        Status.EXPIRED: set(),  # terminal
+    }
+
+    def _validate_transition(self, target: 'ExamAttempt.Status') -> None:
+        """Raise ValueError agar source → target ruxsat etilmagan."""
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def submit(self) -> None:
+        """IN_PROGRESS → SUBMITTED. Score finalize task signal orqali."""
+        self._validate_transition(self.Status.SUBMITTED)
+        self.status = self.Status.SUBMITTED
+        from django.utils import timezone
+
+        self.submitted_at = timezone.now()
+        self.save(update_fields=['status', 'submitted_at', 'updated_at'])
+
+    def cancel_for_cheating(self, reason: 'ExamAttempt.CancelReason') -> None:
+        """IN_PROGRESS → CANCELLED (anti-cheat 3+ strikes)."""
+        self._validate_transition(self.Status.CANCELLED)
+        self.status = self.Status.CANCELLED
+        self.cancel_reason = reason
+        self.save(update_fields=['status', 'cancel_reason', 'updated_at'])
+
+    def expire(self) -> None:
+        """IN_PROGRESS → EXPIRED (duration tugagan, submit qilinmagan)."""
+        self._validate_transition(self.Status.EXPIRED)
+        self.status = self.Status.EXPIRED
+        self.save(update_fields=['status', 'updated_at'])
+
+    def open_dispute(self) -> None:
+        """{IN_PROGRESS, SUBMITTED} → DISPUTED."""
+        self._validate_transition(self.Status.DISPUTED)
+        self.status = self.Status.DISPUTED
+        self.save(update_fields=['status', 'updated_at'])
+
+    def resolve_dispute(self, *, into: 'ExamAttempt.Status') -> None:
+        """DISPUTED → SUBMITTED (uphold) yoki CANCELLED (admin decision)."""
+        self._validate_transition(into)
+        self.status = into
+        self.save(update_fields=['status', 'updated_at'])
+
     def __str__(self):
         return f'{self.user} → {self.exam.title} ({self.status})'
 
@@ -260,6 +362,40 @@ class PracticeSession(TenantTimestampMixin):
         indexes = [
             models.Index(fields=['user', 'status']),
         ]
+
+    # ISSUE-205: state machine
+    #   IN_PROGRESS ──complete()──► COMPLETED (terminal)
+    #               └──abandon()──► ABANDONED (terminal)
+    _ALLOWED_TRANSITIONS = {
+        Status.IN_PROGRESS: {Status.COMPLETED, Status.ABANDONED},
+        Status.COMPLETED: set(),
+        Status.ABANDONED: set(),
+    }
+
+    def _validate_transition(self, target: 'PracticeSession.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def complete(self) -> None:
+        """IN_PROGRESS → COMPLETED. User barcha savollarni javoblaganda."""
+        self._validate_transition(self.Status.COMPLETED)
+        from django.utils import timezone
+
+        self.status = self.Status.COMPLETED
+        self.ended_at = timezone.now()
+        self.save(update_fields=['status', 'ended_at', 'updated_at'])
+
+    def abandon(self) -> None:
+        """IN_PROGRESS → ABANDONED. Tashlab ketilgan (timeout yoki user exit)."""
+        self._validate_transition(self.Status.ABANDONED)
+        from django.utils import timezone
+
+        self.status = self.Status.ABANDONED
+        self.ended_at = timezone.now()
+        self.save(update_fields=['status', 'ended_at', 'updated_at'])
 
     def __str__(self):
         return f'{self.user} practice ({self.status})'
@@ -426,3 +562,31 @@ class QuestionDispute(TenantTimestampMixin):
         indexes = [
             models.Index(fields=['question_version', 'status']),
         ]
+
+    # ISSUE-205: state machine
+    #   OPEN ──quarantine()──► QUARANTINED (terminal) — savol blokga olindi
+    #        └──reject()──► REJECTED (terminal) — shikoyat asossiz
+    _ALLOWED_TRANSITIONS = {
+        Status.OPEN: {Status.QUARANTINED, Status.REJECTED},
+        Status.QUARANTINED: set(),
+        Status.REJECTED: set(),
+    }
+
+    def _validate_transition(self, target: 'QuestionDispute.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def quarantine(self) -> None:
+        """OPEN → QUARANTINED. Dispute soni threshold'dan oshganda yoki admin."""
+        self._validate_transition(self.Status.QUARANTINED)
+        self.status = self.Status.QUARANTINED
+        self.save(update_fields=['status', 'updated_at'])
+
+    def reject(self) -> None:
+        """OPEN → REJECTED. Admin shikoyatni rad etganda."""
+        self._validate_transition(self.Status.REJECTED)
+        self.status = self.Status.REJECTED
+        self.save(update_fields=['status', 'updated_at'])

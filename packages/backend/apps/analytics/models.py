@@ -114,3 +114,8 @@ class ReportExport(TenantTimestampMixin):
 
     def __str__(self):
         return f'{self.user} {self.report_type} ({self.status})'
+
+
+# ISSUE-308: Dead-letter queue model — import via dlq module so that
+# Celery task_failure signal handler is registered when apps load.
+from apps.analytics.dlq import FailedTask  # noqa: E402, F401

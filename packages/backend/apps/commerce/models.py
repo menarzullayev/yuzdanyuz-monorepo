@@ -112,6 +112,8 @@ class WalletTransaction(SoftDeleteMixin, models.Model):
         indexes = [
             models.Index(fields=['wallet', '-created_at']),
             models.Index(fields=['kind', '-created_at']),
+            # ISSUE-306: composite (wallet, kind, -created_at) — filtered history
+            models.Index(fields=['wallet', 'kind', '-created_at'], name='wt_wallet_kind_idx'),
         ]
 
     def __str__(self):
@@ -195,8 +197,58 @@ class PaymentIntent(SoftDeleteMixin, models.Model):
             models.Index(fields=['status', '-created_at']),
         ]
 
+    # ISSUE-205: state machine
+    #   CREATED ──start_processing()──► PROCESSING
+    #           │
+    #           ├──cancel()──► CANCELLED (user yoki timeout)
+    #           │
+    #           PROCESSING ──mark_succeeded()──► SUCCEEDED (webhook OK)
+    #                      └──mark_failed()──► FAILED (webhook error)
+    _ALLOWED_TRANSITIONS = {
+        Status.CREATED: {Status.PROCESSING, Status.CANCELLED, Status.FAILED},
+        Status.PROCESSING: {Status.SUCCEEDED, Status.FAILED, Status.CANCELLED},
+        Status.SUCCEEDED: set(),
+        Status.FAILED: set(),
+        Status.CANCELLED: set(),
+    }
+
     def __str__(self):
         return f'{self.user} {self.amount_uzs} UZS ({self.provider}/{self.status})'
+
+    def _validate_transition(self, target: 'PaymentIntent.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def start_processing(self) -> None:
+        """CREATED → PROCESSING. Provider charge boshlandi."""
+        self._validate_transition(self.Status.PROCESSING)
+        self.status = self.Status.PROCESSING
+        self.save(update_fields=['status', 'updated_at'])
+
+    def mark_succeeded(self, *, provider_tx_id: str = '') -> None:
+        """{CREATED, PROCESSING} → SUCCEEDED. Webhook valid signature bilan."""
+        self._validate_transition(self.Status.SUCCEEDED)
+        self.status = self.Status.SUCCEEDED
+        if provider_tx_id:
+            self.provider_tx_id = provider_tx_id
+        self.save(update_fields=['status', 'provider_tx_id', 'updated_at'])
+
+    def mark_failed(self, *, error_message: str = '') -> None:
+        """{CREATED, PROCESSING} → FAILED. Provider rad etdi yoki timeout."""
+        self._validate_transition(self.Status.FAILED)
+        self.status = self.Status.FAILED
+        if error_message:
+            self.error_message = error_message
+        self.save(update_fields=['status', 'error_message', 'updated_at'])
+
+    def cancel(self) -> None:
+        """{CREATED, PROCESSING} → CANCELLED. User yoki sistema bekor qildi."""
+        self._validate_transition(self.Status.CANCELLED)
+        self.status = self.Status.CANCELLED
+        self.save(update_fields=['status', 'updated_at'])
 
 
 # ── 3. SubscriptionPlan + OrganizationSubscription ───────────────────────────
@@ -310,10 +362,73 @@ class OrganizationSubscription(models.Model):
         indexes = [
             models.Index(fields=['organization', 'status']),
             models.Index(fields=['status', 'current_period_ends_at']),
+            # ISSUE-306: partial index — auto_renew_subscriptions task'i
+            # ACTIVE/TRIALING + auto_renew=True row'larni scan qiladi.
+            # Full index hajmi 80%+ kerakmas → partial 5-10x kichik, tezroq.
+            models.Index(
+                fields=['current_period_ends_at'],
+                name='sub_active_renewable_idx',
+                condition=models.Q(
+                    status__in=['active', 'trialing'],
+                    auto_renew=True,
+                ),
+            ),
         ]
+
+    # ISSUE-205: state machine
+    #   TRIALING ──activate()──► ACTIVE ──mark_past_due()──► PAST_DUE
+    #                            │              │
+    #                            │              └──reinstate()──► ACTIVE
+    #                            │              └──cancel()──► CANCELLED
+    #                            │              └──expire()──► EXPIRED
+    #                            ├──cancel()──► CANCELLED
+    #                            └──expire()──► EXPIRED
+    _ALLOWED_TRANSITIONS = {
+        Status.TRIALING: {Status.ACTIVE, Status.CANCELLED, Status.EXPIRED},
+        Status.ACTIVE: {Status.PAST_DUE, Status.CANCELLED, Status.EXPIRED},
+        Status.PAST_DUE: {Status.ACTIVE, Status.CANCELLED, Status.EXPIRED},
+        Status.CANCELLED: set(),
+        Status.EXPIRED: set(),
+    }
 
     def __str__(self):
         return f'{self.organization} → {self.plan.name} ({self.status})'
+
+    def _validate_transition(self, target: 'OrganizationSubscription.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def activate(self) -> None:
+        """{TRIALING, PAST_DUE} → ACTIVE. Trial converted yoki PAST_DUE to'lov keldi."""
+        self._validate_transition(self.Status.ACTIVE)
+        self.status = self.Status.ACTIVE
+        self.save(update_fields=['status', 'updated_at'])
+
+    def mark_past_due(self) -> None:
+        """ACTIVE → PAST_DUE. Auto-renew charge fail bo'ldi, grace period boshlanadi."""
+        self._validate_transition(self.Status.PAST_DUE)
+        self.status = self.Status.PAST_DUE
+        self.save(update_fields=['status', 'updated_at'])
+
+    def cancel(self, *, reason: str = '') -> None:
+        """Har qanday non-terminal → CANCELLED (user yoki admin)."""
+        self._validate_transition(self.Status.CANCELLED)
+        from django.utils import timezone
+
+        self.status = self.Status.CANCELLED
+        self.cancelled_at = timezone.now()
+        if reason:
+            self.cancellation_reason = reason
+        self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
+
+    def expire(self) -> None:
+        """Har qanday non-terminal → EXPIRED. Period tugadi, auto-renew o'chiq."""
+        self._validate_transition(self.Status.EXPIRED)
+        self.status = self.Status.EXPIRED
+        self.save(update_fields=['status', 'updated_at'])
 
 
 # ── 4. Referral system ───────────────────────────────────────────────────────

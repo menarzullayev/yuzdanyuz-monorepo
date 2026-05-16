@@ -44,10 +44,14 @@ class LeaderboardConsumer(AsyncJsonWebsocketConsumer):
     """
 
     async def connect(self):
-        user = self.scope.get('user')
-        if user is None or user.is_anonymous:
+        # ISSUE-207: explicit token validation
+        from core.ws_auth import authenticate_ws
+
+        user = await authenticate_ws(self.scope)
+        if user is None:
             await self.close(code=4401)
             return
+        self.scope['user'] = user
 
         kwargs = self.scope['url_route']['kwargs']
         if 'region_id' in kwargs:

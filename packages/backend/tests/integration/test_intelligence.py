@@ -394,7 +394,10 @@ class TestOpenEndedAPI:
             content_type='application/json',
         )
         assert resp.status_code == 400
-        assert 'question_version' in resp.json()
+        # ISSUE-204: unified envelope — detail string yoki error.message ichida tip nomi
+        body = resp.json()
+        msg = body.get('detail', '') + str(body.get('error', ''))
+        assert 'SC' in msg or 'OE' in msg, body
         # AI grading task chaqirilmaganini bilvosita tasdiqlash:
         assert not OpenEndedSubmission.objects.exists()
 

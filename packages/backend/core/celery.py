@@ -27,6 +27,37 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
 
+# ISSUE-301: Task routing — per-queue SLO. AI task'lar (10s+ Anthropic)
+# critical task'lar (50ms finalize)'ni blok qilmasligi uchun alohida queue.
+#
+# Queue'lar:
+#   critical  — exam submit, payment webhook (p95 < 1s SLO, low latency)
+#   realtime  — notification fan-out (user-facing, p95 < 3s)
+#   ai        — Anthropic API calls (slow, costly, 10-60s)
+#   batch     — periodic scheduled work (no latency SLO)
+#   default   — har narsa boshqa
+#
+# Helm chart: har queue uchun alohida celery-worker deployment kerak
+# (resource limits + concurrency tuning per workload).
+app.conf.task_routes = {
+    # Critical — user buyer/exam-taker uchun darhol natija
+    'exams.finalize_attempt_score': {'queue': 'critical'},
+    # Real-time — user-facing notification
+    'engagement.fan_out_notification': {'queue': 'realtime'},
+    # AI — Anthropic API (slow + costly)
+    'intelligence.generate_ai_tutor_feedback': {'queue': 'ai'},
+    'intelligence.evaluate_openended_submission': {'queue': 'ai'},
+    # Batch — periodic scheduled work
+    'engagement.archive_leaderboards': {'queue': 'batch'},
+    'engagement.check_broken_streaks': {'queue': 'batch'},
+    'engagement.leagues_weekly_recalc': {'queue': 'batch'},
+    'commerce.auto_renew_subscriptions': {'queue': 'batch'},
+    'analytics.generate_export': {'queue': 'batch'},
+    'exams.publish_scheduled_mocks': {'queue': 'batch'},
+    'exams.quarantine_check': {'queue': 'batch'},
+}
+
+
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):
     """Sanity check task: `celery -A core call core.celery.debug_task`."""

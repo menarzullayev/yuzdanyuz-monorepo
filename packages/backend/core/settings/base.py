@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     'django_celery_results',
     # DRF — REST API
     'rest_framework',
+    # ISSUE-201: OpenAPI 3.0 schema
+    'drf_spectacular',
     # Channels — WebSocket (heartbeat, real-time strikes)
     'channels',
     # Local apps — Domain-Driven Design
@@ -67,6 +69,8 @@ MIDDLEWARE = [
     'core.middleware.tenant.TenantMiddleware',  # user → org context
     'core.middleware.rls_middleware.RLSMiddleware',  # PostgreSQL RLS setup (DB-level isolation)
     'core.middleware.rate_limit.RateLimitMiddleware',  # Redis-backed rate limiting (HTTP 429)
+    # ISSUE-203: Sunset + Deprecation header for legacy /api/ paths
+    'core.middleware.api_deprecation.APIDeprecationMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',  # closes timing for metrics
 ]
 
@@ -122,7 +126,36 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
-    'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
+    'EXCEPTION_HANDLER': 'core.exceptions.unified_exception_handler',
+    # ISSUE-201: drf-spectacular schema generator
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# ISSUE-201: drf-spectacular config
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'YuzDanYuz Backend API',
+    'DESCRIPTION': 'Milliy Sertifikat EdTech super-app REST API (Django 5.2 + DRF).',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]+',
+    'SERVERS': [
+        {'url': 'http://localhost:8001', 'description': 'Dev'},
+        {'url': 'https://hsm.sammu.uz', 'description': 'Production (PHP proxy)'},
+    ],
+    'TAGS': [
+        {'name': 'auth', 'description': 'Authentication (email, OTP, OAuth, Telegram)'},
+        {'name': 'exams', 'description': 'Mock exams + practice + attempts'},
+        {
+            'name': 'leaderboard',
+            'description': 'Leaderboards + engagement (streak, leagues, notifications)',
+        },
+        {'name': 'intelligence', 'description': 'AI tutor + skill mastery + open-ended grading'},
+        {'name': 'commerce', 'description': 'Wallet + payments + subscriptions + affiliate'},
+        {'name': 'analytics', 'description': 'B2B dashboard + reports'},
+        {'name': 'gdpr', 'description': 'Data privacy (Article 17 erasure)'},
+        {'name': 'health', 'description': 'Liveness/readiness probes'},
+    ],
 }
 
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────

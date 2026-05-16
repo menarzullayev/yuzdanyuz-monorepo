@@ -70,6 +70,42 @@ class LeaderboardSnapshot(models.Model):
         return f'{self.period} {self.period_key} {scope} ({self.total} entries)'
 
 
+# ── ISSUE-304: LeaderboardEntry — normalized snapshot entries ────────────────
+
+
+class LeaderboardEntry(models.Model):
+    """Bitta snapshot ichidagi user entry. JSON 'entries' field o'rniga
+    normalized — index'lar tezroq, "user X'ning Y haftadagi rank'i" query
+    O(log N) bo'ladi.
+
+    Migration: existing LeaderboardSnapshot.entries JSONField saqlanadi
+    (back-compat 3 oy), yangi archive task'lar bu jadvalga yozadi.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    snapshot = models.ForeignKey(
+        LeaderboardSnapshot,
+        on_delete=models.CASCADE,
+        related_name='entry_rows',
+    )
+    user_id = models.UUIDField(db_index=True)  # FK emas — user delete bo'lganda saqlash
+    rank = models.PositiveIntegerField()
+    score = models.FloatField()
+
+    class Meta:
+        verbose_name = _('Leaderboard Entry')
+        verbose_name_plural = _('Leaderboard Entries')
+        ordering = ['snapshot', 'rank']
+        unique_together = [('snapshot', 'user_id')]
+        indexes = [
+            models.Index(fields=['snapshot', 'rank']),
+            models.Index(fields=['user_id', '-snapshot']),  # user history query
+        ]
+
+    def __str__(self):
+        return f'#{self.rank} user={str(self.user_id)[:8]} score={self.score}'
+
+
 # ── Task 9 — UserStreak ──────────────────────────────────────────────────────
 
 
@@ -242,5 +278,55 @@ class Notification(models.Model):
             models.Index(fields=['status', 'priority']),
         ]
 
+    # ISSUE-205: state machine
+    #   PENDING ──mark_sent()──► SENT ──mark_read()──► READ (terminal)
+    #           └──mark_failed()──► FAILED ──retry()──► PENDING (re-attempt)
+    _ALLOWED_TRANSITIONS = {
+        Status.PENDING: {Status.SENT, Status.FAILED},
+        Status.SENT: {Status.READ, Status.FAILED},  # FAILED — webhook ack timeout
+        Status.FAILED: {Status.PENDING},  # retry path
+        Status.READ: set(),
+    }
+
     def __str__(self):
         return f'{self.user} [{self.channel}/{self.priority}] {self.title[:30]}'
+
+    def _validate_transition(self, target: 'Notification.Status') -> None:
+        allowed = self._ALLOWED_TRANSITIONS.get(self.status, set())
+        if target not in allowed:
+            raise ValueError(
+                f'Invalid state transition: {self.status} → {target} (allowed: {sorted(allowed)})'
+            )
+
+    def mark_sent(self) -> None:
+        """PENDING → SENT. Channel adapter muvaffaqiyatli delivery qildi."""
+        self._validate_transition(self.Status.SENT)
+        from django.utils import timezone
+
+        self.status = self.Status.SENT
+        self.sent_at = timezone.now()
+        self.save(update_fields=['status', 'sent_at'])
+
+    def mark_failed(self, *, error: str = '') -> None:
+        """{PENDING, SENT} → FAILED. Channel adapter error qaytardi."""
+        self._validate_transition(self.Status.FAILED)
+        self.status = self.Status.FAILED
+        self.delivery_attempts += 1
+        if error:
+            self.error = error[:1000]
+        self.save(update_fields=['status', 'delivery_attempts', 'error'])
+
+    def mark_read(self) -> None:
+        """SENT → READ. User in-app notification'ni ochdi."""
+        self._validate_transition(self.Status.READ)
+        from django.utils import timezone
+
+        self.status = self.Status.READ
+        self.read_at = timezone.now()
+        self.save(update_fields=['status', 'read_at'])
+
+    def retry(self) -> None:
+        """FAILED → PENDING. Worker yoki admin qayta urinib ko'rish uchun."""
+        self._validate_transition(self.Status.PENDING)
+        self.status = self.Status.PENDING
+        self.save(update_fields=['status'])

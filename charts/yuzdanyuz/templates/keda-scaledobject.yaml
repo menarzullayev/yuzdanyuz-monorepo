@@ -1,0 +1,67 @@
+{{- if .Values.keda.enabled }}
+# ISSUE-302 — KEDA autoscaling based on Celery queue depth.
+# Requires KEDA operator installed in cluster (kubectl apply -f https://github.com/kedacore/keda/releases/...).
+#
+# Per-queue ScaledObject — worker scales up when queue backlog grows,
+# scales to zero when idle (batch only) for cost optimization.
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-batch
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "yuzdanyuz.fullname" . }}-celery-worker-batch
+  minReplicaCount: 0  # scale-to-zero for batch (no SLO)
+  maxReplicaCount: 5
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: redis
+      metadata:
+        address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
+        listName: batch
+        listLength: '10'  # 10+ task in queue → scale up
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-ai
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "yuzdanyuz.fullname" . }}-celery-worker-ai
+  minReplicaCount: 1  # AI requests are time-sensitive
+  maxReplicaCount: 10
+  pollingInterval: 15
+  cooldownPeriod: 600
+  triggers:
+    - type: redis
+      metadata:
+        address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
+        listName: ai
+        listLength: '5'
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-critical
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "yuzdanyuz.fullname" . }}-celery-worker-critical
+  minReplicaCount: 3  # always-on for low latency
+  maxReplicaCount: 20
+  pollingInterval: 10
+  cooldownPeriod: 60
+  triggers:
+    - type: redis
+      metadata:
+        address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
+        listName: critical
+        listLength: '3'
+{{- end }}

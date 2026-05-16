@@ -41,11 +41,16 @@ class ExamAttemptConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         self.attempt_id = self.scope['url_route']['kwargs']['attempt_id']
-        user = self.scope.get('user')
 
-        if user is None or user.is_anonymous:
+        # ISSUE-207: explicit token validation — middleware'ga ishonmasdan
+        # consumer'da o'zi JWT cookie'ni decode qiladi (defence-in-depth).
+        from core.ws_auth import authenticate_ws
+
+        user = await authenticate_ws(self.scope)
+        if user is None:
             await self.close(code=4401)  # Unauthorized
             return
+        self.scope['user'] = user  # downstream message handler'lar uchun
 
         attempt = await self._get_attempt(self.attempt_id, user.id)
         if attempt is None:
