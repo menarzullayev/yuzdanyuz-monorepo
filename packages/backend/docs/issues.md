@@ -34,12 +34,12 @@
 | Sprint | Items | Done | Partial | Undone |
 |---|---|---|---|---|
 | Sprint 0 (E2E fixes) | 4 | ✅ 4 | 0 | 0 |
-| Sprint 1 (Bleeding wounds) | 7 | ✅ 1 | 0 | 🔵 6 |
+| Sprint 1 (Bleeding wounds) | 7 | ✅ 3 | 0 | 🔵 4 |
 | Sprint 2-3 (Frontend unblock) | 6 | 0 | 0 | 🔵 6 |
 | Q2 (Scalability) | 8 | 0 | 0 | 🔵 8 |
 | Q3 (Enterprise readiness) | 9 | 0 | 0 | 🔵 9 |
 | Q4 (Production-grade) | 6 | 0 | 0 | 🔵 6 |
-| **JAMI** | **40** | **5** | **0** | **35** |
+| **JAMI** | **40** | **7** | **0** | **33** |
 
 ---
 
@@ -105,21 +105,52 @@
 - **Audit Summary**: Loyiha exam serializer'larida allaqachon `select_related` ishlatilgan. Asosiy hotspot'lar — multiple `.count()` query'lar va duplicate filter chaqiruvlari (aggregate'ga birlashtirildi).
 - **Reference**: ARCHITECTURE_REVIEW § 2.1
 
-## 🔵 ISSUE-102 — Celery beat distributed lock
-- **Status**: 🔵 **Planned**
+## ✅ ISSUE-102 — Celery beat distributed lock
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
 - **Severity**: 🔴 P0
-- **Effort**: 1 kun
-- **Fayllar**:
-  - `apps/engagement/tasks.py:164` — `check_broken_streaks_task` (no idempotency)
-  - `apps/engagement/tasks.py:173` — `leagues_weekly_recalc_task`
-  - `apps/commerce/tasks.py:19` — `auto_renew_subscriptions`
-- **Tavsif**: Beat pod failover'da har schedule qayta ishga tushiriladi. SMS notification duplicate → $500+ isrof + foydalanuvchi shikoyatlari.
+- **Effort**: 1 kun → real 1 soat
+- **Implementation**:
+  - `core/locks.py` — `single_runner_lock(name, expire)` context manager
+  - Mexanizm: Redis SET NX EX + atomic check-and-delete (pipeline WATCH/MULTI)
+  - Lua-siz — fakeredis bilan ham compatible
+- **Wrapped tasks** (4 ta):
+  - `engagement.check_broken_streaks` — TTL 30min (SMS dedup)
+  - `engagement.leagues_weekly_recalc` — TTL 1h (wallet reward dedup)
+  - `engagement.archive_leaderboards` — TTL 1h, per-period alohida lock
+  - `commerce.auto_renew_subscriptions` — TTL 1h (charge dedup)
 - **Acceptance Criteria**:
-  - [ ] `pip install python-redis-lock` base.txt'ga
-  - [ ] Helper utility: `core/locks.py` — `with single_runner_lock("task_name", expire=600):`
-  - [ ] Har scheduled task'ni o'rab chiqish
-  - [ ] Test: simulate concurrent beat fires → faqat 1 ta task ishlaydi
+  - [x] Helper utility `core/locks.py`
+  - [x] 4 ta scheduled task'ni o'rab chiqish
+  - [x] Test: 7 ta `test_distributed_lock.py` (acquire/release/skip)
+  - [x] Concurrent skip test — lock band bo'lsa task `{status: skipped_lock_busy}` qaytaradi
 - **Reference**: ARCHITECTURE_REVIEW § 2.3
+
+## ✅ ISSUE-103 — Soft-delete shim audit modellariga
+- **Status**: ✅ **Done** (2026-05-16, direct commit)
+- **Severity**: 🔴 P0 (GDPR + audit)
+- **Effort**: 3-5 kun → real 2 soat (minimal-invasive approach)
+- **Implementation**:
+  - `core/mixins.py` — `SoftDeleteMixin` (is_deleted, deleted_at, pii_redacted + soft_delete() method + alive/deleted classmethods)
+  - **Auto-filter YO'Q** — TenantManager bilan konflikt yo'q, audit view'lar default'da hammasini ko'radi. Application code `.alive()` yoki `.filter(is_deleted=False)` chaqiradi
+- **Modellar** (6 ta):
+  - `commerce.WalletTransaction` — pii_fields=('description',)
+  - `commerce.PaymentIntent` — pii_fields=('metadata',)
+  - `exams.ExamAttempt` — pii_fields=()
+  - `exams.UserAnswer` — pii_fields=('selected',)
+  - `intelligence.OpenEndedSubmission` — pii_fields=('content','human_notes')
+  - `analytics.ExamEvent` — pii_fields=()
+- **Migrations**: 4 ta (analytics, commerce, exams, intelligence) — `0002/0003_issue_103_soft_delete`
+- **GDPR endpoint**: `POST /api/auth/gdpr/erasure/` (`apps/accounts/gdpr.py`)
+  - User PII (email/phone/username/name) anonymize
+  - Audit modellar soft_delete(redact_pii=True) — financial/compliance ID saqlanadi
+  - Logout
+- **Acceptance Criteria**:
+  - [x] `core/mixins.py`'da SoftDeleteMixin
+  - [x] 6 ta audit model uchun migration + apply
+  - [x] GDPR endpoint stub (`/api/auth/gdpr/erasure/`)
+  - [x] Test: 8 ta `test_gdpr_soft_delete.py` (mixin fields, soft_delete, redact_pii, alive/deleted helpers, endpoint flow)
+  - [ ] FK cascade `CustomUser → audit FK` ni `CASCADE → SET_NULL`'ga o'zgartirish — alohida migration (kelajak: ISSUE-103b)
+- **Reference**: ARCHITECTURE_REVIEW § 5.1
 
 ## 🔵 ISSUE-103 — Soft-delete shim audit modellariga
 - **Status**: 🔵 **Planned**

@@ -20,6 +20,8 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from core.mixins import SoftDeleteMixin
+
 
 # ── 1. SkillTag ──────────────────────────────────────────────────────────────
 class SkillTag(models.Model):
@@ -164,14 +166,20 @@ class AIFeedback(models.Model):
 
 
 # ── 4. OpenEndedSubmission ───────────────────────────────────────────────────
-class OpenEndedSubmission(models.Model):
+class OpenEndedSubmission(SoftDeleteMixin, models.Model):
     """
     Open-ended (insho/audio) javob. AI-First scoring + Human QA workflow.
 
     Lifecycle:
       PENDING → AI_REVIEWED → HUMAN_APPROVED  (yashil)
                           → DISPUTED         (qizil — admin'ga signal)
+
+    ISSUE-103: soft-delete + PII redaction. content (insho matni) GDPR
+    erasure'da redacted, lekin ai_score + status + human_score saqlanadi
+    (ICDL/DTM compliance: "AI adolatli baholadi" auditi uchun).
     """
+
+    pii_fields = ('content', 'human_notes')
 
     class Type(models.TextChoices):
         ESSAY = 'essay', _('Insho (matn)')

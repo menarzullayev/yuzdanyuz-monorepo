@@ -17,6 +17,7 @@ django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — D
 # ── Cache & Session ───────────────────────────────────────────────────────────
 redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
 django-redis==5.4.0            # Task 2, 5: Django cache backend for Redis
+# ISSUE-102: distributed lock — core/locks.py SET NX EX pattern, dep'siz
 
 # ── Real-time ─────────────────────────────────────────────────────────────────
 channels==4.2.0                # Task 4: WebSocket (heartbeat, leaderboard live)

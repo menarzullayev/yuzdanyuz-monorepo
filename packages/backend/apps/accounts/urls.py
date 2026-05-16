@@ -1,5 +1,6 @@
 from django.urls import path
 
+from apps.accounts.gdpr import GDPRErasureView
 from apps.accounts.views.auth import LogoutView, TelegramAuthView, TokenRefreshView
 from apps.accounts.views.linking import (
     GetLinkedAccountsView,
@@ -55,6 +56,8 @@ urlpatterns = [
     # Token management
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
+    # ISSUE-103: GDPR Article 17 erasure
+    path('api/auth/gdpr/erasure/', GDPRErasureView.as_view(), name='gdpr_erasure'),
     # Telegram Bot webhook
     path('api/bot/webhook/', BotWebhookView.as_view(), name='bot_webhook'),
     # Account linking
