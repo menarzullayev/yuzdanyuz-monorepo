@@ -307,7 +307,9 @@ class OrganizationSubscription(models.Model):
 
 
 def _gen_code() -> str:
-    return secrets.token_urlsafe(6).replace('-', '').replace('_', '')[:8].upper()
+    """Returns 8-character alphanumeric code (no '-' or '_' to avoid confusion)."""
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
 class ReferralCode(models.Model):
