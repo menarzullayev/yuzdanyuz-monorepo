@@ -536,28 +536,64 @@ Return error to user
 
 ## Task 6 — AI Diagnostika va Bilim Xaritasi
 
+**Status**: 🟢 **BACKEND COMPLETE** (PR #34, 2026-05-16). Frontend Knowledge Map (vizual skill daraxti) — 🔵 alohida workstream.
+
 **Maqsad**: Har bir o'quvchi uchun zaif nuqtalarni aniqlab, shaxsiy o'quv rejasi tuzish.
 
-### Deliverables
-- [ ] `SkillTag` modeli — har bir savol bir nechta micro-skill'ga bog'lanadi
-- [ ] `UserSkillProfile` modeli — har bir skill uchun o'quvchining `mastery_score`
-- [ ] **Knowledge Graph Engine** (Celery worker):
-  - Practice sessiya tugagach ishga tushadi
-  - Har bir xato qilingan savolning skill'larini `mastery_score` pasaytiradi
-  - Hisob-kitob deterministik (LLM emas, matematika)
-- [ ] **AI Tutor** (LLM integratsiya):
-  - Backend hisoblangan xulosani (`"Fizika: 20%, Algebra: 80%"`) LLM ga beradi
-  - LLM faqat motivatsion matn yozadi — o'zidan qoida o'ylamaydi
-  - Celery async task orqali — asosiy tizim kutmaydi
-- [ ] **Personalized Study Plan** — zaif skill'lar bo'yicha savol tavsiyasi
-- [ ] **Knowledge Map** — frontend'da vizual skill daraxtи (qizil/yashil tugunlar)
-- [ ] **Open-Ended Evaluation**: insho/audio → AI ball → Human QA workflow
+### Deliverables ✅ COMPLETE
+
+- [x] `SkillTag` modeli — har bir savol bir nechta micro-skill'ga bog'lanadi (M2M Question.skills)
+- [x] `UserSkillProfile` modeli — Bayesian beta distribution (alpha, beta, mastery, confidence)
+- [x] **Knowledge Graph Engine** (sync, Bayesian math):
+  - `update_user_mastery(user, question, is_correct)` — har skill uchun alpha/beta update
+  - Signal: `UserAnswer.post_save` + is_correct aniqlangan → avtomat update
+  - Hisob-kitob deterministik — `apps/intelligence/bayesian.py` pure functions
+- [x] **AI Tutor** (LLM integratsiya, on-demand):
+  - Backend `get_user_summary` — top 5 weak + top 5 strong + avg mastery
+  - LLM faqat motivatsion matn yozadi (zero-hallucination — raqamlar prompt'da)
+  - Celery `generate_ai_tutor_feedback` — sha256 cache (same summary → cached response)
+  - Anthropic SDK wrapper, test'da `_generate_text` mock qilinadi
+- [x] **Personalized Study Plan** — `recommend_questions(user, limit)`:
+  - Zaif skill'lar (min_attempts=3) → shu skill'lardagi random savollar
+  - Yangi user (skill profile yo'q) → har subject'dan random fallback
+- [x] **Open-Ended Evaluation** (essay/audio):
+  - `OpenEndedSubmission` model: PENDING → AI_REVIEWED → HUMAN_APPROVED/DISPUTED
+  - Celery `evaluate_openended_submission` — rubric-based JSON scoring
+    (grammar/content/structure/relevance, 0-100 har biri, AI rationale)
+  - Audio transcription — `Whisper SDK` placeholder (kelajakda)
+  - Human QA endpoint (faqat is_staff/is_superuser)
+
+**Frontend** 🔵 (alohida workstream):
+- [ ] **Knowledge Map** — Next.js'da vizual skill daraxti (qizil/yashil tugunlar)
+- [ ] AI Tutor card (joriy feedback ko'rsatish)
+- [ ] Open-ended submission UI (essay editor, audio recorder)
+
+### REST API (7 endpoint)
+
+| Method | Path | Maqsad |
+|---|---|---|
+| GET | `/api/intelligence/skills/mastery/` | weak+strong+stats summary |
+| GET | `/api/intelligence/skills/recommendations/?limit=N` | savol tavsiyasi |
+| POST | `/api/intelligence/tutor/generate/` | AI Tutor trigger (cache hit yoki Celery) |
+| GET | `/api/intelligence/tutor/latest/` | so'nggi AIFeedback |
+| POST | `/api/intelligence/openended/submit/` | essay/audio jo'natish |
+| GET | `/api/intelligence/openended/<id>/` | score + status |
+| POST | `/api/intelligence/openended/<id>/qa/` | admin tasdiqlash (approve/dispute) |
 
 ### Tech Stack
-`Celery` · `Anthropic/OpenAI API` · `NetworkX` (graph) · `django-q2`
+`Celery` · `Anthropic SDK` (claude-sonnet-4-5) · `Bayesian beta distribution`
 
 ### Arxitektura qaror
-> **Gibrid Dvigatel** — Zero-Hallucination: matematika backend'da, LLM faqat "suhandon" (Bosqich 5, 20)
+> **Gibrid Dvigatel** — Zero-Hallucination: matematika backend'da (Bayesian update),
+> LLM faqat "suhandon" (motivatsion matn yoki rubric scoring) (Bosqich 5, 20)
+
+### Tests (25 ta yangi, 423 jami)
+- Bayesian math (8 unit) — pure functions, DB kerakmas
+- Service layer (5) — update_user_mastery, get_weak/strong, summary
+- Signal (2) — UserAnswer SUBMITTED → mastery update; is_correct=None → skip
+- AI Tutor REST (4) — generate/cache/latest/404
+- Open-Ended REST (4) — submit, QA approve, QA non-staff 403, validation
+- Skills REST (2) — mastery, recommendations
 
 ---
 
@@ -696,7 +732,7 @@ Return error to user
 | 3 | Question Bank + Kontent Himoya | ⭐⭐⭐ | ✅ COMPLETE (10/10) | ✅ 49 test (99%+) |
 | 4 | Exam Engine + Anti-Cheat | ⭐⭐⭐⭐ | 🟢 Backend ✅ (data+celery+API+WS+RLS) / Frontend 🔵 | ✅ 53 test (Task 4) |
 | 5 | Redis Leaderboard | ⭐⭐ | 🟢 Backend ✅ (core+WS+archive) / Frontend 🔵 | ✅ 32 test |
-| 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🔵 Planned |  |
+| 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 25 test |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🔵 Planned |  |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🔵 Planned |  |
 | 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🔵 Planned |  |
@@ -732,6 +768,17 @@ Return error to user
 - Login + Dashboard pages
 - Production startup scripts
 
+**Task 6** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #34)
+- 4 ta yangi model: SkillTag, UserSkillProfile (Bayesian), AIFeedback, OpenEndedSubmission
+- Bayesian engine — pure functions (apps/intelligence/bayesian.py)
+- Knowledge Graph — get_user_summary, recommend_questions, weak/strong skills
+- Signal: UserAnswer post_save → mastery update (per skill)
+- 2 ta Celery task: generate_ai_tutor_feedback (cached), evaluate_openended_submission
+- 7 ta REST endpoint (mastery, recommendations, tutor, openended)
+- Anthropic SDK wrapper (test'da mock'lanadi)
+- Tests: 25/25 ✅ (423 jami)
+- Frontend Knowledge Map (vizual): 🔵
+
 **Task 5** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #31, #32, #33)
 - Service: `apps/engagement/leaderboard.py` — Redis ZSET wrapper + Channels broadcast
 - 4 ta scope: `lb:mock:<id>`, `lb:global`, `lb:region:<id>`, `lb:tenant:<id>`
@@ -764,15 +811,17 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       398 ✅ (100% passing)
-Models:             43 ✅ (35 + 7 exam + LeaderboardSnapshot)
-Services:          28+ ✅ (+ leaderboard ZSET service)
+Total Tests:       423 ✅ (100% passing)
+Models:             47 ✅ (35 + 7 exam + LeaderboardSnapshot + 4 intelligence)
+Services:          30+ ✅ (+ Bayesian engine, AI Tutor, Open-Ended scoring)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     59+ ✅ (+ /api/leaderboard/* 6 ta — list/region/tenant/mock/me/history)
+API Endpoints:     66+ ✅ (+ /api/intelligence/* 7 ta)
 WebSocket:          5  ✅ (ws/exams/attempt/<id>/, ws/leaderboard/{global|region|tenant|mock}/)
-Celery tasks:       4  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score,
-                          archive_leaderboards)
+Celery tasks:       6  ✅ (publish_scheduled_mocks, quarantine_check, finalize_score,
+                          archive_leaderboards, generate_ai_tutor_feedback,
+                          evaluate_openended_submission)
 Redis ZSETs:        4  ✅ scope (lb:mock, lb:global, lb:region, lb:tenant)
+LLM integrations:   2  ✅ (AI Tutor on-demand, Open-Ended rubric scoring)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 

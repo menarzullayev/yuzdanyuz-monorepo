@@ -28,7 +28,7 @@ urlpatterns = [
     path('catalog/', include('apps.catalog.urls', namespace='catalog')),
     path('api/exams/', include('apps.exams.urls', namespace='exams')),
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),
-    path('learn/', include('apps.intelligence.urls', namespace='intelligence')),
+    path('api/intelligence/', include('apps.intelligence.urls', namespace='intelligence')),
     path('billing/', include('apps.commerce.urls', namespace='commerce')),
     path('analytics/', include('apps.analytics.urls', namespace='analytics')),
 ]
