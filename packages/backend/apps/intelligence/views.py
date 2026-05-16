@@ -129,6 +129,22 @@ class OpenEndedSubmitView(APIView):
 
         qv = get_object_or_404(QuestionVersion, pk=qv_id)
 
+        # OpenEnded faqat OE (essay) yoki FU (fayl) savollarga qo'llaniladi.
+        # Aks holda Anthropic API'ga keraksiz pul ketadi va AI single-choice
+        # savolga noto'g'ri rubrika bilan javob beradi (S13 bug, 2026-05-16).
+        from apps.catalog.models import Question
+
+        allowed_types = (Question.Type.OPEN_ENDED, Question.Type.FILE_UPLOAD)
+        if qv.question.type not in allowed_types:
+            raise ValidationError(
+                {
+                    'question_version': (
+                        f"Savol type'i '{qv.question.type}' OpenEnded uchun mos emas. "
+                        f'Faqat OE (Essay) yoki FU (File upload) qabul qilinadi.'
+                    )
+                }
+            )
+
         sub = OpenEndedSubmission.objects.create(
             user=request.user,
             question_version=qv,
