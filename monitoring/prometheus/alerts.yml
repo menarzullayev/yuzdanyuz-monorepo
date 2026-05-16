@@ -1,0 +1,115 @@
+# Alertmanager rules — wired to PagerDuty / Slack / Telegram by Alertmanager itself.
+groups:
+  - name: yuzdanyuz.api
+    interval: 1m
+    rules:
+      - alert: HighRequestErrorRate
+        expr: |
+          sum(rate(django_http_responses_total_by_status_total{status=~"5.."}[5m]))
+          /
+          sum(rate(django_http_responses_total_by_status_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "5xx error rate >5% (current: {{ $value | humanizePercentage }})"
+          description: "Backend is returning >5% server errors over 5 minutes. Check Sentry."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(django_http_requests_latency_seconds_by_view_method_bucket[5m])) by (le)) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "p95 latency > 1.5s (current: {{ $value }}s)"
+
+      - alert: BackendDown
+        expr: up{job="yuzdanyuz-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend pod {{ $labels.instance }} is down"
+
+  - name: yuzdanyuz.celery
+    interval: 1m
+    rules:
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length{queue="default"} > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Celery default queue backlog > 1000 ({{ $value }})"
+          description: "Workers are not draining. Check celery-worker pod logs."
+
+      - alert: CeleryTaskFailureRate
+        expr: |
+          sum(rate(celery_task_failed_total[5m]))
+          /
+          sum(rate(celery_task_sent_total[5m])) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Celery task failure rate >10% (current: {{ $value | humanizePercentage }})"
+
+  - name: yuzdanyuz.db
+    interval: 1m
+    rules:
+      - alert: PostgresHighConnections
+        expr: |
+          sum(pg_stat_activity_count) by (instance) /
+          sum(pg_settings_max_connections) by (instance) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connections >85% on {{ $labels.instance }}"
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 60
+        for: 5m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "Replica is {{ $value }}s behind primary"
+
+      - alert: BackupTooOld
+        expr: time() - walg_last_backup_timestamp > 90000   # >25h
+        for: 1h
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "No successful WAL-G base backup in >25 hours"
+
+  - name: yuzdanyuz.redis
+    interval: 1m
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis instance {{ $labels.instance }} is down"
+
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.90
+        for: 10m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage >90% ({{ $value | humanizePercentage }})"

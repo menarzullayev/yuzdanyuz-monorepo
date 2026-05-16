@@ -1,8 +1,13 @@
 from django.core.exceptions import ImproperlyConfigured
 
+from core.observability import init_sentry, json_logging_dict
+
 from .base import *
 
 DEBUG = False
+
+# Sentry — DSN env-driven; safe no-op if SENTRY_DSN missing.
+init_sentry()
 
 # Production'da SECRET_KEY env'dan kelishi shart — base.py'dagi insecure default
 # prod muhitida ishlasa, JWT/session imzolari aniq qiymat bilan yaratiladi va
@@ -37,23 +42,5 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@milliysertifikat.uz')
 
-# Production logging — Sentry (Task 10 da to'liq ulanadi)
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'json': {
-            'format': '{"time":"%(asctime)s","level":"%(levelname)s","module":"%(module)s","message":"%(message)s"}',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'json',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': os.getenv('LOG_LEVEL', 'INFO'),
-    },
-}
+# Production logging — JSON via python-json-logger (see core.observability).
+LOGGING = json_logging_dict(level=os.getenv('LOG_LEVEL', 'INFO'))

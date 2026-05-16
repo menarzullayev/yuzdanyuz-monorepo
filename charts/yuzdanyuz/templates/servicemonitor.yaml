@@ -1,0 +1,21 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Prometheus Operator scrape target for /metrics. Requires monitoring.coreos.com
+# CRDs (kube-prometheus-stack). If absent, Helm will skip the manifest.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    release: prometheus      # most kube-prometheus-stack installs require this
+spec:
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

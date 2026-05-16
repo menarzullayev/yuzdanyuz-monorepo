@@ -1,0 +1,27 @@
+# staging overlay — closer to prod; production-mirroring with smaller replicas.
+global:
+  domain: staging.yuzdanyuz.uz
+
+web:
+  replicas: 2
+  hpa:
+    minReplicas: 2
+    maxReplicas: 6
+
+channels:
+  replicas: 1
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+
+celeryWorker:
+  replicas: 1
+
+env:
+  DJANGO_ENV: staging
+  LOG_LEVEL: INFO
+  OTEL_ENABLED: "true"
+
+backup:
+  enabled: true
+  schedule: "0 4 * * *"

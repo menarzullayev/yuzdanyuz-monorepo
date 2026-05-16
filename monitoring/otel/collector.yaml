@@ -1,0 +1,74 @@
+# OpenTelemetry Collector — receives OTLP from Django + Celery pods,
+# forwards to Tempo (traces), Prometheus (metrics), Loki (logs).
+#
+# Deploy as a sidecar or as a DaemonSet. For K8s, use the otel-operator's
+# OpenTelemetryCollector CRD with this content embedded.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 25
+  # Tag every signal with cluster info — useful for multi-cluster setups
+  resource:
+    attributes:
+      - key: deployment.environment
+        from_attribute: env
+        action: upsert
+      - key: cluster.name
+        value: yuzdanyuz
+        action: upsert
+  # Drop noisy health/metrics endpoint spans
+  filter/spans:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.target"] == "/health/"'
+        - 'attributes["http.target"] == "/health/ready/"'
+        - 'attributes["http.target"] == "/metrics"'
+
+exporters:
+  # Traces → Tempo (Grafana Tempo or Jaeger)
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  # Metrics → Prometheus (push via remote-write OR scraped from this collector)
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: yuzdanyuz
+  # Logs → Loki via OTLP-HTTP
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  # Debug — useful in dev
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/spans, resource, batch]
+      exporters: [otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]
+  telemetry:
+    logs:
+      level: info

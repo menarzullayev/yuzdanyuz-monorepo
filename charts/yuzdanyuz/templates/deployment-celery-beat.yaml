@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-beat
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-beat
+spec:
+  # Beat MUST be single-replica — django-celery-beat does not implement
+  # distributed locking. Use HPA never. Failover via pod recreation.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-beat
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-beat
+    spec:
+      serviceAccountName: {{ include "yuzdanyuz.fullname" . }}
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: beat
+          image: {{ include "yuzdanyuz.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ .Values.celeryBeat.command }}
+          envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          resources: {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
