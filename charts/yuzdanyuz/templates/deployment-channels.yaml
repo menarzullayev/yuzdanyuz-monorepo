@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-channels
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: channels
+spec:
+  replicas: {{ .Values.channels.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 25%
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: channels
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: channels
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "yuzdanyuz.fullname" . }}
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: channels
+          image: {{ include "yuzdanyuz.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ .Values.channels.command }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          # ASGI workers must support websocket — use TCP probe instead of HTTP
+          # to avoid noisy 404s on /health/ from daphne (URLConf still resolves it)
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources: {{- toYaml .Values.channels.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}

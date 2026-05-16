@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-media
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media
+spec:
+  accessModes:
+    - ReadWriteMany   # nginx + web pods both mount; consider S3 instead in pure prod
+  resources:
+    requests:
+      storage: 20Gi
+  # storageClassName: nfs-csi   # set per-cluster in overlay if needed

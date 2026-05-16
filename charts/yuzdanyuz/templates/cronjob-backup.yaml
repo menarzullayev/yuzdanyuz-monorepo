@@ -1,0 +1,46 @@
+{{- if .Values.backup.enabled }}
+# Daily WAL-G full base backup. WAL streaming is enabled separately at the
+# postgres level (see scripts/backup/wal-g-config.sh + docs/deployment/backup.md).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-backup
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "{{ .Values.backup.schedule }}"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          containers:
+            - name: walg
+              image: {{ .Values.backup.image }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  echo "[backup] starting full base backup at $(date -u)"
+                  wal-g backup-push /var/lib/postgresql/data
+                  echo "[backup] retention: keep last 7 full backups"
+                  wal-g delete retain FULL 7 --confirm
+                  echo "[backup] done at $(date -u)"
+              envFrom:
+                - secretRef:
+                    name: walg-credentials
+              volumeMounts:
+                - name: pgdata
+                  mountPath: /var/lib/postgresql/data
+                  readOnly: true
+          volumes:
+            - name: pgdata
+              persistentVolumeClaim:
+                claimName: postgres-pvc
+{{- end }}

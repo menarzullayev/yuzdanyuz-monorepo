@@ -1,0 +1,210 @@
+# Default values — overridden by values-{dev,staging,prod}.yaml.
+
+global:
+  domain: yuzdanyuz.local           # placeholder; overridden per env (e.g. yuzdanyuz.uz)
+  imageRegistry: ghcr.io/menarzullayev
+  imagePullSecrets: []
+
+image:
+  repository: yuzdanyuz-backend
+  tag: latest                       # CI/CD overrides with git SHA
+  pullPolicy: IfNotPresent
+
+nginx:
+  enabled: true
+  image:
+    repository: yuzdanyuz-nginx
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+
+# ── Web (gunicorn / WSGI) ────────────────────────────────────────────────────
+web:
+  replicas: 3
+  command: ["web"]
+  env:
+    GUNICORN_WORKERS: "4"
+    GUNICORN_THREADS: "2"
+    GUNICORN_TIMEOUT: "30"
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1000m", memory: "1Gi" }
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# ── Channels (Daphne / ASGI for WebSocket) ───────────────────────────────────
+channels:
+  replicas: 2
+  command: ["asgi"]
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ── Celery worker ────────────────────────────────────────────────────────────
+celeryWorker:
+  replicas: 2
+  command: ["worker"]
+  env:
+    CELERY_CONCURRENCY: "4"
+    CELERY_QUEUES: "default,celery"
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1000m", memory: "1Gi" }
+  hpa:
+    enabled: false  # autoscale by queue depth via KEDA in a future PR
+
+# ── Celery beat (single replica — distributed lock not implemented) ──────────
+celeryBeat:
+  replicas: 1
+  command: ["beat"]
+  resources:
+    requests: { cpu: "50m",  memory: "128Mi" }
+    limits:   { cpu: "200m", memory: "256Mi" }
+
+# ── Migration Job (runs on each release) ─────────────────────────────────────
+migrate:
+  enabled: true
+  backoffLimit: 3
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+
+# ── Backup CronJob (WAL-G full base backup) ──────────────────────────────────
+backup:
+  enabled: false                    # opt-in — needs S3 creds + WAL-G installed
+  schedule: "0 3 * * *"             # 03:00 UTC daily
+  image: ghcr.io/menarzullayev/walg:latest
+
+# ── Service / Ingress ────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+  tls:
+    enabled: true
+    secretName: yuzdanyuz-tls       # cert-manager populates this
+  # Subdomain routing for white-label tenants
+  hosts:
+    - host: yuzdanyuz.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: nginx
+        - path: /ws/
+          pathType: Prefix
+          service: channels
+
+# ── Common environment (ConfigMap) ───────────────────────────────────────────
+env:
+  DJANGO_SETTINGS_MODULE: core.settings.prod
+  DJANGO_ENV: prod
+  ENABLE_RLS: "true"
+  ENABLE_AI_PARSER: "true"
+  CELERY_TIMEZONE: Asia/Tashkent
+  LOG_LEVEL: INFO
+  # Observability — opted into by setting OTEL_ENABLED + SENTRY_DSN
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: yuzdanyuz-backend
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: none
+  SENTRY_TRACES_SAMPLE_RATE: "0.1"
+  # ClickHouse — stub mode toggle
+  CLICKHOUSE_ENABLED: "false"
+  # Meilisearch — stub mode toggle
+  MEILISEARCH_ENABLED: "false"
+  # Payments — stub mode (PR #35 default)
+  ENABLE_REAL_PAYMENTS: "false"
+
+# ── Secret keys (must be created out-of-band via kubectl create secret) ──────
+# Helm intentionally does NOT manage the Secret content — it only references it.
+# See: docs/deployment/secrets.md
+secretRef:
+  name: yuzdanyuz-secrets
+  keys:
+    - SECRET_KEY
+    - DB_PASSWORD
+    - REDIS_URL
+    - CHANNELS_REDIS_URL
+    - CELERY_BROKER_URL
+    - SENTRY_DSN
+    - GOOGLE_CLIENT_ID
+    - GOOGLE_CLIENT_SECRET
+    - YANDEX_CLIENT_ID
+    - YANDEX_CLIENT_SECRET
+    - APPLE_CLIENT_ID
+    - APPLE_SECRET
+    - APPLE_PRIVATE_KEY
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_BOT_USERNAME
+    - TELEGRAM_WEBHOOK_SECRET
+    - PLAYMOBILE_LOGIN
+    - PLAYMOBILE_PASSWORD
+    - PAYME_MERCHANT_ID
+    - PAYME_MERCHANT_KEY
+    - CLICK_MERCHANT_ID
+    - CLICK_SECRET_KEY
+    - ANTHROPIC_API_KEY
+    - MEILISEARCH_API_KEY
+
+# ── DB / Redis hostnames (assume managed services or separate Helm release) ──
+externalServices:
+  postgres:
+    host: postgres-primary
+    port: 5432
+    name: yuzdanyuz_db
+    user: yuzdanyuz
+  redis:
+    host: redis-master
+    port: 6379
+
+# ── Pod Security Context ─────────────────────────────────────────────────────
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false   # Django uses /tmp; set true after audit
+
+# ── Network Policy ───────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  # Egress allowed to: postgres, redis, meilisearch, otel-collector, sentry.io,
+  # api.anthropic.com, api.telegram.org, payments providers, SMTP gateway.
+
+# ── ServiceMonitor (Prometheus Operator) ─────────────────────────────────────
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics

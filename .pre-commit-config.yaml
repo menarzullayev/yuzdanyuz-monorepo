@@ -15,6 +15,11 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Helm templates contain Go template syntax — not parseable as YAML.
+        # Argo CD CRDs use kebab-case keys ('-' as the first key char) which the
+        # naive YAML parser also chokes on; both are validated by `helm lint`
+        # in CI instead (see .github/workflows/build-and-push.yml).
+        exclude: ^(charts/.*/templates/.*\.yaml|argocd/)
       - id: check-json
         exclude: ^\.vscode/   # VS Code uses JSONC (JSON with Comments)
       - id: check-toml

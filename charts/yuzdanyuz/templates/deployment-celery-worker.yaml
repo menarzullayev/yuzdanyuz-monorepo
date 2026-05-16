@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-worker
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-worker
+spec:
+  replicas: {{ .Values.celeryWorker.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-worker
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "yuzdanyuz.fullname" . }}
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      # Allow long-running tasks to drain on rolling deploy
+      terminationGracePeriodSeconds: 300
+      containers:
+        - name: worker
+          image: {{ include "yuzdanyuz.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ .Values.celeryWorker.command }}
+          envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          env:
+            {{- range $key, $value := .Values.celeryWorker.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          # Liveness via celery inspect (covers stuck event loops)
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'celery -A core inspect ping -d celery@$(hostname) | grep -q pong'
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources: {{- toYaml .Values.celeryWorker.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}

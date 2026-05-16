@@ -1,0 +1,150 @@
+# Local dev stack — full backend services + dependencies.
+# Run: docker compose up -d
+# Web: http://localhost:8013 (matches make run port)
+
+x-backend-base: &backend-base
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.backend
+  image: ghcr.io/menarzullayev/yuzdanyuz-backend:dev
+  env_file:
+    - ./packages/backend/.env
+  environment:
+    DJANGO_SETTINGS_MODULE: core.settings.dev
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_NAME: yuzdanyuz_db
+    DB_USER: yuzdanyuz
+    DB_PASSWORD: yuzdanyuz_dev
+    REDIS_URL: redis://:foobared123@redis:6379/1
+    CHANNELS_REDIS_URL: redis://:foobared123@redis:6379/2
+    CELERY_BROKER_URL: redis://:foobared123@redis:6379/0
+    CLICKHOUSE_HOST: clickhouse
+    CLICKHOUSE_PORT: "9000"
+    MEILISEARCH_URL: http://meilisearch:7700
+    MEILISEARCH_API_KEY: dev_master_key
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: yuzdanyuz_db
+      POSTGRES_USER: yuzdanyuz
+      POSTGRES_PASSWORD: yuzdanyuz_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5992:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "yuzdanyuz", "-d", "yuzdanyuz_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --requirepass
+      - foobared123
+      - --appendonly
+      - "yes"
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "foobared123", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    environment:
+      CLICKHOUSE_DB: yuzdanyuz_analytics
+      CLICKHOUSE_USER: yuzdanyuz
+      CLICKHOUSE_PASSWORD: yuzdanyuz_dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: dev_master_key
+    volumes:
+      - meilidata:/meili_data
+    ports:
+      - "127.0.0.1:7700:7700"
+
+  backend:
+    <<: *backend-base
+    command: ["web"]
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.dev
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: yuzdanyuz_db
+      DB_USER: yuzdanyuz
+      DB_PASSWORD: yuzdanyuz_dev
+      REDIS_URL: redis://:foobared123@redis:6379/1
+      CHANNELS_REDIS_URL: redis://:foobared123@redis:6379/2
+      CELERY_BROKER_URL: redis://:foobared123@redis:6379/0
+      RUN_MIGRATIONS_ON_BOOT: "true"
+      COLLECTSTATIC_ON_BOOT: "true"
+    volumes:
+      - staticdata:/app/staticfiles
+      - mediadata:/app/media
+    ports:
+      - "127.0.0.1:8013:8000"
+
+  channels:
+    <<: *backend-base
+    command: ["asgi"]
+    ports:
+      - "127.0.0.1:8014:8000"
+
+  celery-worker:
+    <<: *backend-base
+    command: ["worker"]
+
+  celery-beat:
+    <<: *backend-base
+    command: ["beat"]
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nginx
+    image: ghcr.io/menarzullayev/yuzdanyuz-nginx:dev
+    depends_on:
+      - backend
+      - channels
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - staticdata:/var/www/static:ro
+      - mediadata:/var/www/media:ro
+
+volumes:
+  pgdata:
+  redisdata:
+  chdata:
+  meilidata:
+  staticdata:
+  mediadata:
