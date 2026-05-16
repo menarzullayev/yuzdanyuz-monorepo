@@ -1,4 +1,5 @@
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.cache import cache_control
@@ -27,12 +28,18 @@ def _get_batch(batch_id, request):
 
 
 def _draft_counts(batch):
-    all_drafts = batch.drafts.all()
-    total = all_drafts.count()
-    invalid = all_drafts.filter(is_valid=False, is_published=False).count()
-    published = all_drafts.filter(is_published=True).count()
-    pending = total - published
-    return {'total': total, 'invalid': invalid, 'published': published, 'pending': pending}
+    """ISSUE-101: 4 ta alohida COUNT() o'rniga bitta aggregate."""
+    agg = batch.drafts.aggregate(
+        total=Count('id'),
+        invalid=Count('id', filter=Q(is_valid=False, is_published=False)),
+        published=Count('id', filter=Q(is_published=True)),
+    )
+    return {
+        'total': agg['total'],
+        'invalid': agg['invalid'],
+        'published': agg['published'],
+        'pending': agg['total'] - agg['published'],
+    }
 
 
 @login_required

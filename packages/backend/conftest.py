@@ -292,3 +292,39 @@ def mock_otp_code(db, phone_number):
         attempts=0,
     )
     return code
+
+
+# ── ISSUE-101: N+1 strict mode ──────────────────────────────────────────────
+
+
+def pytest_configure(config):
+    """Register markers (ISSUE-101 N+1 detection)."""
+    config.addinivalue_line(
+        'markers',
+        'max_queries(n): cap query count for the request (uses CaptureQueriesContext)',
+    )
+
+
+@pytest.fixture
+def assert_max_queries(django_assert_num_queries):
+    """ISSUE-101: yordamchi — `with assert_max_queries(15): client.get(...)`.
+
+    Django'ning `django_assert_num_queries` aniq sonni talab qiladi; bizga
+    "<= N" semantikasi kerak chunki middleware (JWT, Tenant, RLS) +5..+10
+    qo'shimcha query qo'shadi va bu o'zgaradigan baseline.
+    """
+    from contextlib import contextmanager
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    @contextmanager
+    def _ctx(max_n: int, label: str = ''):
+        with CaptureQueriesContext(connection) as ctx:
+            yield ctx
+        actual = len(ctx.captured_queries)
+        if actual > max_n:
+            queries = '\n  '.join(q['sql'][:120] for q in ctx.captured_queries)
+            raise AssertionError(f'{label}: {actual} queries (max allowed {max_n}):\n  {queries}')
+
+    return _ctx

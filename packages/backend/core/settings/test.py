@@ -64,6 +64,14 @@ DEBUG_TOOLBAR_CONFIG = {
     'SHOW_TOOLBAR_CALLBACK': lambda r: False,
 }
 
+# ── ISSUE-101: N+1 detection ──────────────────────────────────
+# nplusone library installed (dev.txt) ammo middleware test'da yoqilmaydi —
+# uning `lazy_load` signal'i har lazy QuerySet'da fire bo'ladi va false
+# positive ko'p. Buning o'rniga `assert_max_queries(N)` fixture (conftest.py)
+# har test uchun aniq query budget bilan ishlaydi.
+# Developer'lar lokal'da diagnostika uchun nplusone middleware'ni qo'lda
+# yoqishi mumkin: NPLUSONE_LOG_LEVEL=WARNING runserver paytida.
+
 # ── Auth Settings (Task 2 tests) ──────────────────────────────
 
 # Telegram
