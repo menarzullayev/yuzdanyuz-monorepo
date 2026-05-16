@@ -53,6 +53,9 @@ channels:
     targetCPUUtilizationPercentage: 70
 
 # ── Celery worker ────────────────────────────────────────────────────────────
+# ISSUE-301: per-queue separate deployments (different SLO + resources).
+# Default `celeryWorker` ishlatadi `default,celery` — catch-all.
+# Per-queue worker'lar quyida.
 celeryWorker:
   replicas: 2
   command: ["worker"]
@@ -63,7 +66,49 @@ celeryWorker:
     requests: { cpu: "200m", memory: "512Mi" }
     limits:   { cpu: "1000m", memory: "1Gi" }
   hpa:
-    enabled: false  # autoscale by queue depth via KEDA in a future PR
+    enabled: false  # autoscale by queue depth via KEDA (ISSUE-302)
+
+# ISSUE-301: per-queue specialized workers
+celeryWorkerCritical:
+  enabled: true
+  replicas: 3  # low-latency, more replicas for parallelism
+  env:
+    CELERY_CONCURRENCY: "8"   # fast tasks, high concurrency
+    CELERY_QUEUES: "critical"
+  resources:
+    requests: { cpu: "300m", memory: "512Mi" }
+    limits:   { cpu: "1500m", memory: "1Gi" }
+
+celeryWorkerAI:
+  enabled: true
+  replicas: 2  # AI tasks are slow + costly
+  env:
+    CELERY_CONCURRENCY: "2"   # low concurrency, each task ~10-60s
+    CELERY_QUEUES: "ai"
+    CELERY_TASK_TIME_LIMIT: "180"  # 3 min hard limit (Anthropic timeout)
+  resources:
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits:   { cpu: "1000m", memory: "1Gi" }
+
+celeryWorkerRealtime:
+  enabled: true
+  replicas: 2
+  env:
+    CELERY_CONCURRENCY: "4"
+    CELERY_QUEUES: "realtime"
+  resources:
+    requests: { cpu: "200m", memory: "256Mi" }
+    limits:   { cpu: "800m", memory: "512Mi" }
+
+celeryWorkerBatch:
+  enabled: true
+  replicas: 1  # batch can wait, fewer replicas
+  env:
+    CELERY_CONCURRENCY: "2"
+    CELERY_QUEUES: "batch"
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
 
 # ── Celery beat (single replica — distributed lock not implemented) ──────────
 celeryBeat:
@@ -86,6 +131,10 @@ backup:
   enabled: false                    # opt-in — needs S3 creds + WAL-G installed
   schedule: "0 3 * * *"             # 03:00 UTC daily
   image: ghcr.io/menarzullayev/walg:latest
+
+# ── ISSUE-302: KEDA queue-depth autoscaling ──────────────────────────────────
+keda:
+  enabled: false  # opt-in — needs KEDA operator pre-installed in cluster
 
 # ── Service / Ingress ────────────────────────────────────────────────────────
 service:

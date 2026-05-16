@@ -108,6 +108,24 @@ def _snapshot_one(
         scope_id=scope_id or '',
         defaults={'total': total, 'entries': entries},
     )
+
+    # ISSUE-304: normalized LeaderboardEntry jadvaliga ham yozish.
+    # JSON `entries` field back-compat uchun saqlanadi (3 oy), keyin deprecate.
+    from .models import LeaderboardEntry
+
+    LeaderboardEntry.objects.filter(snapshot=snapshot).delete()  # replace strategy
+    LeaderboardEntry.objects.bulk_create(
+        [
+            LeaderboardEntry(
+                snapshot=snapshot,
+                user_id=e['user_id'],
+                rank=e['rank'],
+                score=e['score'],
+            )
+            for e in entries
+        ],
+        batch_size=500,
+    )
     return snapshot
 
 
