@@ -281,6 +281,39 @@ Pre-push hook lokal venv'da o'tdi (men `pip install whitenoise` qilib qo'ygan ed
 
 ---
 
+## Lesson 18 — Pulli external API chaqiruvchi endpoint'lar input type'ni qattiq validate qilishi shart
+
+**Mistake**: `OpenEndedSubmitView` (`apps/intelligence/views.py:117`) `question_version` qabul qilardi va to'g'ridan-to'g'ri AI grading Celery task'ga jo'natardi — savol type'i (single-choice yoki essay) tekshirilmasdi. E2E sinov'da SC savolga essay submit qilindi → Anthropic API real chaqirilgan, ~$0.01 pul ketdi, AI rubrikasi noto'g'ri savol uchun chiqdi.
+
+**Why it broke**: View qabul qiladigan `question_version` har qanday QV bo'lishi mumkin. `Question.Type` (SC, MC, MT, OR, FB, **OE**, **FU**) — faqat oxirgi 2 turi (OPEN_ENDED, FILE_UPLOAD) OpenEnded submission uchun mantiqiy. Boshqa turlar uchun:
+- Pul ketadi (Anthropic API call)
+- AI noto'g'ri kontekstda baholaydi (rubrika "essay" deb, lekin user faqat option tanlaganini ko'rsatadi)
+- Data integrity: SC savolga essay content saqlangan, keyingi analytics noto'g'ri ko'rsatadi
+
+**Fix** (`apps/intelligence/views.py` OpenEndedSubmitView):
+```python
+from apps.catalog.models import Question
+
+allowed_types = (Question.Type.OPEN_ENDED, Question.Type.FILE_UPLOAD)
+if qv.question.type not in allowed_types:
+    raise ValidationError({
+        'question_version': f"Savol type'i '{qv.question.type}' OpenEnded uchun mos emas. "
+                            f"Faqat OE (Essay) yoki FU (File upload) qabul qilinadi."
+    })
+```
+
+Yangi test: `test_submit_rejects_non_oe_question_type` — SC savol bilan POST → 400, va `OpenEndedSubmission.objects.exists() == False` (DB write ham qilinmaganini tasdiqlash, Anthropic API ham chaqirilmagan).
+
+**Pattern**: External API chaqiruvchi (pulli yoki rate-limited) endpoint'lar uchun:
+1. **Input type tasdiqlash** — model `type`, `kind`, `category` field'lari orqali ruxsat etilgan domain'larni cheklash
+2. **Negative test mandatory** — har bir validation rule uchun "rejected" test (assertion: 400 + DB yo'q + side-effect yo'q)
+3. **Fail-fast before async dispatch** — `evaluate.delay(...)` chaqirig'idan oldin validate qilish, aks holda Celery worker pul ketishini va keyin failure'ni log qiladi
+4. **Audit trail** — kim qaysi qv'ga submit qildi, type bilan birga log qilish (debugging uchun)
+
+**Caught by**: E2E test (2026-05-16) — lokal AI agent S13 senariosida SC savolga essay submit qilib 202 va AI rubrika qaytarilganini ko'rdi (kutilgan: 400).
+
+---
+
 ## Capture Template
 
 When the user corrects you, append:

@@ -58,6 +58,22 @@ def question_version(db, org, question_with_skills):
         )
 
 
+@pytest.fixture
+def oe_question_version(db, org, subject, skill_algebra):
+    """OpenEnded (essay-type) savol — OpenEndedSubmitView faqat OE/FU type qabul qiladi."""
+    with tenant_context(org):
+        q = Question.objects.create(
+            organization=org, subject=subject, type=Question.Type.OPEN_ENDED
+        )
+        q.skills.add(skill_algebra)
+        return QuestionVersion.objects.create(
+            question=q,
+            version_number=1,
+            content={'text': 'Algebra haqida 5 ta jumla yozing.'},
+            options=[],
+        )
+
+
 def _make_published_mock(org, user, qv):
     now = timezone.now()
     with tenant_context(org):
@@ -246,7 +262,7 @@ class TestAITutorAPI:
 @pytest.mark.integration
 class TestOpenEndedAPI:
     def test_submit_essay_triggers_evaluation(
-        self, db, user, member, question_version, monkeypatch
+        self, db, user, member, oe_question_version, monkeypatch
     ):
         monkeypatch.setattr(
             tasks,
@@ -267,7 +283,7 @@ class TestOpenEndedAPI:
         resp = client.post(
             reverse('intelligence:openended-submit'),
             data={
-                'question_version': str(question_version.id),
+                'question_version': str(oe_question_version.id),
                 'submission_type': 'essay',
                 'content': 'Mening inshoyim juda muhim mavzu haqida.',
             },
@@ -280,7 +296,9 @@ class TestOpenEndedAPI:
         assert float(body['ai_score']) == pytest.approx((80 + 70 + 75 + 85) / 4, rel=1e-3)
         assert 'Yaxshi javob' in body['ai_feedback']['rationale']
 
-    def test_qa_approve_by_staff(self, db, user, member, question_version, superuser, monkeypatch):
+    def test_qa_approve_by_staff(
+        self, db, user, member, oe_question_version, superuser, monkeypatch
+    ):
         monkeypatch.setattr(
             tasks,
             '_generate_text',
@@ -293,7 +311,7 @@ class TestOpenEndedAPI:
         resp = client.post(
             reverse('intelligence:openended-submit'),
             data={
-                'question_version': str(question_version.id),
+                'question_version': str(oe_question_version.id),
                 'submission_type': 'essay',
                 'content': 'Test essay',
             },
@@ -313,7 +331,9 @@ class TestOpenEndedAPI:
         assert qa_resp.json()['status'] == 'human_approved'
         assert float(qa_resp.json()['human_score']) == 75.0
 
-    def test_qa_non_staff_forbidden(self, db, user, user2, member, question_version, monkeypatch):
+    def test_qa_non_staff_forbidden(
+        self, db, user, user2, member, oe_question_version, monkeypatch
+    ):
         monkeypatch.setattr(
             tasks,
             '_generate_text',
@@ -326,7 +346,7 @@ class TestOpenEndedAPI:
         resp = client.post(
             reverse('intelligence:openended-submit'),
             data={
-                'question_version': str(question_version.id),
+                'question_version': str(oe_question_version.id),
                 'submission_type': 'essay',
                 'content': 'x',
             },
@@ -344,20 +364,39 @@ class TestOpenEndedAPI:
         )
         assert qa.status_code == 403
 
-    def test_submit_validation(self, db, user, member, question_version):
+    def test_submit_validation(self, db, user, member, oe_question_version):
         client = Client()
         client.force_login(user)
         # Empty essay
         resp = client.post(
             reverse('intelligence:openended-submit'),
             data={
-                'question_version': str(question_version.id),
+                'question_version': str(oe_question_version.id),
                 'submission_type': 'essay',
                 'content': '   ',
             },
             content_type='application/json',
         )
         assert resp.status_code == 400
+
+    def test_submit_rejects_non_oe_question_type(self, db, user, member, question_version):
+        """SC (single choice) savolga OpenEnded submission yuborilsa 400 — keraksiz
+        Anthropic API chaqirig'i va noto'g'ri rubrika berishni oldini olish (S13 bug)."""
+        client = Client()
+        client.force_login(user)
+        resp = client.post(
+            reverse('intelligence:openended-submit'),
+            data={
+                'question_version': str(question_version.id),  # SC type fixture
+                'submission_type': 'essay',
+                'content': 'Bu javob keraksiz, savol SC type.',
+            },
+            content_type='application/json',
+        )
+        assert resp.status_code == 400
+        assert 'question_version' in resp.json()
+        # AI grading task chaqirilmaganini bilvosita tasdiqlash:
+        assert not OpenEndedSubmission.objects.exists()
 
 
 # ─── REST: skills endpoints ──────────────────────────────────────────────────
