@@ -677,26 +677,57 @@ Return error to user
 
 ## Task 8 — B2B Dashboard, Analitika va ClickHouse
 
+**Status**: 🟢 **BACKEND COMPLETE** (PR #36, 2026-05-16). Frontend dashboard UI 🔵 alohida workstream.
+
 **Maqsad**: O'quv markazi direktorlariga real-time yoki tezkor hisobotlar.
 
-### Deliverables
-- [ ] **B2B Cabinet**: o'quvchilar ro'yxati, guruhlar, testlar
-- [ ] **Celery Event Stream**: har bir test natijasi → ClickHouse'ga event
-- [ ] **ClickHouse schema**: `exam_events` ustunli jadval
-- [ ] **Dashboard HTMX widgets**:
-  - Fan bo'yicha o'rtacha ball (bar chart)
-  - Haftalik o'sish dinamikasi (line chart)
-  - Reyting taqsimoti (pie chart)
-  - Eng zaif o'quvchilar ro'yxati
-- [ ] **Heavy Report** (`/reports/export/`) — ClickHouse'dan CSV/Excel export
-- [ ] **Read Replica** — og'ir SQL'lar master'ga tushmasin
-- [ ] **Multi-tenant isolation** — direktor faqat o'z markazining ma'lumotini ko'radi
+### Deliverables ✅ COMPLETE
+
+- [x] **Event Stream**: ExamAttempt SUBMITTED post_save → `ExamEvent` denormalized snapshot
+- [x] **ClickHouse schema** — stub mode (`apps/analytics/clickhouse_client.py`):
+  - `CLICKHOUSE_ENABLED` toggle (default False — PostgreSQL fallback)
+  - Real mode kelajakda: `clickhouse-driver` + parallel write durability
+- [x] **Dashboard widgets** (REST JSON, frontend Chart.js render qiladi):
+  - Fan bo'yicha o'rtacha ball (`get_subject_averages`)
+  - Haftalik o'sish dinamikasi (`get_weekly_growth`, TruncWeek)
+  - Reyting taqsimoti (`get_score_distribution`, 4 bucket)
+  - Eng zaif o'quvchilar ro'yxati (`get_weak_students`, min_attempts=2 filter)
+- [x] **Heavy Report** — `POST /api/analytics/export/` Celery async:
+  - CSV (csv module) yoki Excel (openpyxl, allaqachon mavjud)
+  - `ReportExport` model (PENDING → PROCESSING → READY/FAILED)
+  - Iterator chunk_size=500 — minglab qator memory'da emas
+- [x] **Multi-tenant isolation** — `request.org` middleware orqali, har query `organization=org` filter
+- [x] **Permission**: `_is_dashboard_user` — owner/admin/manager/teacher faqat (student emas → 403)
+
+**Frontend** 🔵 (alohida workstream):
+- [ ] B2B Cabinet UI (Next.js + Chart.js): o'quvchilar ro'yxati, guruhlar, dashboard widgets
+- [ ] Read Replica (DATABASE_ROUTERS) — analytics queries replica'ga, master master'ga
+
+### REST API (7 endpoint)
+
+| Method | Path | Maqsad |
+|---|---|---|
+| GET | `/api/analytics/dashboard/?days=30` | All widgets data |
+| GET | `/api/analytics/subjects/?days=30` | bar chart |
+| GET | `/api/analytics/weekly/?weeks=12` | line chart |
+| GET | `/api/analytics/distribution/?days=30` | pie chart |
+| GET | `/api/analytics/weak-students/?limit=10` | bottom N |
+| POST | `/api/analytics/export/` | create CSV/Excel report (Celery async) |
+| GET | `/api/analytics/export/<id>/` | status; `?download=1` → file download |
 
 ### Tech Stack
-`ClickHouse` · `clickhouse-driver` · `Celery` · `Chart.js` (HTMX partial)
+`PostgreSQL aggregation` (stub) · `ClickHouse` (kelajakda) · `Celery` · `openpyxl` · `csv`
 
 ### Arxitektura qaror
-> **OLAP ClickHouse** — Yandex Metrika bir xil bazada ishlaydi, millionlab qatorni millisekunda (Bosqich 17)
+> **OLAP ClickHouse** stub mode'da — production'da real ClickHouse (Yandex
+> Metrika bir xil bazada ishlaydi, millionlab qatorni millisekunda).
+> Hozir PostgreSQL aggregation yetarli — kelajakda 100K+ event'dan keyin migrate. (Bosqich 17)
+
+### Tests (20 ta yangi, 479 jami)
+- Event recording (3) — submitted creates event, idempotent, score=None skip
+- Aggregations (5) — subject avg, weekly, distribution, weak filter, dashboard structure
+- REST API (7) — dashboard, subjects, weekly, distribution, weak, student 403, days param 400
+- Reports (5) — CSV via Celery, Excel, detail, invalid fmt 400, missing ID
 
 ---
 
@@ -781,7 +812,7 @@ Return error to user
 | 5 | Redis Leaderboard | ⭐⭐ | 🟢 Backend ✅ (core+WS+archive) / Frontend 🔵 | ✅ 32 test |
 | 6 | AI Diagnostika + Knowledge Graph | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 25 test |
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 36 test |
-| 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🔵 Planned |  |
+| 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 20 test |
 | 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🔵 Planned |  |
 | 10 | K8s + Monitoring + Xavfsizlik | ⭐⭐⭐⭐⭐ | 🔵 Planned |  |
 
@@ -814,6 +845,18 @@ Return error to user
 - API client with JWT interceptors
 - Login + Dashboard pages
 - Production startup scripts
+
+**Task 8** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #36)
+- 2 ta yangi model: ExamEvent (denormalized analytics snapshot) + ReportExport
+- ClickHouse stub abstraction (CLICKHOUSE_ENABLED toggle for prod)
+- Aggregations: subject avg (bar), weekly growth (line), distribution (pie), weak students
+- Signal: ExamAttempt SUBMITTED → record_exam_event (idempotent)
+- Celery task: generate_export (CSV via csv module, Excel via openpyxl)
+- 7 ta REST endpoint (dashboard + 4 chart + export create/detail)
+- Permission: org admin/owner/manager/teacher (student 403)
+- Tests: 20/20 ✅ (479 jami)
+- Frontend Next.js dashboard UI: 🔵
+- Read replica routing: 🔵 (DATABASE_ROUTERS)
 
 **Task 7** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #35)
 - 7 ta yangi model (Wallet, WalletTransaction, PaymentIntent, SubscriptionPlan,
@@ -870,17 +913,17 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       459 ✅ (100% passing)
-Models:             54 ✅ (47 + 7 commerce: Wallet/WalletTx/PaymentIntent/SubPlan/
-                          OrgSubscription/ReferralCode/Referral)
-Services:          35+ ✅ (+ Wallet, Payment, Subscription, Affiliate)
+Total Tests:       479 ✅ (100% passing)
+Models:             56 ✅ (54 + ExamEvent + ReportExport)
+Services:          37+ ✅ (+ analytics aggregation + reports export)
 Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     78+ ✅ (+ /api/wallet/*, /api/subscriptions/*, /api/affiliate/* 12 ta)
-WebSocket:          5  ✅ (ws/exams/attempt/<id>/, ws/leaderboard/{global|region|tenant|mock}/)
-Celery tasks:       7  ✅ (+ commerce.auto_renew_subscriptions)
-Redis ZSETs:        4  ✅ scope (lb:mock, lb:global, lb:region, lb:tenant)
-LLM integrations:   2  ✅ (AI Tutor on-demand, Open-Ended rubric scoring)
-Payment providers:  2  ✅ (Payme stub, Click stub — `ENABLE_REAL_PAYMENTS` toggle)
+API Endpoints:     85+ ✅ (+ /api/analytics/* 7 ta)
+WebSocket:          5  ✅
+Celery tasks:       8  ✅ (+ analytics.generate_export)
+Redis ZSETs:        4  ✅
+LLM integrations:   2  ✅
+Payment providers:  2  ✅ (stub mode)
+ClickHouse:         stub abstraction (CLICKHOUSE_ENABLED toggle for prod)
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 

@@ -30,7 +30,7 @@ urlpatterns = [
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),
     path('api/intelligence/', include('apps.intelligence.urls', namespace='intelligence')),
     path('api/', include('apps.commerce.urls', namespace='commerce')),
-    path('analytics/', include('apps.analytics.urls', namespace='analytics')),
+    path('api/analytics/', include('apps.analytics.urls', namespace='analytics')),
 ]
 
 if settings.DEBUG:
