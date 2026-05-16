@@ -2,6 +2,8 @@
 
 # ── Debug & Profiling ─────────────────────────────────────────────────────────
 django-debug-toolbar==5.2.0    # SQL query va performance nazorat
+nplusone==1.0.0                # ISSUE-101: N+1 detection (strict mode tests)
+django-perf-rec==4.27.0        # ISSUE-101: Query count regression detection
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.5

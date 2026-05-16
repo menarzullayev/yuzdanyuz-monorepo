@@ -24,6 +24,8 @@ Auth: IsAuthenticated default. Subscription endpoint'lari org admin only.
 import logging
 from decimal import Decimal
 
+from django.db.models import Count, Sum
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import permission_classes
@@ -64,7 +66,9 @@ class WalletView(APIView):
 class WalletTransactionsView(APIView):
     def get(self, request):
         wallet = wallet_service.get_or_create_wallet(request.user)
-        txs = wallet.transactions.all()[:100]
+        # ISSUE-101: explicit ordering bilan -created_at index'idan foydalanish.
+        # FK access yo'q (faqat scalar field'lar), shuning uchun select_related kerakmas.
+        txs = list(wallet.transactions.order_by('-created_at')[:100])
         return Response(
             {
                 'count': len(txs),
@@ -354,14 +358,15 @@ class AffiliateCodeView(APIView):
 class AffiliateStatsView(APIView):
     def get(self, request):
         wallet = wallet_service.get_or_create_wallet(request.user)
-        total_referrals = Referral.objects.filter(inviter=request.user).count()
-        total_coin_earned = sum(
-            r.coin_reward for r in Referral.objects.filter(inviter=request.user)
+        # ISSUE-101: 2 ta alohida query (count + iterate-sum) o'rniga bitta aggregate.
+        stats = Referral.objects.filter(inviter=request.user).aggregate(
+            total_referrals=Count('id'),
+            total_coin_earned=Coalesce(Sum('coin_reward'), 0),
         )
         return Response(
             {
-                'total_referrals': total_referrals,
-                'total_coin_earned': total_coin_earned,
+                'total_referrals': stats['total_referrals'],
+                'total_coin_earned': stats['total_coin_earned'],
                 'pending_cash_uzs': str(wallet.pending_cash_uzs),
                 'is_withdrawable': getattr(request.user.referral_code, 'is_withdrawable', False)
                 if hasattr(request.user, 'referral_code')

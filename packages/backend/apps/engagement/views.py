@@ -321,21 +321,24 @@ class CurrentLeagueView(APIView):
         if m is None:
             return Response({'detail': "League catalog bo'sh."}, status=404)
 
-        # Liga ichidagi rank
-        rank = (
-            LeagueMembership.objects.filter(
-                league=m.league,
-                period_start=m.period_start,
-                points_earned__gt=m.points_earned,
-            ).count()
-            + 1
-        )
-        # Top 10 ko'rinish
+        # ISSUE-101: alohida COUNT() query o'rniga top-10 select'idan rank hisoblash.
+        # Top-10 har holda chiqaramiz — agar user shu top'da bo'lsa, position'i = rank.
+        # Aks holda fallback: bitta aggregate.
         top = list(
             LeagueMembership.objects.filter(league=m.league, period_start=m.period_start)
             .order_by('-points_earned')
             .select_related('user')[:10]
         )
+        rank = next((i + 1 for i, t in enumerate(top) if t.user_id == request.user.id), None)
+        if rank is None:
+            rank = (
+                LeagueMembership.objects.filter(
+                    league=m.league,
+                    period_start=m.period_start,
+                    points_earned__gt=m.points_earned,
+                ).count()
+                + 1
+            )
 
         return Response(
             {
@@ -392,6 +395,8 @@ class NotificationListView(APIView):
     """GET /api/engagement/notifications/?unread=1"""
 
     def get(self, request):
+        # ISSUE-101: ['user','-created_at'] composite index'idan foydalanadi.
+        # FK access yo'q (faqat scalar), shuning uchun select_related kerakmas.
         qs = Notification.objects.filter(user=request.user)
         if request.query_params.get('unread') == '1':
             qs = qs.exclude(status=Notification.Status.READ)
