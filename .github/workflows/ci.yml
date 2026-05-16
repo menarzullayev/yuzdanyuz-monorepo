@@ -110,18 +110,18 @@ jobs:
         run: python manage.py check --fail-level WARNING
 
       - name: Pytest — unit tests
-        run: python -m pytest tests/unit/ apps/*/tests.py --tb=short -q
+        run: python -m pytest tests/unit/ apps/*/tests.py --tb=short -q -n auto
 
       - name: Pytest — integration tests
-        run: python -m pytest tests/integration/ --tb=short -q
+        run: python -m pytest tests/integration/ --tb=short -q -n auto
 
       - name: Pytest — security tests
-        run: python -m pytest tests/security/ --tb=short -q
+        run: python -m pytest tests/security/ --tb=short -q -n auto
 
       - name: Coverage report
         run: |
           python -m pytest tests/ apps/*/tests.py --cov=apps --cov=core \
-            --cov-report=term-missing
+            --cov-report=term-missing -n auto
         continue-on-error: true
 
   # ──────────────────────────────────────────────────────────────────

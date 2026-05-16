@@ -5,7 +5,7 @@ PG_DATA = $(HOME)/.local/pgsql/data
 PG_BIN  = $(HOME)/.local/pgsql/bin
 PGSHAREDIR = $(HOME)/.local/pgsql/share
 
-.PHONY: help db-start db-stop run migrate makemigrations shell test test-unit test-integration \
+.PHONY: help db-start db-stop run migrate makemigrations shell test test-fast test-unit test-integration \
         test-security test-coverage test-all createsuperuser collectstatic install install-dev setup-rls
 
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make makemigrations   — yangi migratsiya yaratish"
 	@echo "  make shell            — Django shell"
 	@echo "  make test             — barcha testlar (tez, -x)"
+	@echo "  make test-fast        — parallel (-n auto) + reuse-db (1.8x+ speedup)"
 	@echo "  make test-unit        — unit testlar qo'llash"
 	@echo "  make test-integration — integration testlar qo'llash"
 	@echo "  make test-security    — security testlar qo'llash"
@@ -50,6 +51,9 @@ shell:
 
 test:
 	$(PYTHON) -m pytest -x -q 2>/dev/null || $(MANAGE) test
+
+test-fast:
+	$(PYTHON) -m pytest -n auto
 
 test-unit:
 	$(PYTHON) -m pytest tests/unit/ -v
