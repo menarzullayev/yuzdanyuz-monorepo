@@ -19,7 +19,17 @@ if not os.environ.get('SECRET_KEY'):
     )
 SECRET_KEY = os.environ['SECRET_KEY']
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+# Hardcoded ALLOWED_HOSTS — security-first (env override only if explicitly set)
+ALLOWED_HOSTS = ['hsm.sammu.uz', 'srvr1.sammu.uz', '127.0.0.1', 'localhost']
+_extra_hosts = os.getenv('ALLOWED_HOSTS', '').strip()
+if _extra_hosts:
+    ALLOWED_HOSTS = list(
+        set(ALLOWED_HOSTS) | {h.strip() for h in _extra_hosts.split(',') if h.strip()}
+    )
+
+# CSRF — production domain ishlatadi (subpath bilan ham bir xil)
+CSRF_TRUSTED_ORIGINS = ['https://hsm.sammu.uz']
+USE_X_FORWARDED_HOST = True
 
 # HTTPS xavfsizlik headerlari
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -32,6 +42,23 @@ SECURE_HSTS_PRELOAD = True
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# Subpath deployment — FORCE_SCRIPT_NAME env-var support.
+# Sets URL prefix, STATIC_URL, LOGIN URLs, AND cookie paths (scope to subpath
+# so Yii2 host site's cookies don't conflict with Django).
+_script_name = os.getenv('FORCE_SCRIPT_NAME', '').rstrip('/')
+if _script_name:
+    FORCE_SCRIPT_NAME = _script_name
+    STATIC_URL = f'{_script_name}/static/'
+    MEDIA_URL = f'{_script_name}/media/'
+    LOGIN_REDIRECT_URL = f'{_script_name}/'
+    LOGIN_URL = f'{_script_name}/accounts/login/'
+    LOGOUT_REDIRECT_URL = f'{_script_name}/'
+    # Cookie scoping — without this, /yuzdanyuz/ cookies would set path=/
+    # and conflict with Yii2 cookies on the same domain.
+    SESSION_COOKIE_PATH = f'{_script_name}/'
+    CSRF_COOKIE_PATH = f'{_script_name}/'
+    LANGUAGE_COOKIE_PATH = f'{_script_name}/'
 
 # Production email
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
