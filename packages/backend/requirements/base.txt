@@ -57,3 +57,7 @@ cryptography==44.0.2           # Task 2: allauth Google JWT verification
 # ── Observability (Task 10) ───────────────────────────────────────────────────
 django-prometheus==2.4.1       # /metrics endpoint (Prometheus exporter)
 python-json-logger==3.3.0      # Structured JSON logging (prod)
+
+# ── Static Files (gunicorn/daphne — nginx-siz serve qilish) ───────────────────
+# Middleware base.py'da ulanadi → barcha env'larda (test/dev/prod) kerak.
+whitenoise==6.9.0
