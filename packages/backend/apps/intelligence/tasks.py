@@ -29,11 +29,20 @@ logger = logging.getLogger(__name__)
 # ── LLM client wrapper ────────────────────────────────────────────────────────
 
 
-def _generate_text(prompt: str, *, max_tokens: int = 1024, model: str = 'claude-sonnet-4-5') -> str:
+def _generate_text(
+    prompt: str,
+    *,
+    max_tokens: int = 1024,
+    model: str = 'claude-sonnet-4-5',
+    system: str | None = None,
+) -> str:
     """
     Anthropic API'ga bitta so'rov. Test paytida bu funksiya monkey-patch qilinadi.
 
     Production'da: settings.ANTHROPIC_API_KEY .env'dan keladi.
+
+    ISSUE-X04: agar `system` berilsa, ephemeral prompt cache qo'llaniladi —
+    bir xil system bloki qayta ishlatilganida token narxi sezilarli kamayadi.
     """
     import anthropic
 
@@ -42,13 +51,34 @@ def _generate_text(prompt: str, *, max_tokens: int = 1024, model: str = 'claude-
         raise RuntimeError("ANTHROPIC_API_KEY settings/env'da yo'q")
 
     client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{'role': 'user', 'content': prompt}],
-    )
+    kwargs: dict = {
+        'model': model,
+        'max_tokens': max_tokens,
+        'messages': [{'role': 'user', 'content': prompt}],
+    }
+    if system:
+        # ISSUE-X04: cache_control=ephemeral on stable SYSTEM block
+        kwargs['system'] = [
+            {'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}},
+        ]
+    message = client.messages.create(**kwargs)
     # Anthropic SDK 0.x: message.content[0].text
     return message.content[0].text if message.content else ''
+
+
+# ── Stable SYSTEM prompts (cacheable via Anthropic ephemeral cache) ───────────
+
+TUTOR_SYSTEM_PROMPT = (
+    "Sen O'zbekiston DTM imtihoniga tayyorlanayotgan o'quvchi uchun "
+    "motivatsion ustozsan. Faqat O'zbek tilida, qisqa (4-5 jumla) javob ber. "
+    "Berilgan raqamlarni o'zgartirma — faqat tahlil qil va tavsiya ber."
+)
+
+ESSAY_RUBRIC_SYSTEM_PROMPT = (
+    "Sen O'zbek tili yoki ingliz tilida insho/javobni baholaydigan ekspertsan. "
+    'Mezonlar: grammar, content, structure, relevance (har biri 0-100). '
+    "Faqat valid JSON qaytar — hech qanday markdown yoki prefiks qo'shma."
+)
 
 
 # ── 1. AI Tutor — on-demand motivational feedback ────────────────────────────
@@ -114,7 +144,7 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
     try:
         prompt = _build_tutor_prompt(fb.summary)
         with AI_TUTOR_LATENCY.labels(task_type='tutor').time():
-            text = _generate_text(prompt)
+            text = _generate_text(prompt, system=TUTOR_SYSTEM_PROMPT)
 
         fb.content = text
         fb.status = AIFeedback.Status.READY
@@ -186,7 +216,7 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
             raise RuntimeError('Audio transcription hali implement qilinmagan (Whisper SDK kerak)')
 
         prompt = _build_essay_rubric_prompt(question_text, answer_text)
-        text = _generate_text(prompt, max_tokens=512)
+        text = _generate_text(prompt, max_tokens=512, system=ESSAY_RUBRIC_SYSTEM_PROMPT)
 
         # JSON parse
         try:

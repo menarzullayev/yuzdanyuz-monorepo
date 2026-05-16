@@ -32,6 +32,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.config import get_org_setting
+
 from .models import (
     AntiCheatEvent,
     ExamAttempt,
@@ -57,6 +59,7 @@ from .tasks import finalize_attempt_score
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
+# ISSUE-404: legacy default, kept as fallback. Use get_org_setting() per-attempt.
 MAX_STRIKES = 3
 
 
@@ -262,7 +265,9 @@ class AntiCheatEventView(APIView):
             attempt.strikes = (attempt.strikes or 0) + 1
             update_fields = ['strikes', 'updated_at']
 
-            if attempt.strikes >= MAX_STRIKES:
+            # ISSUE-404: per-tenant override via Organization.settings.anti_cheat.max_strikes
+            max_strikes = get_org_setting(attempt.organization, 'anti_cheat.max_strikes')
+            if attempt.strikes >= max_strikes:
                 attempt.status = ExamAttempt.Status.CANCELLED
                 attempt.cancel_reason = ExamAttempt.CancelReason.TAB_SWITCH
                 attempt.submitted_at = timezone.now()

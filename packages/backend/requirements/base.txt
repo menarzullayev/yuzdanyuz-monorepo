@@ -36,6 +36,7 @@ djangorestframework==3.15.2    # Task 2, 4: TMA va mobile uchun API endpoints
 django-cors-headers==4.7.0     # Task 2: CORS (TMA, mobile app)
 drf-spectacular==0.27.2        # ISSUE-201: OpenAPI 3.0 schema + Swagger UI + Redoc
 django-fsm-2==4.0.0            # ISSUE-205: state machine field decorators for status models
+django-flags==5.2.0             # ISSUE-505: feature flag toggling (per-user/per-org/percentage)
 
 # ── Frontend Helpers ──────────────────────────────────────────────────────────
 django-htmx==1.21.0            # Task 1+: HTMX request detection middleware
@@ -60,6 +61,10 @@ cryptography==44.0.2           # Task 2: allauth Google JWT verification
 # ── Observability (Task 10) ───────────────────────────────────────────────────
 django-prometheus==2.4.1       # /metrics endpoint (Prometheus exporter)
 python-json-logger==3.3.0      # Structured JSON logging (prod)
+
+# ── Audit / Compliance (ISSUE-401) ────────────────────────────────────────────
+# SOC2/ISO 27001: kim qachon nima o'zgartirgan? — historical_<model> shadow tables
+django-simple-history>=3.4     # ISSUE-401 SOC2 audit trail
 
 # ── Static Files (gunicorn/daphne — nginx-siz serve qilish) ───────────────────
 # Middleware base.py'da ulanadi → barcha env'larda (test/dev/prod) kerak.

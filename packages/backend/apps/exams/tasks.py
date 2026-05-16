@@ -22,6 +22,7 @@ from core.tenant import unscoped_context
 logger = logging.getLogger(__name__)
 
 # Quarantine threshold sozlamalari (production-da settings.py'ga ko'chirish mumkin)
+# TODO ISSUE-404: migrate to get_org_setting(question.organization, 'disputes.quarantine_min_disputes')
 QUARANTINE_MIN_DISPUTES = getattr(settings, 'QUARANTINE_MIN_DISPUTES', 5)
 QUARANTINE_RATIO_THRESHOLD = getattr(settings, 'QUARANTINE_RATIO_THRESHOLD', 0.05)
 

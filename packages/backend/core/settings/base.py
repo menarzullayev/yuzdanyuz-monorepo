@@ -11,6 +11,8 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'not-secret-key-for-testing-only')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
+    # ISSUE-401: SOC2/ISO 27001 audit trail — historical_<model> shadow tables
+    'simple_history',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -35,6 +37,8 @@ INSTALLED_APPS = [
     'rest_framework',
     # ISSUE-201: OpenAPI 3.0 schema
     'drf_spectacular',
+    # ISSUE-505: Feature flags (django-flags) — per-user/per-org/percentage rollout
+    'flags',
     # Channels — WebSocket (heartbeat, real-time strikes)
     'channels',
     # Local apps — Domain-Driven Design
@@ -46,6 +50,7 @@ INSTALLED_APPS = [
     'apps.commerce',  # Wallet, Transaction, Subscription, Affiliate
     'apps.engagement',  # Streak, League, Badge, Notification
     'apps.analytics',  # ClickHouseEvent, Report, B2BDashboard
+    'apps.webhooks',  # ISSUE-405: B2B outgoing webhooks (HMAC-signed, retry + DLQ)
 ]
 
 MIDDLEWARE = [
@@ -67,8 +72,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.accounts.middleware.DeviceLogoutMiddleware',  # force logout → cookie tozalash
     'core.middleware.tenant.TenantMiddleware',  # user → org context
+    # ISSUE-409: per-request actor (current user) ContextVar for AuditUserMixin
+    'core.middleware.audit_user.AuditUserMiddleware',
+    # ISSUE-401: django-simple-history — stamps HistoricalX rows with request.user
+    # Must come AFTER AuditUserMiddleware so request.user is already resolved.
+    'simple_history.middleware.HistoryRequestMiddleware',
     'core.middleware.rls_middleware.RLSMiddleware',  # PostgreSQL RLS setup (DB-level isolation)
     'core.middleware.rate_limit.RateLimitMiddleware',  # Redis-backed rate limiting (HTTP 429)
+    # ISSUE-X04: CDN/edge Cache-Control headers for anonymous GETs (sitemap, leaderboard)
+    'core.middleware.cdn_cache.CDNCacheMiddleware',
     # ISSUE-203: Sunset + Deprecation header for legacy /api/ paths
     'core.middleware.api_deprecation.APIDeprecationMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',  # closes timing for metrics
@@ -288,10 +300,76 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PROJECT_BRAND_NAME = os.getenv('PROJECT_BRAND_NAME', 'Milliy Sertifikat')
 
+# ── Logging (ISSUE-X06) ───────────────────────────────────────
+# Dev/test'da plain console handler — JSON formatter prod.py'da
+# json_logging_dict() bilan o'rnatiladi. yuzdanyuz.events logger har ikkala
+# muhitda mavjud bo'lishi shart, aks holda core.logging.log_event() chiqishi
+# yo'qoladi.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'plain': {
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        },
+        'json': {
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(name)s %(levelname)s %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'plain',
+        },
+        'json_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'json',
+        },
+    },
+    'loggers': {
+        # ISSUE-X06: structured events — JSON handler so aggregators index
+        # fields as top-level keys (event, user_id, org_id, …).
+        'yuzdanyuz.events': {
+            'handlers': ['json_console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('LOG_LEVEL', 'INFO'),
+    },
+}
+
 # ── Feature Flags ─────────────────────────────────────────────
 # AI parser yoqilsa → tuzilmagan matn bloklari AI ga yuboriladi (narxi bor).
 # O'chirilsa → faqat regex parser ishlaydi (bepul, lekin murakkab savollarni topa olmaydi).
 ENABLE_AI_PARSER = os.getenv('ENABLE_AI_PARSER', 'true').lower() == 'true'
+
+# ISSUE-505: django-flags — runtime feature gating (per-user, per-org, percentage rollout).
+# Default conditions env var bilan boshqariladi. Admin'da `/admin/flags/` orqali override.
+#
+# Usage:
+#   from flags.state import flag_enabled
+#   if flag_enabled('ENABLE_REAL_PAYMENTS', request=request):
+#       ... real charge ...
+FLAGS = {
+    # Existing env-based booleans wrapped as flags (no behavior change, just a layer of indirection)
+    'ENABLE_AI_PARSER': [
+        {'condition': 'boolean', 'value': ENABLE_AI_PARSER},
+    ],
+    'ENABLE_REAL_PAYMENTS': [
+        {
+            'condition': 'boolean',
+            'value': os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'true',
+        },
+    ],
+    # ISSUE-505 demo: A/B test placeholder (off by default; flip on per-user/percentage in admin)
+    'EXPERIMENTAL_NEW_DASHBOARD': [
+        {'condition': 'boolean', 'value': False},
+    ],
+}
 
 # Anthropic AI — Task 3 bulk import parser + Task 6 AI tutor + open-ended grading
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')

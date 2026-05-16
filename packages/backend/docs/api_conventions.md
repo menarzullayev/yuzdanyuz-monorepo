@@ -208,3 +208,74 @@ class WalletView(APIView):
 ```
 
 CI validates schema: `python manage.py spectacular --validate --fail-on-warn`.
+
+---
+
+## 8. Logging & Retention (ISSUE-X06)
+
+- Use `core.logging.log_event(level, event_name, **fields)` for structured events.
+- `event` MUST be snake_case noun_verb (e.g. `payment_failed`, `streak_broken`).
+- All IDs (`user_id`, `org_id`, `attempt_id`) MUST be passed as string (UUID-safe).
+- Never use f-string interpolation for production events — aggregators (Loki /
+  CloudWatch / Datadog) cannot index inline values, so queries like
+  `event=payment_failed AND org_id=<uuid>` will not work.
+
+Example:
+
+```python
+from core.logging import log_event
+
+log_event('info', 'exam_submitted',
+          user_id=str(user.id),
+          org_id=str(org.id),
+          score=92.5,
+          duration_seconds=1800)
+```
+
+The `yuzdanyuz.events` logger is wired to a JSON handler in both `base.py`
+LOGGING and `core.observability.json_logging_dict()` (prod), so fields become
+top-level JSON keys ready for indexing.
+
+**Retention policy** (production):
+
+| Level | Retention | Storage |
+|---|---|---|
+| INFO | 30 days | Loki / CloudWatch |
+| WARNING+ | 90 days | Loki / CloudWatch |
+| ERROR/CRITICAL | 1 year | S3 cold + Sentry |
+
+---
+
+## 9. Audit Log Retention (ISSUE-401)
+
+`django-simple-history` `historical_<model>` jadvallarda har CRUD operatsiyani
+saqlaydi. Har row'da: `history_date`, `history_user` (kim qildi), `history_type`
+(`+` create, `~` update, `-` delete), va modelning to'liq snapshot'i.
+
+**Registered models** (2026-05-16):
+
+| Model | Historical table | Retention | Asos |
+|---|---|---|---|
+| `commerce.Wallet` | `historicalwallet` | **7 yil** | UZ buxgalteriya talabi |
+| `commerce.OrganizationSubscription` | `historicalorganizationsubscription` | **7 yil** | Financial reconciliation |
+| `commerce.SubscriptionPlan` | `historicalsubscriptionplan` | **7 yil** | Price change audit |
+| `accounts.CustomUser` | `historicalcustomuser` | **5 yil** | SOC2 identity |
+| `organizations.Membership` | `historicalmembership` | **5 yil** | SOC2 access control |
+| `organizations.OrgRole` | `historicalorgrole` | **5 yil** | SOC2 RBAC changes |
+| `organizations.Organization` | `historicalorganization` | **5 yil** | Tenant lifecycle |
+| `catalog.Question` | `historicalquestion` | **2 yil** | Content audit |
+| `exams.ExamAttempt` | `historicalexamattempt` | **2 yil** | DTM compliance |
+
+**Retention enforcement**: monthly Celery task `clean_historical_records`
+calls `python manage.py clean_old_history --days=N` per model.
+
+**PII redaction**: When user requests GDPR erasure, history rows for that user
+get `history_user=NULL` + PII fields blanked (separate task, ISSUE-402).
+
+**Excluded fields**: `CustomUser.password` and `CustomUser.last_login` are
+not tracked — har login historical row yaratmasligi uchun va parol hash
+audit log'da ko'rinmasligi uchun.
+
+**Middleware**: `simple_history.middleware.HistoryRequestMiddleware`
+`AuditUserMiddleware` dan keyin (so `request.user` allaqachon resolve qilingan
+bo'lsin) MIDDLEWARE ro'yxatida joylashgan.

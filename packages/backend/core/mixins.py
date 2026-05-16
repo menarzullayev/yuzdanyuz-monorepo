@@ -11,9 +11,11 @@ Ishlatish:
     Question.global_objects.all()   # barcha tenantlar (admin uchun)
 """
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from .audit_user import get_current_user
 from .managers import GlobalManager, TenantManager
 
 
@@ -130,3 +132,59 @@ class SoftDeleteMixin(models.Model):
         self.is_deleted = False
         self.deleted_at = None
         self.save(update_fields=['is_deleted', 'deleted_at'])
+
+
+# ── ISSUE-409: created_by / updated_by audit fields ─────────────────────────
+
+
+class AuditUserMixin(models.Model):
+    """ISSUE-409: SOC2/audit prep — har row uchun kim yaratgan/oxirgi
+    o'zgartirgan saqlanadi.
+
+    `AuditUserMiddleware` har request boshida `set_current_user(request.user)`
+    chaqiradi. Bu mixin `save()` paytida ContextVar'dan o'qib `created_by`
+    (faqat insert), `updated_by` (har save) FK'ni to'ldiradi.
+
+    Anonymous request, Celery task, management command, system fixture →
+    user=None → FK NULL qoldiriladi (SOC2 "system" marker; explicit set uchun
+    `with audit_user_context(admin): ...`).
+
+    Both fields use SET_NULL: kim yaratgan'i o'chirilsa ham audit qator saqlanadi.
+    """
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        editable=False,
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        editable=False,
+    )
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        user = get_current_user()
+        if user is not None and getattr(user, 'is_authenticated', False):
+            if self._state.adding and self.created_by_id is None:
+                self.created_by = user
+            self.updated_by = user
+            # save() bilan update_fields= berilgan bo'lsa, audit field'larini
+            # ham qo'shamiz (aks holda DB'da yangilanmaydi).
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                update_fields = set(update_fields)
+                update_fields.add('updated_by')
+                if self._state.adding:
+                    update_fields.add('created_by')
+                kwargs['update_fields'] = list(update_fields)
+        super().save(*args, **kwargs)
