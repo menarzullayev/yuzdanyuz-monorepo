@@ -1,16 +1,14 @@
 """
-Task 5 — Leaderboard archive Celery tasks.
+Task 5 + Task 9 — Engagement Celery tasks.
 
-Schedule (django-celery-beat admin):
+Task 5:
   - archive_leaderboards('weekly')    har dushanba 00:05
   - archive_leaderboards('monthly')   har oy 1-kuni 00:10
   - archive_leaderboards('yearly')    har 1-yanvar 00:15
 
-Idempotent: bir period_key uchun bir marta yoziladi (unique_together).
-Idempotency'ni `update_or_create` orqali kuchaytirgan — qayta chaqirsa
-faqat yangilanadi.
-
-Top-N: archive_leaderboards default 1000 ta top entry'ni saqlaydi.
+Task 9:
+  - check_broken_streaks                   har kecha 00:05 (broken streak warn)
+  - leagues_weekly_recalc                  har dushanba 00:10 (promote/demote)
 """
 
 import logging
@@ -158,3 +156,23 @@ def archive_leaderboards(period: str = 'weekly', top_n: int = DEFAULT_TOP_N) -> 
         'scopes_found': len(scopes),
         'snapshots_saved': saved,
     }
+
+
+# ── Task 9 — Streak + Leagues beat tasks ─────────────────────────────────────
+
+
+@shared_task(name='engagement.check_broken_streaks')
+def check_broken_streaks_task() -> dict:
+    """Beat: every night 00:05. Broken streak'larga warning yuboradi."""
+    from . import streak_service
+
+    queued = streak_service.check_broken_streaks()
+    return {'warnings_queued': queued}
+
+
+@shared_task(name='engagement.leagues_weekly_recalc')
+def leagues_weekly_recalc_task() -> dict:
+    """Beat: every Monday 00:10. Tugagan haftaning promote/demote."""
+    from . import leagues_service
+
+    return leagues_service.weekly_recalc()

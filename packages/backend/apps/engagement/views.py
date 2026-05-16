@@ -281,3 +281,167 @@ class LeaderboardHistoryView(APIView):
                 'entries': snapshot.entries,
             }
         )
+
+
+# ─── Task 9 — Streak / Leagues / Notifications / Search ─────────────────────
+
+
+from django.shortcuts import get_object_or_404  # noqa: E402
+from django.utils import timezone  # noqa: E402
+
+from . import leagues_service, search_service  # noqa: E402
+from .models import LeagueMembership, Notification, UserStreak  # noqa: E402
+
+
+class StreakView(APIView):
+    """GET /api/engagement/streak/  — joriy user streak."""
+
+    def get(self, request):
+        try:
+            s = request.user.streak
+            return Response(
+                {
+                    'current_streak': s.current_streak,
+                    'max_streak': s.max_streak,
+                    'last_activity_date': s.last_activity_date,
+                }
+            )
+        except UserStreak.DoesNotExist:
+            return Response({'current_streak': 0, 'max_streak': 0, 'last_activity_date': None})
+
+
+class CurrentLeagueView(APIView):
+    """
+    GET /api/engagement/leagues/current/
+    Joriy hafta membership + liga ichidagi rank.
+    """
+
+    def get(self, request):
+        m = leagues_service.get_or_create_membership(request.user)
+        if m is None:
+            return Response({'detail': "League catalog bo'sh."}, status=404)
+
+        # Liga ichidagi rank
+        rank = (
+            LeagueMembership.objects.filter(
+                league=m.league,
+                period_start=m.period_start,
+                points_earned__gt=m.points_earned,
+            ).count()
+            + 1
+        )
+        # Top 10 ko'rinish
+        top = list(
+            LeagueMembership.objects.filter(league=m.league, period_start=m.period_start)
+            .order_by('-points_earned')
+            .select_related('user')[:10]
+        )
+
+        return Response(
+            {
+                'league': {
+                    'id': str(m.league.id),
+                    'name': m.league.name,
+                    'rank_order': m.league.rank_order,
+                    'color_hex': m.league.color_hex,
+                },
+                'period_start': m.period_start,
+                'period_end': m.period_end,
+                'my_points': m.points_earned,
+                'my_rank': rank,
+                'top': [
+                    {
+                        'user_id': str(t.user_id),
+                        'username': t.user.username,
+                        'points': t.points_earned,
+                    }
+                    for t in top
+                ],
+            }
+        )
+
+
+class LeagueHistoryView(APIView):
+    """GET /api/engagement/leagues/history/  — user'ning hafta tarixi."""
+
+    def get(self, request):
+        memberships = list(
+            LeagueMembership.objects.filter(user=request.user)
+            .select_related('league', 'next_league')
+            .order_by('-period_start')[:20]
+        )
+        return Response(
+            {
+                'history': [
+                    {
+                        'period_start': m.period_start,
+                        'period_end': m.period_end,
+                        'league': m.league.name,
+                        'points': m.points_earned,
+                        'promoted': m.promoted,
+                        'demoted': m.demoted,
+                        'next_league': m.next_league.name if m.next_league else None,
+                    }
+                    for m in memberships
+                ]
+            }
+        )
+
+
+class NotificationListView(APIView):
+    """GET /api/engagement/notifications/?unread=1"""
+
+    def get(self, request):
+        qs = Notification.objects.filter(user=request.user)
+        if request.query_params.get('unread') == '1':
+            qs = qs.exclude(status=Notification.Status.READ)
+        items = list(qs.order_by('-created_at')[:50])
+        return Response(
+            {
+                'count': len(items),
+                'items': [
+                    {
+                        'id': str(n.id),
+                        'channel': n.channel,
+                        'priority': n.priority,
+                        'status': n.status,
+                        'title': n.title,
+                        'body': n.body,
+                        'metadata': n.metadata,
+                        'created_at': n.created_at,
+                        'read_at': n.read_at,
+                    }
+                    for n in items
+                ],
+            }
+        )
+
+
+class NotificationReadView(APIView):
+    """POST /api/engagement/notifications/<id>/read/"""
+
+    def post(self, request, notification_id):
+        n = get_object_or_404(Notification, pk=notification_id, user=request.user)
+        n.status = Notification.Status.READ
+        n.read_at = timezone.now()
+        n.save(update_fields=['status', 'read_at'])
+        return Response({'detail': 'OK', 'status': n.status})
+
+
+class SearchView(APIView):
+    """GET /api/engagement/search/?q=..."""
+
+    def get(self, request):
+        q = request.query_params.get('q', '')
+        if len(q.strip()) < 2:
+            return Response({'detail': 'Eng kamida 2 ta belgi kiriting'}, status=400)
+        try:
+            limit = int(request.query_params.get('limit', 20))
+        except (TypeError, ValueError):
+            raise ValidationError({'limit': 'integer'}) from None
+        if limit <= 0 or limit > 100:
+            raise ValidationError({'limit': "1..100 oralig'ida"})
+
+        org = getattr(request, 'org', None)
+        results = search_service.search_questions(q, org=org, limit=limit)
+        return Response({'count': len(results), 'results': results})
