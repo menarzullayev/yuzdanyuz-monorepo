@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'rest_framework',
     # ISSUE-201: OpenAPI 3.0 schema
     'drf_spectacular',
+    # CORS for frontend (Next.js localhost:3000 in dev, Vercel domain in prod)
+    'corsheaders',
     # ISSUE-505: Feature flags (django-flags) — per-user/per-org/percentage rollout
     'flags',
     # Channels — WebSocket (heartbeat, real-time strikes)
@@ -60,6 +62,8 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     # WhiteNoise — serve /static/ in WSGI without nginx (works under gunicorn/daphne)
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    # CORS — must come BEFORE CommonMiddleware to add headers on every response
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -169,6 +173,17 @@ SPECTACULAR_SETTINGS = {
         {'name': 'health', 'description': 'Liveness/readiness probes'},
     ],
 }
+
+# ── CORS (django-cors-headers) ─────────────────────────────────
+# Frontend (Next.js) lives on a separate origin in dev (localhost:3000) and
+# prod (Vercel domain). JWT lives in an HttpOnly cookie, so the browser only
+# sends it cross-origin when fetch uses `credentials: 'include'` AND the
+# server replies with Access-Control-Allow-Origin = exact origin (not '*').
+#
+# CORS_ALLOWED_ORIGINS — dev.py and prod.py extend this list.
+# CSRF_TRUSTED_ORIGINS — same origins, needed for any unsafe (POST) request.
+CORS_ALLOWED_ORIGINS: list[str] = []
+CORS_ALLOW_CREDENTIALS = True
 
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────
 # Multi-tenant isolation at database level (defense in depth)

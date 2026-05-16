@@ -27,9 +27,21 @@ if _extra_hosts:
         set(ALLOWED_HOSTS) | {h.strip() for h in _extra_hosts.split(',') if h.strip()}
     )
 
-# CSRF — production domain ishlatadi (subpath bilan ham bir xil)
+# CSRF — production domain + frontend (Vercel) origins env-driven
 CSRF_TRUSTED_ORIGINS = ['https://hsm.sammu.uz']
+_csrf_extra = os.getenv('CSRF_TRUSTED_ORIGINS', '').strip()
+if _csrf_extra:
+    CSRF_TRUSTED_ORIGINS = list(
+        set(CSRF_TRUSTED_ORIGINS) | {o.strip() for o in _csrf_extra.split(',') if o.strip()}
+    )
 USE_X_FORWARDED_HOST = True
+
+# CORS — frontend (Vercel) origins env-driven, comma-separated.
+# Example .env: CORS_ALLOWED_ORIGINS=https://yuzdanyuz.vercel.app,https://www.milliysertifikat.uz
+_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', '').strip()
+CORS_ALLOWED_ORIGINS = (
+    [o.strip() for o in _cors_origins.split(',') if o.strip()] if _cors_origins else []
+)
 
 # HTTPS xavfsizlik headerlari
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
