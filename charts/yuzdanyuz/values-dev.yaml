@@ -1,0 +1,29 @@
+# dev overlay — minimal replicas, debug logs, in-cluster postgres/redis ok.
+global:
+  domain: dev.yuzdanyuz.local
+
+web:
+  replicas: 1
+  hpa:
+    enabled: false
+
+channels:
+  replicas: 1
+  hpa:
+    enabled: false
+
+celeryWorker:
+  replicas: 1
+
+env:
+  DJANGO_ENV: dev
+  DJANGO_SETTINGS_MODULE: core.settings.dev
+  LOG_LEVEL: DEBUG
+  OTEL_ENABLED: "false"
+
+ingress:
+  tls:
+    enabled: false
+
+backup:
+  enabled: false

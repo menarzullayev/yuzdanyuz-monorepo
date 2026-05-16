@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+# Nginx — reverse proxy for Django (web + asgi) + serves static assets.
+# In K8s production, Ingress controller (nginx-ingress) usually replaces this,
+# but useful for docker-compose dev parity.
+
+FROM nginx:1.27-alpine
+
+RUN apk add --no-cache curl
+
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Static + media volumes mounted at runtime
+RUN mkdir -p /var/www/static /var/www/media
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD curl -fsS http://127.0.0.1/health/ || exit 1

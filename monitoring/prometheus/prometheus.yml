@@ -1,0 +1,59 @@
+# Prometheus config — used by docker-compose and K8s (kube-prometheus-stack).
+#
+# In K8s, prefer ServiceMonitor CRDs (see charts/yuzdanyuz/templates/servicemonitor.yaml).
+# This file is the standalone fallback / dev-mode scrape config.
+
+global:
+  scrape_interval:     30s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: yuzdanyuz
+    env: ${ENV:-dev}
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # ── Django backend (web pods) ──────────────────────────────────────────────
+  - job_name: 'yuzdanyuz-backend'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          component: web
+
+  # ── Celery worker (exposes its own metrics if django-prometheus instrumented) ─
+  - job_name: 'yuzdanyuz-celery'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['celery-worker:8000']
+        labels:
+          component: worker
+
+  # ── PostgreSQL exporter (run separately) ───────────────────────────────────
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # ── Redis exporter ─────────────────────────────────────────────────────────
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # ── Node exporter (host-level) ─────────────────────────────────────────────
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # ── Self-scrape ────────────────────────────────────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

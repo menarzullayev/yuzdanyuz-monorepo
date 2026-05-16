@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yuzdanyuz-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: yuzdanyuz
+  source:
+    repoURL: https://github.com/menarzullayev/yuzdanyuz-monorepo.git
+    # Production tracks tagged releases — never auto-syncs from main
+    targetRevision: HEAD          # override at apply: e.g. v1.0.0
+    path: charts/yuzdanyuz
+    helm:
+      releaseName: yuzdanyuz
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: yuzdanyuz-prod
+  syncPolicy:
+    # Manual sync — operator approves prod rollouts via Argo UI / argocd CLI
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 20

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: yuzdanyuz
+description: |
+  Milliy Sertifikat — Django backend (web + asgi + celery worker + celery beat)
+  with Prometheus, Sentry, OpenTelemetry observability and PostgreSQL/Redis deps
+  expected as managed services (separate Helm releases or external).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - django
+  - edtech
+  - multi-tenant
+maintainers:
+  - name: YuzDanYuz Team
+    email: ops@yuzdanyuz.uz
+home: https://github.com/menarzullayev/yuzdanyuz-monorepo
+sources:
+  - https://github.com/menarzullayev/yuzdanyuz-monorepo

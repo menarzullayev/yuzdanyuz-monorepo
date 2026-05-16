@@ -782,32 +782,68 @@ Return error to user
 **Maqsad**: Zero-Downtime deployment, tizim sog'lig'ini nazorat va DDoS himoya.
 
 ### Deliverables
-- [ ] **Docker**: har bir servis uchun `Dockerfile` (Django, Celery, Nginx)
-- [ ] **Docker Compose** (dev muhit): Django + PostgreSQL + Redis + ClickHouse + Meilisearch
-- [ ] **Kubernetes manifests**:
-  - `Deployment` — Rolling Update strategy
-  - `HorizontalPodAutoscaler` — Yakshanba imtihon trafiki uchun
-  - `ConfigMap` + `Secret`
-  - `Ingress` (Nginx) — subdomain routing (White-Label)
-- [ ] **CI/CD** (GitHub Actions):
-  - `push → test → build → deploy` pipeline
-  - Staging + Production environments
-- [ ] **Monitoring Stack**:
-  - Prometheus — metrikalar yig'ish
-  - Grafana — dashboard (CPU, RAM, Celery queue, DB connections)
-  - Sentry — error tracking + performance tracing
-- [ ] **Cloudflare**:
-  - DNS proxy — asl server IP yashirilgan
-  - WAF rules — SQLi, XSS, bot filtrlash
-  - "Under Attack Mode" tugmasi
-- [ ] **Backup**:
-  - WAL-G — PostgreSQL PITR (Point-in-Time Recovery)
-  - S3/R2 — segment arxivi
-  - Geo-Replica — Germaniya standby server
-- [ ] **Centralized Logging** — structured JSON logs (no `print`)
+- [x] **Docker**: multi-stage `Dockerfile.backend` (web/asgi/worker/beat/migrate one image, dispatch via entrypoint) + `Dockerfile.nginx` ✅
+- [x] **Docker Compose** (dev muhit): Django + PostgreSQL + Redis + ClickHouse + Meilisearch + Celery (worker + beat) + Nginx ✅
+- [x] **Kubernetes manifests** (Helm chart `charts/yuzdanyuz/`):
+  - `Deployment` (web, channels, celery-worker, celery-beat, nginx) — RollingUpdate ✅
+  - `HorizontalPodAutoscaler` (web 4-30, channels 3-15) — CPU + Memory ✅
+  - `ConfigMap` (env) + `Secret` reference (out-of-band creation) ✅
+  - `Ingress` (nginx + cert-manager TLS) — subdomain routing (White-Label `*.yuzdanyuz.uz`) ✅
+  - `PodDisruptionBudget` (minAvailable=1) ✅
+  - `NetworkPolicy` (default-deny + DNS/PG/Redis/HTTPS allow) ✅
+  - `ServiceMonitor` (Prometheus Operator scrape) ✅
+  - `Job` (migrate — Helm pre-install hook) ✅
+  - `CronJob` (WAL-G full backup — opt-in) ✅
+  - `ServiceAccount` (no token mount) + Pod/Container SecurityContext (non-root, drop ALL caps) ✅
+  - 3 ta env overlay: `values-dev.yaml`, `values-staging.yaml`, `values-prod.yaml` ✅
+- [x] **CI/CD** (GitHub Actions `build-and-push.yml`):
+  - Build + push backend + nginx images to `ghcr.io/menarzullayev/yuzdanyuz-{backend,nginx}` ✅
+  - Tags: branch / PR / semver / sha / latest (docker-metadata-action) ✅
+  - Helm lint + render smoke test ✅
+- [x] **GitOps** (Argo CD `argocd/`):
+  - `AppProject` — RBAC + sourceRepo allowlist ✅
+  - `Application` — staging (auto-sync from main), prod (manual sync from version tag) ✅
+  - `argocd/README.md` — bootstrap + workflow + rollback ✅
+- [x] **Monitoring Stack**:
+  - Sentry SDK (Django + Celery + Redis + Logging integrations) — DSN env-driven ✅
+  - django-prometheus — `/metrics` endpoint + middleware ✅
+  - OpenTelemetry — auto-instrumentation (Django + Celery + psycopg2 + Redis + requests) via `opentelemetry-instrument` wrapper ✅
+  - OTel Collector config (`monitoring/otel/collector.yaml`) — traces→Tempo, metrics→Prometheus, logs→Loki ✅
+  - Prometheus scrape config + 9 ta alert (5xx %, p95 latency, Celery queue, DB conn, replication lag, backup age, Redis memory) ✅
+  - Grafana dashboards: Django overview + Celery overview (JSON, importable) ✅
+  - JSON logging (python-json-logger) — `core/observability.json_logging_dict()` ✅
+- [x] **Cloudflare** (Terraform `terraform/cloudflare/`):
+  - DNS — proxied A records (apex + api + wildcard) ✅
+  - Zone settings — SSL strict, TLS 1.2+, HTTP/3, brotli, websockets ✅
+  - 4 ta WAF custom rule — recon scanners, login challenge, /admin geo-fence, TOR challenge ✅
+  - Page rules — `/api/*` no-cache, `/static/*` 30-day cache ✅
+  - Rate limit — 300 req/min per IP on /api/* ✅
+  - Under Attack mode runbook ✅
+- [x] **Backup** — WAL-G PITR:
+  - `scripts/backup/wal-g-config.sh` — env template (S3/R2/Spaces) ✅
+  - `scripts/backup/backup_full.sh` — daily full backup + retention (7 fulls) ✅
+  - `scripts/backup/restore.sh` — PITR restore (latest or timestamp) ✅
+  - K8s CronJob (`charts/.../cronjob-backup.yaml`) ✅
+  - Restore drill runbook (`docs/deployment/backup.md`) ✅
+- [x] **Health probes**:
+  - `/health/` — liveness (always 200) ✅
+  - `/health/ready/` — readiness (DB + Redis ping, 503 if degraded) ✅
+  - K8s liveness/readiness probe wiring (web + channels) ✅
+- [x] **Centralized Logging** — JSON logs (python-json-logger), `LOGGING` config in `core/observability.json_logging_dict()` ✅
+- [x] **Documentation** — `docs/deployment/{README,docker,k8s,argocd,secrets,monitoring,backup,cloudflare}.md` ✅
+- [x] **Tests**: `test_health_endpoint.py` (6 ta — liveness, readiness, /metrics) ✅
+
+### Deferred (alohida PR)
+- Real K8s cluster deploy (Hetzner/DOKS/EKS) — 🔵
+- Sealed Secrets / External Secrets Operator (GitOps secret management) — 🔵
+- argocd-image-updater (auto image tag bump) — 🔵
+- KEDA — Celery queue-depth based autoscaling — 🔵
+- Cosign image signing + SLSA provenance — 🔵
+- Real Sentry/Grafana/Loki cluster (kube-prometheus-stack install) — 🔵
+- Geo-Replica (Germaniya standby server) — 🔵
 
 ### Tech Stack
-`Kubernetes` · `GitHub Actions` · `Prometheus` · `Grafana` · `Sentry` · `Cloudflare` · `WAL-G`
+`Docker` · `Kubernetes` · `Helm` · `Argo CD` · `GitHub Actions` · `Prometheus` · `Grafana` · `OpenTelemetry` · `Sentry` · `Cloudflare` · `Terraform` · `WAL-G`
 
 ### Arxitektura qaror
 > **Zero-Trust + "O'lmas" Arxitektura** — tizim hech qachon qulamaydi, ma'lumotlar hech qachon yo'qolmaydi (Bosqich 18, 27, 28, 29)
@@ -827,7 +863,7 @@ Return error to user
 | 7 | Billing + Wallet + Affiliate | ⭐⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 36 test |
 | 8 | B2B Dashboard + ClickHouse | ⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 20 test |
 | 9 | Geymifikatsiya + SEO + Bildirishnomalar | ⭐⭐⭐ | 🟢 Backend ✅ / Frontend 🔵 | ✅ 26 test |
-| 10 | K8s + Monitoring + Xavfsizlik | ⭐⭐⭐⭐⭐ | 🔵 Planned |  |
+| 10 | K8s + Monitoring + Xavfsizlik | ⭐⭐⭐⭐⭐ | 🟢 Backend ✅ (manifests + CI/CD + monitoring) | ✅ 6 test (511 jami) |
 
 ### ✅ Completed Phases
 
@@ -858,6 +894,27 @@ Return error to user
 - API client with JWT interceptors
 - Login + Dashboard pages
 - Production startup scripts
+
+**Task 10** (2026-05-16): 🟢 **INFRASTRUCTURE COMPLETE** (PR #38)
+- Docker: multi-stage Dockerfile.backend (web/asgi/worker/beat/migrate one image) + Dockerfile.nginx + entrypoint.sh
+- Docker Compose: full dev stack (Django + PG + Redis + ClickHouse + Meilisearch + Celery + Nginx)
+- Helm chart `charts/yuzdanyuz/`: 17 ta template (deployment×4, service, ingress, HPA, PDB, NetworkPolicy, ServiceMonitor, Job migrate, CronJob backup, ServiceAccount, ConfigMap, PVC) + 3 ta env overlay
+- Argo CD GitOps: AppProject + Application×2 (staging auto, prod manual) + README
+- GitHub Actions: build-and-push.yml (matrix backend+nginx → ghcr.io) + helm lint
+- Cloudflare Terraform: DNS (proxied) + WAF (4 custom rules) + Page Rules + Rate Limit + zone settings
+- WAL-G PITR: config + backup_full.sh + restore.sh + K8s CronJob + restore drill runbook
+- Observability:
+  - Sentry SDK (Django + Celery + Redis + Logging integrations)
+  - django-prometheus /metrics endpoint
+  - OpenTelemetry auto-instrumentation (Django/Celery/psycopg2/Redis/requests)
+  - OTel Collector → Tempo (traces) + Prometheus (metrics) + Loki (logs)
+  - 9 ta Prometheus alert (5xx, latency p95, queue backlog, replication lag, backup age, ...)
+  - 2 ta Grafana dashboard (Django overview + Celery overview)
+  - JSON structured logging (python-json-logger)
+- Health endpoints: /health/ (liveness) + /health/ready/ (DB + Redis ping)
+- Documentation: docs/deployment/{README, docker, k8s, argocd, secrets, monitoring, backup, cloudflare}.md
+- Tests: 6/6 ✅ (511 jami)
+- Real K8s cluster deploy: 🔵 (manifests only — Hetzner/DOKS/EKS alohida PR)
 
 **Task 9** (2026-05-16): 🟢 **BACKEND COMPLETE** (PR #37)
 - 4 ta yangi model: UserStreak, League, LeagueMembership, Notification
@@ -941,19 +998,29 @@ L3 RLS audit'da topilgan kritik xatolar uchun follow-up PR'lar:
 ### 📊 Overall Progress
 
 ```
-Total Tests:       505 ✅ (100% passing)
-Models:             60 ✅ (+ UserStreak + League + LeagueMembership + Notification)
-Services:          41+ ✅ (+ streak + leagues + notifications + search)
-Middleware:         8  ✅ (+ rls fail-closed, rate_limit)
-API Endpoints:     91+ ✅ (+ /api/leaderboard/* engagement 6 ta)
+Total Tests:       511 ✅ (100% passing)
+Models:             60 ✅
+Services:          41+ ✅
+Middleware:         9  ✅ (+ django_prometheus before/after)
+API Endpoints:     93+ ✅ (+ /health/, /health/ready/, /metrics)
 WebSocket:          5  ✅
-Celery tasks:      10  ✅ (+ check_broken_streaks, leagues_weekly_recalc)
+Celery tasks:      10  ✅
 Redis ZSETs:        4  ✅
 LLM integrations:   2  ✅
 Payment providers:  2  ✅ (stub mode)
 ClickHouse:         stub abstraction (CLICKHOUSE_ENABLED toggle for prod)
 Search:            Meilisearch stub + PG ICONTAINS fallback
 Sitemap:           /sitemap.xml (django.contrib.sitemaps)
+
+Production Infra (Task 10):
+  Docker:           multi-stage (1 backend image, 5 commands) + nginx
+  K8s:              Helm chart (17 templates) + 3 env overlays + Argo CD GitOps
+  CI/CD:            GitHub Actions → ghcr.io + Helm lint
+  Observability:    Sentry + Prometheus + OpenTelemetry + JSON logs
+  Monitoring:       9 ta alert + 2 ta Grafana dashboard + OTel Collector
+  Backup:           WAL-G PITR (full + WAL stream) + restore drill runbook
+  Edge:             Cloudflare Terraform (DNS proxy + WAF + rate limit)
+
 Frontend Pages:     3+ ✅
 Code Coverage:      ~90% critical paths ✅
 

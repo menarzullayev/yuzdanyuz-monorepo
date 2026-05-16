@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# cloudflare_api_token = "..."     # via env: TF_VAR_cloudflare_api_token
+# zone_id              = "1234abcd...."
+# domain               = "yuzdanyuz.uz"
+# origin_ip            = "203.0.113.10"

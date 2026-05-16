@@ -26,6 +26,8 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.apple',
     # SEO (Task 9)
     'django.contrib.sitemaps',
+    # Observability (Task 10)
+    'django_prometheus',
     # Celery infrastructure (admin'da beat schedule + result tracking)
     'django_celery_beat',
     'django_celery_results',
@@ -45,6 +47,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Prometheus — must be FIRST (before) and LAST (after) for accurate timing
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'core.middleware.fix_prefix.ForceScriptNameMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -61,6 +65,7 @@ MIDDLEWARE = [
     'core.middleware.tenant.TenantMiddleware',  # user → org context
     'core.middleware.rls_middleware.RLSMiddleware',  # PostgreSQL RLS setup (DB-level isolation)
     'core.middleware.rate_limit.RateLimitMiddleware',  # Redis-backed rate limiting (HTTP 429)
+    'django_prometheus.middleware.PrometheusAfterMiddleware',  # closes timing for metrics
 ]
 
 AUTHENTICATION_BACKENDS = [

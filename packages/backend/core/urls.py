@@ -7,6 +7,7 @@ from django.shortcuts import redirect, render
 from django.urls import include, path
 
 from apps.engagement.sitemaps import PublicQuestionsSitemap
+from core import health as health_views
 
 sitemaps = {'questions': PublicQuestionsSitemap}
 
@@ -25,6 +26,10 @@ urlpatterns = [
     path('', home_view, name='home'),
     path('admin/', admin.site.urls),
     path('ping/', ping_view, name='ping'),
+    # Task 10 — K8s liveness/readiness probes + Prometheus exporter
+    path('health/', health_views.liveness, name='health-liveness'),
+    path('health/ready/', health_views.readiness, name='health-readiness'),
+    path('', include('django_prometheus.urls')),  # /metrics endpoint
     # Google OAuth (django-allauth)
     path('accounts/', include('allauth.urls')),
     # Domain apps

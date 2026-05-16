@@ -53,3 +53,7 @@ anthropic==0.102.0             # Task 3, 6: AI parser (bulk import) + AI tutor f
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
 requests==2.32.3               # Task 2, 7: allauth Google OAuth + Payme/Click
 cryptography==44.0.2           # Task 2: allauth Google JWT verification
+
+# ── Observability (Task 10) ───────────────────────────────────────────────────
+django-prometheus==2.4.1       # /metrics endpoint (Prometheus exporter)
+python-json-logger==3.3.0      # Structured JSON logging (prod)

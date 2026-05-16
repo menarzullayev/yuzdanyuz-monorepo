@@ -1,0 +1,49 @@
+# prod overlay — full HA + autoscaling + backup + observability.
+global:
+  domain: yuzdanyuz.uz
+
+web:
+  replicas: 4
+  hpa:
+    minReplicas: 4
+    maxReplicas: 30
+    targetCPUUtilizationPercentage: 60
+
+channels:
+  replicas: 3
+  hpa:
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 60
+
+celeryWorker:
+  replicas: 4
+
+celeryBeat:
+  replicas: 1
+
+env:
+  DJANGO_ENV: prod
+  LOG_LEVEL: INFO
+  OTEL_ENABLED: "true"
+  SENTRY_TRACES_SAMPLE_RATE: "0.05"   # 5% in prod (cost-sensitive)
+
+ingress:
+  hosts:
+    - host: yuzdanyuz.uz
+      paths:
+        - path: /
+          pathType: Prefix
+          service: nginx
+        - path: /ws/
+          pathType: Prefix
+          service: channels
+    - host: api.yuzdanyuz.uz
+      paths:
+        - path: /
+          pathType: Prefix
+          service: nginx
+
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
