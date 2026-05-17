@@ -16,7 +16,7 @@ Foydalanish:
         response = anthropic_client.messages.create(...)
 """
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # ── Exam submissions ────────────────────────────────────────────────────────
 EXAMS_SUBMITTED = Counter(
@@ -58,4 +58,11 @@ SMS_SENT = Counter(
     'yz_sms_sent_total',
     'SMS notifications sent (cost tracking)',
     ['backend', 'status'],  # backend=console|playmobile|eskiz, status=ok|failed
+)
+
+# ISSUE-114: SMS provider balansi (UZS). Past bo'lsa OTP-based auth o'ladi.
+SMS_BALANCE = Gauge(
+    'yz_sms_balance_uzs',
+    'Current SMS provider balance in UZS (low → OTP auth blocked)',
+    ['backend'],  # backend=playmobile|eskiz
 )
