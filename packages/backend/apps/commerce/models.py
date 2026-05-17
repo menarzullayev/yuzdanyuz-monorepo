@@ -24,16 +24,22 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
+from core.managers import GlobalManager, TenantManager
 from core.mixins import AuditUserMixin, SoftDeleteMixin
 
 # ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
 
 
 class Wallet(models.Model):
-    """
-    Per-user Sertifikat Coin balance. SELECT FOR UPDATE bilan atomic ops.
+    """Per-user Sertifikat Coin balance. SELECT FOR UPDATE bilan atomic ops.
 
     Coin = integer. Top-up: 10000 UZS → 100 Coin (1 Coin = 100 UZS, default rate).
+
+    Tenant scope (ISSUE-110 W5): user-scoped, **org-scoped emas** — B2C foydalanuvchilar
+    ham wallet ishlatadi. `User.delete()` paytida CASCADE qiladi (financial obligation
+    foydalanuvchi bilan birga ketadi). Cross-tenant leak yo'q — `wallet.user` FK orqali
+    foydalanuvchi o'zining mablag'igagina ko'rinadi. GDPR erasure paytida
+    `apps/accounts/gdpr.py` `Wallet.objects.filter(user=user)` orqali tozalanadi.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -318,7 +324,17 @@ class SubscriptionPlan(models.Model):
 
 
 class OrganizationSubscription(AuditUserMixin, models.Model):
-    """Org'ning aktiv subscription'i."""
+    """Org'ning aktiv subscription'i.
+
+    Tenant scope (ISSUE-110 W1): `organization` FK org-scoped, lekin tarixiy sabablar
+    bilan `TenantTimestampMixin` ishlatilmaydi (mavjud `id`/`organization`/`created_at`
+    explicit ifoda etilgan). Defense-in-depth uchun explicit `TenantManager` + `GlobalManager`
+    qo'shilgan — `.objects` org context'siz `qs.none()` qaytaradi (fail-closed).
+    L3 PostgreSQL RLS ham yoqilgan (`commerce/migrations/0003_enable_rls.py`).
+
+    Callers tenant context'siz (Celery beat task'lari, webhook view'lar) `unscoped_context()`
+    bilan o'rab olishi kerak — qarang `commerce/tasks.py:_auto_renew_subscriptions_impl`.
+    """
 
     class Status(models.TextChoices):
         TRIALING = 'trialing', _('Trial davri')
@@ -364,6 +380,10 @@ class OrganizationSubscription(AuditUserMixin, models.Model):
 
     # ISSUE-401: SOC2 audit trail (subscription lifecycle — 7 yil retention)
     history = HistoricalRecords()
+
+    # ISSUE-110 W1: defense-in-depth manager — TenantManager fail-closed.
+    objects = TenantManager()
+    global_objects = GlobalManager()
 
     class Meta:
         verbose_name = _('Organization Subscription')

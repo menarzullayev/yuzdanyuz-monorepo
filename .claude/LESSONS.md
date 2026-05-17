@@ -314,6 +314,60 @@ Yangi test: `test_submit_rejects_non_oe_question_type` — SC savol bilan POST �
 
 ---
 
+## Lesson 19 — `global_objects` recommendation/search flow'larida cross-tenant leak
+
+**Mistake**: `apps/intelligence/services.py:recommend_questions` cold-start va weak-skill matching uchun `Question.global_objects.order_by('?')` ishlatardi. Maqsad — B2C foydalanuvchilarga keng savol oqimi berish edi, lekin natija — autentifikatsiya qilingan har qanday foydalanuvchi (boshqa tenant a'zosi ham) **boshqa tashkilotlarning private question bank'larini** ko'ra olardi.
+
+**Why it broke**: `global_objects` (GlobalManager) tenant filter'ni bypass qiladi — bu admin/superuser yoki Celery worker uchun ataylab yaratilgan. Lekin oddiy user-facing endpoint (`GET /api/intelligence/skills/recommendations/`) ichida ishlatish — defense'ning birinchi qatlamini (TenantManager) butunlay aylanib o'tishni anglatadi. L3 RLS ham yordam bermaydi: Django default DB role table owner — RLS policies `FORCE ROW LEVEL SECURITY` siz bypass bo'ladi.
+
+**Fix**:
+```python
+from core.tenant import get_current_org
+
+org = get_current_org()
+if org is not None:
+    base_qs = Question.objects.all()                                  # TenantManager auto-filter
+else:
+    base_qs = Question.global_objects.filter(banks__is_public=True).distinct()  # public marker fallback
+```
+
+Regression test: `tests/security/test_tenant_boundary_extended.py::TestSkillRecommendationsBoundary` — 2 ta org savol yaratadi, tenant context A'da `recommend_questions` chaqiriladi va B'ning savoli **yo'q** ekanligini assert qiladi.
+
+**Pattern**:
+1. **`global_objects` faqat 3 ta legitimate use-case'da**: (a) admin/superuser kontekst, (b) Celery worker explicit `unscoped_context()` ichida, (c) cross-tenant audit/management command. User-facing view ichida ishlatish — **dudoq DAR** xato.
+2. **`is_public=True` markeri** — cross-tenant disclosure'ni explicit qilish uchun. Default false: yangi resurs hech qachon avtomat ravishda boshqa tenantga ko'rinmaydi.
+3. **Boundary test mandatory**: yangi user-facing query yozilganda, **kamida bitta `test_<name>_no_cross_tenant_leak`** test bo'lishi shart — 2 ta org + assertion.
+4. **`get_current_org()` check** — tenant-aware service ichida birinchi qator: org yo'q bo'lsa explicit fallback (public-only yoki 403), default qoldirmang.
+
+**Caught by**: 2026-05-17 `tenant-auditor` subagent audit (ISSUE-109 C1).
+
+---
+
+## Lesson 20 — RLS yoqilgan + 0 ta policy = silent breakage future booby-trap
+
+**Mistake**: `apps/catalog/migrations/0003_enable_rls.py` `tables_with_rls` ro'yxatiga `catalog_subject` qo'shilgan, lekin u uchun `CREATE POLICY ...` yozilmagan. Hozir test'lar yashil — chunki Django DB role table owner va PostgreSQL ownerga policy talab qilmaydi. `Subject.objects.all()` ishlaydi, hech kim sezmagan.
+
+**Why it broke**: PostgreSQL RLS semantikasi: `ALTER TABLE ENABLE ROW LEVEL SECURITY` + 0 policy = **deny-by-default** ko'rilmaydi, lekin **faqat owner uchun**. Production'da least-privilege role joriy qilinganda (security guideline tavsiyasi), `app_user@db` rolesi `Subject.objects.all()` chaqirsa, RLS qatlami har row'ni filter qiladi va 0 policy bo'lgani uchun **0 row** qaytaradi. Test mavjud emas, hech qanday integration test bu pattern'ni qoplay olmaydi (DB role o'zgarishi alohida deploy step).
+
+**Fix**:
+1. Audit har RLS migration'da `tables_with_rls` ro'yxatining har bandi uchun `CREATE POLICY ...` borligini tasdiqlash. `pg_policies` query bilan verify:
+   ```sql
+   SELECT relname, relrowsecurity, (SELECT count(*) FROM pg_policies p WHERE p.tablename = c.relname) AS policy_count
+   FROM pg_class c WHERE relrowsecurity = true ORDER BY relname;
+   ```
+2. Yangi migration `0007_fix_subject_rls_and_add_delete_policies.py` — `catalog_subject` global model (organization nullable, platform-wide fan), RLS o'chiriladi (`DISABLE ROW LEVEL SECURITY`).
+3. `tests/security/test_tenant_boundary_extended.py::TestSubjectGlobal` — Subject 2 ta org context'da ham ko'rinishini assert qiladi.
+
+**Pattern**:
+1. **RLS migration pre-commit hook idea**: har `ENABLE ROW LEVEL SECURITY` chaqirig'idan keyin bir xil migration ichida `CREATE POLICY` bo'lsin (yoki olib tashlanishi tushuntirilsin).
+2. **CI verify step**: production-like role bilan `SELECT count(*) FROM <table>` chaqirib 0 emasligini assert qilish (table empty bo'lgan testlarda fixture qator yaratish).
+3. **Audit cadence**: har `migration-validator` subagent run'ida — yangi `RunPython` migration'larida `ENABLE/DISABLE/CREATE POLICY` muvozanati tekshirilsin.
+4. **Single source of truth**: SQL fayl + management command (`apps/organizations/sql/rls_policies.sql`) Django migration'lar bilan teng tutilmasligi shart — bittasi truth manbai (Django migration), boshqasi yo o'chiriladi yo CI orqali avtomat sync.
+
+**Caught by**: 2026-05-17 `tenant-auditor` subagent + manual `pg_policies` query (ISSUE-109 C3).
+
+---
+
 ## Capture Template
 
 When the user corrects you, append:

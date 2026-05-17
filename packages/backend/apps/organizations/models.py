@@ -348,6 +348,21 @@ class Membership(models.Model):
     def __str__(self):
         return f'{self.user} → {self.organization.slug} ({self.role.name})'
 
+    def clean(self):
+        # ISSUE-110 W3: cross-org role injection'ni to'xtatish. Admin har qanday
+        # input qabul qilsa, A org admini B org'ning rolini biriktirib qo'yishi
+        # mumkin edi. role.organization_id <-> membership.organization_id majburiy
+        # teng bo'lsin.
+        super().clean()
+        if (
+            self.role_id
+            and self.organization_id
+            and self.role.organization_id != self.organization_id
+        ):
+            raise ValidationError(
+                {'role': 'Rol boshqa tashkilotga tegishli — cross-org tayinlash mumkin emas.'}
+            )
+
     def has_permission(self, perm: str) -> bool:
         return self.role.has_permission(perm)
 
@@ -397,6 +412,21 @@ class OrgInvite(models.Model):
 
     def __str__(self):
         return f'{self.organization.slug} invite ({self.token})'
+
+    def clean(self):
+        # ISSUE-110 W3: invite token bilan kelgan kishi role.organization_id va
+        # OrgInvite.organization_id farq qilsa, accept paytida Membership.clean()
+        # baribir to'sib qo'yadi — lekin invite yaratish daqiqasida ham
+        # validate qilamiz (admin UI darrov fail-fast xato beradi).
+        super().clean()
+        if (
+            self.role_id
+            and self.organization_id
+            and self.role.organization_id != self.organization_id
+        ):
+            raise ValidationError(
+                {'role': 'Rol boshqa tashkilotga tegishli — invite uchun ham mos kelishi shart.'}
+            )
 
     @property
     def is_valid(self) -> bool:

@@ -142,11 +142,18 @@ class MockExam(TenantTimestampMixin):
 
 # ── 2. MockExamQuestion (through) ──────────────────────────────────
 class MockExamQuestion(models.Model):
-    """
-    MockExam → QuestionVersion through table.
+    """MockExam → QuestionVersion through table.
 
     QuestionVersion FK (Question emas) — savol catalogda tahrirlansa ham
     mock'dagi snapshot o'zgarmaydi. Order va points shu yerda.
+
+    Tenant scope (ISSUE-110 W4): `organization` FK YO'Q — L2 isolation parent FK
+    (`mock_exam`) orqali kelib chiqadi. `MockExam` org-scoped, shuning uchun
+    `MockExamQuestion.objects.filter(mock_exam__organization=org)` natural filter.
+    L3 PostgreSQL RLS policy (`exams/migrations/0002_enable_rls.py`) ham parent
+    FK orqali — `mock_exam_id IN (SELECT id FROM exams_mockexam WHERE organization_id = ...)`.
+    Raw `MockExamQuestion.objects.filter(...)` ishlatishda hech bo'lmaganda
+    `mock_exam__organization=request.org` bilan filter qilish shart.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -34,14 +34,14 @@
 | Sprint | Items | Done | Partial | Undone |
 |---|---|---|---|---|
 | Sprint 0 (E2E fixes) | 4 | ✅ 4 | 0 | 0 |
-| Sprint 1 (Bleeding wounds) | 8 | ✅ 8 | 0 | 🔵 0 |
+| Sprint 1 (Bleeding wounds) | 11 | ✅ 11 | 0 | 🔵 0 |
 | Sprint 2-3 (Frontend unblock) | 7 | ✅ 7 | 0 | 🔵 0 |
 | Q2 (Scalability) | 8 | ✅ 7 | 🟡 1 | 🔵 0 |
 | Q3 (Enterprise readiness) | 9 | ✅ 5 | 🟡 1 | 🔵 3 (frontend-blocked) |
 | Q4 (Production-grade) | 6 | ✅ 2 | 🟡 1 | 🔵 3 (infra-blocked) |
 | Cross-cutting | 6 | ✅ 6 | 0 | 0 |
 | Future | 3 | 0 | 0 | 🔵 3 |
-| **JAMI** | **51** | **39** | **3** | **9** |
+| **JAMI** | **54** | **42** | **3** | **9** |
 
 ---
 
@@ -228,6 +228,72 @@
   - [x] Real mode missing secret env-var → all rejected (1 test)
   - [x] Webhook endpoint E2E 401 invalid signature (Payme + Click — 2 test)
 - **Reference**: ARCHITECTURE_REVIEW § 5.4
+
+---
+
+## ✅ ISSUE-109 — Tenant Isolation Critical Gaps (C1/C2/C3)
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🔴 P0 (live exploit imkoniyati)
+- **Effort**: 2-3 soat → real ~1 soat
+- **Tavsif**: 2026-05-17 tenant-auditor agent audit'i 3 ta CRITICAL topdi:
+  - **C1**: `apps/intelligence/services.py:101,105` — `Question.global_objects` cross-tenant savol oqishi (recommend_questions endpoint)
+  - **C2**: `apps/organizations/sql/rls_policies.sql:17` — `current_org_id() RETURNS bigint` lekin `Organization.id` UUID, `setup_rls` command CRASH bo'ladi; SQL fayl faqat 3 jadval, migration'lar 13+ — silent divergence
+  - **C3**: `apps/catalog/migrations/0003_enable_rls.py:16` — `catalog_subject` RLS yoqilgan, lekin 0 ta policy (`pg_policies` tasdiqlandi). Production'da least-privilege role joriy qilinganda `Subject.objects.all()` silent bo'sh
+- **Implementation**:
+  - **C1**: `recommend_questions` qayta yozildi — tenant context (`get_current_org()`) bor bo'lsa `Question.objects` (auto-filter), yo'q bo'lsa `is_public=True` markeri orqali public bank savollari fallback
+  - **C2**: `apps/organizations/sql/rls_policies.sql` + `apps/organizations/management/commands/setup_rls.py` o'chirildi — Django migration'lar yagona truth manbai
+  - **C3**: `apps/catalog/migrations/0007_remove_subject_rls.py` — `catalog_subject` dan `DISABLE ROW LEVEL SECURITY` (Subject `organization` nullable, platform-global fan)
+- **Acceptance Criteria**:
+  - [x] C1 fix + regression test `test_skill_recommendations_no_cross_tenant_leak`
+  - [x] C2 SQL fayl + command o'chirildi, issues.md'da rationale
+  - [x] C3 yangi migration applied + `pg_policies WHERE tablename='catalog_subject'` 0 satr + `relrowsecurity=f`
+  - [x] LESSONS.md → Lesson 19 (tenant audit lessons)
+- **Reference**: 2026-05-17 tenant-auditor agent report
+
+---
+
+## ✅ ISSUE-110 — Tenant Isolation Warnings Cluster (W1-W9)
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟠 P1 (theoretical risk + defense-in-depth)
+- **Effort**: 3-4 soat → real ~2 soat
+- **Implementation**:
+  - **W1** `OrganizationSubscription`: `objects = TenantManager()` + `global_objects = GlobalManager()` explicit qo'shildi (mixin'siz, mavjud `id`/`organization`/`created_at` field'lar buzilmasin)
+  - **W2** `webhooks/migrations/0002_enable_rls.py` — `webhooks_webhookendpoint` SELECT/INSERT/UPDATE/DELETE policies (UUID)
+  - **W3** `Membership.clean()` + `OrgInvite.clean()` — `role.organization_id == organization_id` validation
+  - **W4** `MockExamQuestion` docstring — L2/L3 isolation parent FK orqali qaytarilishini hujjatlash
+  - **W5** `Wallet*`, `PaymentIntent`, `Referral*` user-scoped (B2C) — docstring rationale + GDPR FK pattern
+  - **W6** `core/middleware/rls_middleware.py:51-53` — `SET app.is_admin` dead code olib tashlandi (hech qaysi policy ishlatmas, future risk)
+  - **W7** `intelligence/services.py:_profiles_with_min_attempts` — `.extra()` → ORM `annotate(_attempts=F('alpha')+F('beta')-2).filter(_attempts__gte=...)`
+  - **W9** `catalog/migrations/0007_remove_subject_rls.py` + `exams/migrations/0007_add_delete_policies.py` — DELETE policy commerce/analytics bilan harmonize
+- **Acceptance Criteria**:
+  - [x] 8 fix joyida (W8 allaqachon OK — agent xulosa bergan)
+  - [x] Migrations applied (3 yangi)
+  - [x] Test suite yashil
+- **Reference**: 2026-05-17 tenant-auditor agent report
+
+---
+
+## ✅ ISSUE-111 — Tenant Boundary Test Coverage Expansion
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟡 P2 (regression prevention)
+- **Effort**: 2-3 soat → real ~45 daqiqa
+- **Tavsif**: Audit `tests/security/test_tenant_boundary.py` faqat 5 ta test (Question + permission scoping). 12+ ta tenant model qoplanmagan.
+- **Implementation**: `tests/security/test_tenant_boundary_extended.py` — 10+ ta yangi test:
+  - `test_questionbank_cross_org_blocked`
+  - `test_mockexam_cross_org_blocked` + `test_mockexam_is_public_visible`
+  - `test_examattempt_cross_org_blocked`
+  - `test_webhookendpoint_cross_org_blocked`
+  - `test_organizationsubscription_cross_org_blocked`
+  - `test_examevent_cross_org_blocked`
+  - `test_skill_recommendations_no_cross_tenant_leak` (C1 regression)
+  - `test_subject_global_visible_across_orgs` (Subject intentionally global)
+  - `test_membership_clean_rejects_cross_org_role` (W3 regression)
+  - `test_orginvite_clean_rejects_cross_org_role` (W3 regression)
+- **Acceptance Criteria**:
+  - [x] 10+ ta yangi boundary test
+  - [x] Har test 2 ta org va cross-access denial assert qiladi
+  - [x] Suite yashil
+- **Reference**: 2026-05-17 tenant-auditor "Boundary Test Coverage Gaps"
 
 ---
 

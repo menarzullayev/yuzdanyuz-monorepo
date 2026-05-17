@@ -11,6 +11,7 @@ from celery import shared_task
 from django.utils import timezone
 
 from core.locks import single_runner_lock
+from core.tenant import unscoped_context
 
 from . import subscription_service
 from .models import OrganizationSubscription
@@ -37,15 +38,21 @@ def auto_renew_subscriptions() -> dict:
 
 
 def _auto_renew_subscriptions_impl() -> dict:
+    # ISSUE-110 W1: Celery beat tenant context'siz ishlaydi. TenantManager
+    # qo'shilgandan keyin `.objects.filter(...)` `qs.none()` qaytaradi.
+    # Cross-org scan kerak — explicit `unscoped_context()`.
     now = timezone.now()
-    expired_qs = OrganizationSubscription.objects.filter(
-        status__in=[
-            OrganizationSubscription.Status.ACTIVE,
-            OrganizationSubscription.Status.TRIALING,
-        ],
-        current_period_ends_at__isnull=False,
-        current_period_ends_at__lt=now,
-    )
+    with unscoped_context():
+        expired_qs = list(
+            OrganizationSubscription.objects.filter(
+                status__in=[
+                    OrganizationSubscription.Status.ACTIVE,
+                    OrganizationSubscription.Status.TRIALING,
+                ],
+                current_period_ends_at__isnull=False,
+                current_period_ends_at__lt=now,
+            )
+        )
 
     renewed = 0
     expired = 0

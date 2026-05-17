@@ -34,6 +34,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.tenant import unscoped_context
+
 from . import affiliate_service, payment_providers, subscription_service, wallet_service
 from .models import (
     OrganizationSubscription,
@@ -190,10 +192,14 @@ def _process_webhook(provider_name: str, request) -> Response:
         intent.status = PaymentIntent.Status.SUCCEEDED
         intent.save(update_fields=['status', 'updated_at'])
 
-        # Subscription activate (agar bog'langan bo'lsa)
+        # Subscription activate (agar bog'langan bo'lsa).
+        # Webhook anonymous chaqiriladi — tenant context yo'q. TenantManager
+        # `qs.none()` qaytaradi, shu sababli `unscoped_context()` + explicit
+        # FK filter (last_payment_intent unique) bilan o'qiymiz.
         if intent.target_subscription_plan and intent.target_organization:
             try:
-                sub = OrganizationSubscription.objects.get(last_payment_intent=intent)
+                with unscoped_context():
+                    sub = OrganizationSubscription.objects.get(last_payment_intent=intent)
                 subscription_service.activate(sub)
             except OrganizationSubscription.DoesNotExist:
                 pass
