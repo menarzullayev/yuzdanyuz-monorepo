@@ -273,6 +273,116 @@
 
 ---
 
+## ✅ ISSUE-112 — SSE migration Phase 1 (backend) — WebSocket → Server-Sent Events
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🔴 P0 (production launch blocker — HestiaCP subpath WebSocket ishlamaydi)
+- **Effort**: 2-3 kun → real ~2 soat (Phase 1 only — channels back-compat saqlandi)
+- **Tavsif**: PHP cURL proxy `Upgrade: websocket` header tasholmaydi; subdomain yo'q;
+  mod_proxy_wstunnel admin install talab qiladi. Yagona yo'l — SSE (HTTP/1.1 chunked).
+- **Implementation** (Phase 1 — backend SSE views):
+  - `apps/exams/sse_views.py` — `attempt_event_stream` (SSE: timer + strike + expired + cancelled),
+    `HeartbeatView`, `AntiCheatView`
+  - `apps/exams/urls.py` — `GET /api/v1/exams/<attempt_id>/events/`, `POST .../heartbeat/`,
+    `POST .../anticheat/`
+  - `core/sse.py` — `sse_format()` helper, `text/event-stream` Content-Type + `X-Accel-Buffering: no`
+  - Channels consumers (`apps/exams/consumers.py`, `apps/engagement/consumers.py`) **saqlandi** —
+    back-compat 3 oy (frontend SSE'ga ko'chgandan keyin Phase 5'da deprecate)
+- **Acceptance Criteria**:
+  - [x] SSE event stream + 2 ta POST view + URL route
+  - [x] `_seconds_left` reuse (consumer bilan parallel)
+  - [x] Unit test: SSE stream initial event + heartbeat 200 + anticheat strike count
+  - [x] CSRF exempt SSE GET (cookie-based auth)
+- **Outstanding** (Phase 2-5 frontend/infra bilan birga):
+  - PHP proxy `CURLOPT_WRITEFUNCTION` (infra task)
+  - Frontend `src/lib/sse.ts` + `useExamHeartbeat` hook (frontend-blocked)
+  - Engagement leaderboard/notification SSE (Phase 4)
+  - Channels deprecation (Phase 5, 3 oy back-compat keyin)
+- **Reference**: `docs/websocket_strategy.md`, `docs/pre_launch_checklist.md` BLOCKER #1
+
+---
+
+## ✅ ISSUE-113 — Retention Celery tasks (sessions/OTP/history cleanup)
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟠 P1 (DB grow + GDPR + PII retention compliance)
+- **Effort**: 4 soat → real ~30 daqiqa
+- **Tavsif**: Django session (default 14 kun), OTPCode (used + expired), WebhookDelivery
+  (sent terminal status'lar) jadvallari cheksiz o'sadi. Retention policy api_conventions.md § 9'da
+  (INFO 30d / WARN+ 90d / ERROR 1y) — implementation yo'q edi.
+- **Implementation**:
+  - `apps/accounts/tasks.py` — `cleanup_expired_sessions` (>14 kun), `cleanup_used_otp_codes`
+    (used yoki 24h expired), `cleanup_old_webhook_deliveries` (sent + 90+ kun)
+  - 3 ta task `single_runner_lock` bilan (ISSUE-102 pattern), Prometheus counter
+  - Beat schedule yo'q — admin/devops manual yoqadi yoki periodic task qo'shadi
+- **Acceptance Criteria**:
+  - [x] 3 ta Celery task + lock + metrics
+  - [x] Test: `tests/unit/test_retention_tasks.py` — 6 ta test (each task: lock + happy path)
+- **Reference**: `docs/pre_launch_checklist.md` HIGH
+
+---
+
+## ✅ ISSUE-114 — SMS balance alert (PlayMobile + Eskiz poller)
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟠 P1 (SMS tugasa OTP-based auth o'ladi — production blocker)
+- **Effort**: 2 soat → real ~30 daqiqa
+- **Implementation**:
+  - `apps/accounts/sms_balance.py` — `check_playmobile_balance()` + `check_eskiz_balance()` + threshold
+  - `apps/accounts/tasks.py:check_sms_balance` Celery task (har soatlik beat schedule kerak)
+  - Prometheus `yz_sms_balance_uzs{backend}` gauge — Grafana alert orqali ogohlantiriladi
+  - `settings.SMS_BALANCE_THRESHOLD_UZS` (default 100000) — past bo'lsa logger.error
+- **Acceptance Criteria**:
+  - [x] PlayMobile API balance endpoint integratsiya
+  - [x] Eskiz API balance endpoint integratsiya
+  - [x] Threshold env var + log.error agar past
+  - [x] Prometheus metric
+  - [x] Test: `tests/unit/test_sms_balance.py` — 5 ta test (mocked HTTP)
+- **Reference**: `docs/pre_launch_checklist.md` HIGH
+
+---
+
+## ✅ ISSUE-115 — Test coverage gate (--cov-fail-under)
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟡 P2 (regression prevention)
+- **Effort**: 2 soat → real ~10 daqiqa
+- **Implementation**:
+  - `pytest.ini` — `addopts` `--cov=apps --cov=core --cov-report=term-missing --cov-fail-under=70`
+  - 70% threshold (mavjud coverage'ni baseline qiladi). 80%+ kelajakda iterativ ko'tariladi
+  - `.coveragerc` — `omit` migrations/tests/__pycache__
+- **Acceptance Criteria**:
+  - [x] pytest.ini gate config
+  - [x] .coveragerc omit pattern
+  - [x] CI workflow ham coverage report ko'rsatadi (GitHub Actions allaqachon `pytest-cov` ishlatadi)
+- **Reference**: ISSUE-305 Acceptance Criteria "kelajak"
+
+---
+
+## ✅ ISSUE-116 — MockExam.is_public content privacy verification
+- **Status**: ✅ **Done — verified safe** (2026-05-17 audit)
+- **Severity**: 🟠 P1 (cross-tenant data exposure)
+- **Effort**: 30 daqiqa → real ~10 daqiqa (verification only)
+- **Tavsif**: tenant-auditor follow-up `MockExam.is_public=True` paytida owner metadata
+  (created_by, internal_notes) cross-tenant ko'rinishidan xavotirlandi.
+- **Audit natijasi**: `apps/exams/serializers.py:MockExamListSerializer.Meta.fields`
+  faqat `id/title/description/duration_minutes/scheduled_at/closes_at/status/is_public/
+  question_count` chiqaradi. `created_by` field model'da bor lekin serializer'da yo'q —
+  kelajakda qo'shilsa ataylab `MockExamPublicSerializer` ajratish kerak (hozir defense
+  by default).
+- **Acceptance Criteria**:
+  - [x] Serializer audit: owner-leak field yo'q (verified 2026-05-17)
+  - [x] Boundary test `test_mockexam_is_public_visible_to_other_orgs` (ISSUE-111)
+- **Reference**: tenant-auditor (2026-05-17) follow-up
+
+---
+
+## ✅ ISSUE-X07 — Disaster Recovery runbook
+- **Status**: ✅ **Done** (2026-05-17, direct commit)
+- **Severity**: 🟠 P1 (production launch hisobini'g'imiz)
+- **Effort**: 3 soat → real ~30 daqiqa
+- **Implementation**: `docs/DR_RUNBOOK.md` — PostgreSQL backup/restore, Redis snapshot,
+  jail recovery, secret rotation, ALLOWED_HOSTS rollback, on-call escalation.
+- **Reference**: `docs/pre_launch_checklist.md` HIGH
+
+---
+
 ## ✅ ISSUE-111 — Tenant Boundary Test Coverage Expansion
 - **Status**: ✅ **Done** (2026-05-17, direct commit)
 - **Severity**: 🟡 P2 (regression prevention)

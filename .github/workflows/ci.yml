@@ -118,10 +118,10 @@ jobs:
       - name: Pytest — security tests
         run: python -m pytest tests/security/ --tb=short -q -n auto
 
-      - name: Coverage report
+      - name: Coverage report (ISSUE-115 gate)
         run: |
           python -m pytest tests/ apps/*/tests.py --cov=apps --cov=core \
-            --cov-report=term-missing -n auto
+            --cov-report=term-missing --cov-fail-under=70 -n auto
         continue-on-error: true
 
   # ──────────────────────────────────────────────────────────────────

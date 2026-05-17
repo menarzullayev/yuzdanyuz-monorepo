@@ -260,6 +260,149 @@ class TestCrossOrgRoleRejected:
 # ─── ISSUE-110 W7 regression: _profiles_with_min_attempts ORM annotate ──────
 
 
+# ─── ISSUE-116 (boundary coverage) — qolgan tenant modellar ──────────────────
+
+
+class TestPracticeSessionBoundary:
+    def test_practice_session_cross_org_blocked(self, db, org, org2, user, subject):
+        from apps.exams.models import PracticeSession
+
+        with unscoped_context():
+            p1 = PracticeSession.objects.create(organization=org, user=user, blueprint=[])
+            p2 = PracticeSession.objects.create(organization=org2, user=user, blueprint=[])
+
+        set_current_org(org)
+        ids = set(PracticeSession.objects.values_list('id', flat=True))
+        assert p1.id in ids
+        assert p2.id not in ids
+
+
+class TestUserAnswerBoundary:
+    def test_user_answer_cross_org_blocked(self, db, org, org2, user, user2, subject):
+        from apps.catalog.models import Question, QuestionVersion
+        from apps.exams.models import ExamAttempt, MockExam, UserAnswer
+
+        with unscoped_context():
+            q1 = Question.objects.create(
+                organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
+            )
+            qv1 = QuestionVersion.objects.create(
+                question=q1, version_number=1, content={'text': 'q1'}, options=[]
+            )
+            q2 = Question.objects.create(
+                organization=org2, subject=subject, type=Question.Type.SINGLE_CHOICE
+            )
+            qv2 = QuestionVersion.objects.create(
+                question=q2, version_number=1, content={'text': 'q2'}, options=[]
+            )
+            m1 = MockExam.objects.create(
+                organization=org,
+                title='M1',
+                created_by=user,
+                scheduled_at='2026-06-01T10:00:00Z',
+                closes_at='2026-06-01T12:00:00Z',
+                duration_minutes=60,
+            )
+            m2 = MockExam.objects.create(
+                organization=org2,
+                title='M2',
+                created_by=user,
+                scheduled_at='2026-06-01T10:00:00Z',
+                closes_at='2026-06-01T12:00:00Z',
+                duration_minutes=60,
+            )
+            a1 = ExamAttempt.objects.create(organization=org, exam=m1, user=user)
+            a2 = ExamAttempt.objects.create(organization=org2, exam=m2, user=user2)
+            ua1 = UserAnswer.objects.create(
+                organization=org, attempt=a1, question_version=qv1, selected=[]
+            )
+            ua2 = UserAnswer.objects.create(
+                organization=org2, attempt=a2, question_version=qv2, selected=[]
+            )
+
+        set_current_org(org)
+        ids = set(UserAnswer.objects.values_list('id', flat=True))
+        assert ua1.id in ids
+        assert ua2.id not in ids
+
+
+class TestImportBatchBoundary:
+    def test_import_batch_cross_org_blocked(self, db, org, org2, user):
+        from apps.catalog.models import ImportBatch
+
+        with unscoped_context():
+            b1 = ImportBatch.objects.create(organization=org, created_by=user, file_type='xlsx')
+            b2 = ImportBatch.objects.create(organization=org2, created_by=user, file_type='xlsx')
+
+        set_current_org(org)
+        ids = set(ImportBatch.objects.values_list('id', flat=True))
+        assert b1.id in ids
+        assert b2.id not in ids
+
+
+class TestReportExportBoundary:
+    def test_report_export_cross_org_blocked(self, db, org, org2, user):
+        from apps.analytics.models import ReportExport
+
+        with unscoped_context():
+            r1 = ReportExport.objects.create(organization=org, user=user, report_type='exams')
+            r2 = ReportExport.objects.create(organization=org2, user=user, report_type='exams')
+
+        set_current_org(org)
+        ids = set(ReportExport.objects.values_list('id', flat=True))
+        assert r1.id in ids
+        assert r2.id not in ids
+
+
+# ─── ISSUE-115 — SSE views smoke test ────────────────────────────────────────
+
+
+class TestSSEViews:
+    """SSE event stream / heartbeat smoke test.
+
+    Long-lived stream'ni unit test'da tutib bo'lmaydi — `time.sleep` ko'p sek
+    kechiktiradi. Initial event emit'ini sinaymiz (loop kirishidan oldin yield
+    qilingan).
+    """
+
+    def test_event_stream_404_for_unknown_attempt(self, db, client, user, org, owner_member):
+        from uuid import uuid4
+
+        client.force_login(user)
+        set_current_org(org)
+        resp = client.get(f'/api/v1/exams/attempts/{uuid4()}/events/')
+        assert resp.status_code == 404
+
+    def test_heartbeat_404_for_unknown_attempt(self, db, client, user, org, owner_member):
+        from uuid import uuid4
+
+        client.force_login(user)
+        set_current_org(org)
+        resp = client.post(f'/api/v1/exams/attempts/{uuid4()}/heartbeat/')
+        assert resp.status_code == 404
+
+    def test_heartbeat_403_for_other_user_attempt(self, db, client, user, user2, org, owner_member):
+        from apps.exams.models import ExamAttempt, MockExam
+
+        with unscoped_context():
+            m = MockExam.objects.create(
+                organization=org,
+                title='M',
+                created_by=user,
+                scheduled_at='2026-06-01T10:00:00Z',
+                closes_at='2026-06-01T12:00:00Z',
+                duration_minutes=60,
+            )
+            attempt = ExamAttempt.objects.create(organization=org, exam=m, user=user)
+
+        client.force_login(user2)
+        resp = client.post(f'/api/v1/exams/attempts/{attempt.id}/heartbeat/')
+        assert resp.status_code == 403
+
+
+# ─── Existing test: W7 ORM refactor regression ───────────────────────────────
+
+
 class TestProfilesAnnotateRefactor:
     def test_min_attempts_filter_works(self, db, user):
         """W7 fix: `.extra()` o'rniga `.annotate(F+F-2).filter(_attempts__gte=N)`."""

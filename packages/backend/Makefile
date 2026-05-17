@@ -6,7 +6,7 @@ PG_BIN  = $(HOME)/.local/pgsql/bin
 PGSHAREDIR = $(HOME)/.local/pgsql/share
 
 .PHONY: help db-start db-stop run migrate makemigrations shell test test-fast test-unit test-integration \
-        test-security test-coverage test-all createsuperuser collectstatic install install-dev setup-rls
+        test-security test-coverage test-all createsuperuser collectstatic install install-dev
 
 help:
 	@echo "Mavjud buyruqlar:"
@@ -27,7 +27,6 @@ help:
 	@echo "  make collectstatic"
 	@echo "  make install          — base paketlar"
 	@echo "  make install-dev      — dev paketlar"
-	@echo "  make setup-rls        — PostgreSQL RLS (production)"
 
 db-start:
 	@rm -f $(PG_DATA)/postmaster.pid
@@ -84,6 +83,3 @@ install:
 
 install-dev:
 	$(VENV)/pip install -r requirements/dev.txt
-
-setup-rls:
-	$(MANAGE) setup_rls
