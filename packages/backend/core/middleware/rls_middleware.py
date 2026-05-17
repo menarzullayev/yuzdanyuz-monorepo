@@ -47,10 +47,10 @@ class RLSMiddleware(MiddlewareMixin):
                     cursor.execute('RESET app.current_org_id;')
                     logger.debug('RLS: Cleared org context (platform admin)')
 
-                # Mark superuser for RLS policy bypass
-                if request.user and request.user.is_authenticated:
-                    is_admin = request.user.is_superuser or request.user.is_staff
-                    cursor.execute('SET app.is_admin = %s;', [str(is_admin).lower()])
+                # ISSUE-110 W6: ilgari `SET app.is_admin = ...` chaqirilardi, lekin
+                # hech bir RLS policy uni o'qimasdi. Dead code olib tashlandi.
+                # Superuser/staff bypass app qatlamida `TenantManager`'ning
+                # `unscoped_context()` yoki `is_unscoped_allowed()` orqali hal qilinadi.
 
         except Exception as e:
             logger.error('RLS middleware error: %s', e, exc_info=True)

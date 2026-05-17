@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from core.tenant import unscoped_context
+
 from .models import OrganizationSubscription, SubscriptionPlan
 
 
@@ -96,17 +98,21 @@ def expire(sub: OrganizationSubscription) -> OrganizationSubscription:
 
 
 def get_active_subscription(org) -> OrganizationSubscription | None:
-    return (
-        OrganizationSubscription.objects.filter(
-            organization=org,
-            status__in=[
-                OrganizationSubscription.Status.ACTIVE,
-                OrganizationSubscription.Status.TRIALING,
-            ],
+    # ISSUE-110 W1: TenantManager qo'shilgandan keyin tenant context'siz callers
+    # (Celery beat, webhook view) explicit `unscoped_context()` ichida o'qiydi.
+    # Explicit `organization=org` filter cross-tenant leak yo'qligini ta'minlaydi.
+    with unscoped_context():
+        return (
+            OrganizationSubscription.objects.filter(
+                organization=org,
+                status__in=[
+                    OrganizationSubscription.Status.ACTIVE,
+                    OrganizationSubscription.Status.TRIALING,
+                ],
+            )
+            .order_by('-created_at')
+            .first()
         )
-        .order_by('-created_at')
-        .first()
-    )
 
 
 def has_active_subscription(org) -> bool:

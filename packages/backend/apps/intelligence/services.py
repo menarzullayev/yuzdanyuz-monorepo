@@ -4,9 +4,10 @@ Intelligence domain services — Knowledge Graph (recommendations + summaries).
 Pure DB operations + bayesian math. LLM va Celery — alohida modullarda.
 """
 
-from django.db.models import Avg
+from django.db.models import Avg, F
 
 from apps.catalog.models import Question
+from core.tenant import get_current_org
 
 from . import bayesian
 from .models import UserSkillProfile
@@ -35,10 +36,11 @@ def update_user_mastery(user, question, is_correct: bool) -> list[UserSkillProfi
 
 
 def _profiles_with_min_attempts(user, min_attempts: int):
-    """alpha+beta-2 = total attempts. Raw extra filter (DB-level)."""
+    """alpha+beta-2 = total attempts. ORM F-expression (ISSUE-110 W7)."""
     return (
         UserSkillProfile.objects.filter(user=user)
-        .extra(where=['(alpha + beta - 2) >= %s'], params=[min_attempts])
+        .annotate(_attempts=F('alpha') + F('beta') - 2)
+        .filter(_attempts__gte=min_attempts)
         .select_related('skill')
     )
 
@@ -93,16 +95,23 @@ def get_user_summary(user) -> dict:
 def recommend_questions(user, *, limit: int = 10) -> list[Question]:
     """
     Personalized study plan: zaif skill'lardan random savollar.
-    Mock yoki Practice'da ishlatish uchun.
+
+    Tenant scope (ISSUE-109 C1 fix):
+      - Org context faol (B2B yoki tenant a'zosi) → `Question.objects` auto-filter qiladi (request.org savollari).
+      - Org yo'q (B2C/anonymous) → faqat `is_public=True` markerli QuestionBank savollari.
+    Avval `global_objects` ishlatib hamma tenantlar savollarini ko'rsatib qo'ygan edik — bu boshqa
+    tashkilotlarning private question bank'ini cross-tenant ochib bergan.
     """
     weak = get_weak_skills(user, limit=10)
+    org = get_current_org()
+
+    if org is not None:
+        base_qs = Question.objects.all()
+    else:
+        base_qs = Question.global_objects.filter(banks__is_public=True).distinct()
+
     if not weak:
-        # Yangi user — random questions (har subject'dan)
-        return list(Question.global_objects.order_by('?')[:limit])
+        return list(base_qs.order_by('?')[:limit])
 
     weak_skill_ids = [p.skill_id for p in weak]
-    return list(
-        Question.global_objects.filter(skills__id__in=weak_skill_ids)
-        .distinct()
-        .order_by('?')[:limit]
-    )
+    return list(base_qs.filter(skills__id__in=weak_skill_ids).distinct().order_by('?')[:limit])

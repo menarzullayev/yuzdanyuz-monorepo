@@ -202,16 +202,20 @@ class TestGetUserSummary:
 
 @pytest.mark.unit
 class TestRecommendQuestions:
+    """ISSUE-109 C1 fix: recommend_questions tenant context'da `Question.objects` ishlatadi.
+    Test'lar `with tenant_context(org):` ichida bajariladi — fixture savollarining org'i.
+    """
+
     def test_cold_start_returns_random_questions(
-        self, db, user, question_one_skill, question_two_skills
+        self, db, user, org, question_one_skill, question_two_skills
     ):
         # User'ning mastery profile'i yo'q → cold-start path
-        result = services.recommend_questions(user, limit=10)
-        # global_objects orqali barcha savollar tavsiya etilishi mumkin
+        with tenant_context(org):
+            result = services.recommend_questions(user, limit=10)
         assert len(result) >= 1
         assert all(isinstance(q, Question) for q in result)
 
-    def test_weak_skill_targeting(self, db, user, question_one_skill, question_two_skills):
+    def test_weak_skill_targeting(self, db, user, org, question_one_skill, question_two_skills):
         # Skill C (question_one_skill) zaif qilamiz, A/B emas
         for _ in range(5):
             services.update_user_mastery(user, question_one_skill, is_correct=False)
@@ -219,14 +223,16 @@ class TestRecommendQuestions:
         for _ in range(5):
             services.update_user_mastery(user, question_two_skills, is_correct=True)
 
-        result = services.recommend_questions(user, limit=10)
+        with tenant_context(org):
+            result = services.recommend_questions(user, limit=10)
         ids = {q.id for q in result}
         # Zaif skill'ga bog'langan savol tavsiya etiladi
         assert question_one_skill.id in ids
 
-    def test_limit_caps_results(self, db, user, question_two_skills):
+    def test_limit_caps_results(self, db, user, org, question_two_skills):
         # Mastery profile yarat (cold-start path emas)
         for _ in range(5):
             services.update_user_mastery(user, question_two_skills, is_correct=False)
-        result = services.recommend_questions(user, limit=1)
+        with tenant_context(org):
+            result = services.recommend_questions(user, limit=1)
         assert len(result) <= 1
