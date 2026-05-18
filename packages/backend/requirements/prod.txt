@@ -16,7 +16,7 @@ opentelemetry-instrumentation-django==0.50b0
 opentelemetry-instrumentation-celery==0.50b0
 opentelemetry-instrumentation-psycopg2==0.50b0
 opentelemetry-instrumentation-redis==0.50b0
-opentelemetry-instrumentation-requests==0.50b0
+opentelemetry-instrumentation-requests==0.62b1
 
 # ── Security ──────────────────────────────────────────────────────────────────
 django-ratelimit==4.1.0        # Task 3, 4: Rate limiting (anti-scraping)
