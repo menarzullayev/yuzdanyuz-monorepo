@@ -1,9 +1,9 @@
 -r base.txt
 
 # ── Debug & Profiling ─────────────────────────────────────────────────────────
-django-debug-toolbar==5.2.0    # SQL query va performance nazorat
+django-debug-toolbar==6.3.0    # SQL query va performance nazorat
 nplusone==1.0.0                # ISSUE-101: N+1 detection (strict mode tests)
-django-perf-rec==4.27.0        # ISSUE-101: Query count regression detection
+django-perf-rec==4.31.0        # ISSUE-101: Query count regression detection
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.5
@@ -21,4 +21,4 @@ pre-commit==4.6.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────
 ipython==8.35.0                # Django shell uchun
-django-extensions==3.2.3       # shell_plus, show_urls, graph_models
+django-extensions==4.1       # shell_plus, show_urls, graph_models

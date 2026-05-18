@@ -1,5 +1,5 @@
 # ── Core Framework ────────────────────────────────────────────────────────────
-Django==5.2.14
+Django==6.0.5
 asgiref==3.11.1
 sqlparse==0.5.5
 
@@ -11,12 +11,12 @@ python-dotenv==1.2.2           # Task 1: .env fayl o'qish
 
 # ── Async Workers ─────────────────────────────────────────────────────────────
 celery==5.4.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
-django-celery-beat==2.8.1      # Task 9: Cron jobs (streak, league reset) — Django 5.2 support
+django-celery-beat==2.9.0      # Task 9: Cron jobs (streak, league reset) — Django 5.2 support
 django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — Django 5.2 support
 
 # ── Cache & Session ───────────────────────────────────────────────────────────
 redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
-django-redis==5.4.0            # Task 2, 5: Django cache backend for Redis
+django-redis==6.0.0            # Task 2, 5: Django cache backend for Redis
 # ISSUE-102: distributed lock — core/locks.py SET NX EX pattern, dep'siz
 
 # ── Real-time ─────────────────────────────────────────────────────────────────
@@ -25,21 +25,21 @@ channels-redis==4.2.1          # Task 4: Channel layer for Redis
 daphne==4.2.1                  # Task 4: ASGI server (channels.testing ham talab qiladi)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-django-allauth==65.3.0         # Task 2: Google OAuth, email auth
+django-allauth==65.16.1         # Task 2: Google OAuth, email auth
 PyJWT==2.10.1                  # Task 2: JWT token generation/verification
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 python-telegram-bot==21.11.1   # Task 2, 9: TMA auth, notifications bot
 
 # ── REST API ──────────────────────────────────────────────────────────────────
-djangorestframework==3.15.2    # Task 2, 4: TMA va mobile uchun API endpoints
-django-cors-headers==4.7.0     # Task 2: CORS (TMA, mobile app)
+djangorestframework==3.17.1    # Task 2, 4: TMA va mobile uchun API endpoints
+django-cors-headers==4.9.0     # Task 2: CORS (TMA, mobile app)
 drf-spectacular==0.27.2        # ISSUE-201: OpenAPI 3.0 schema + Swagger UI + Redoc
-django-fsm-2==4.0.0            # ISSUE-205: state machine field decorators for status models
+django-fsm-2==4.2.4            # ISSUE-205: state machine field decorators for status models
 django-flags==5.2.0             # ISSUE-505: feature flag toggling (per-user/per-org/percentage)
 
 # ── Frontend Helpers ──────────────────────────────────────────────────────────
-django-htmx==1.21.0            # Task 1+: HTMX request detection middleware
+django-htmx==1.27.0            # Task 1+: HTMX request detection middleware
 
 # ── File & Media ──────────────────────────────────────────────────────────────
 Pillow==11.2.1                 # Task 3: Rasm ishlash, watermark
@@ -64,7 +64,7 @@ python-json-logger==3.3.0      # Structured JSON logging (prod)
 
 # ── Audit / Compliance (ISSUE-401) ────────────────────────────────────────────
 # SOC2/ISO 27001: kim qachon nima o'zgartirgan? — historical_<model> shadow tables
-django-simple-history>=3.4     # ISSUE-401 SOC2 audit trail
+django-simple-history>=3.11.0     # ISSUE-401 SOC2 audit trail
 
 # ── Static Files (gunicorn/daphne — nginx-siz serve qilish) ───────────────────
 # Middleware base.py'da ulanadi → barcha env'larda (test/dev/prod) kerak.
