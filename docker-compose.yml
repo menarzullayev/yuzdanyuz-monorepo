@@ -23,6 +23,9 @@ x-backend-base: &backend-base
     CLICKHOUSE_PORT: "9000"
     MEILISEARCH_URL: http://meilisearch:7700
     MEILISEARCH_API_KEY: dev_master_key
+    # AI via the Claude subscription: put CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`)
+    # in packages/backend/.env, or set LLM_BACKEND=anthropic_api with ANTHROPIC_API_KEY.
+    LLM_BACKEND: ${LLM_BACKEND:-claude_cli}
   depends_on:
     postgres:
       condition: service_healthy

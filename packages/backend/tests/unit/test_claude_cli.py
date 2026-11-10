@@ -92,7 +92,10 @@ class TestClaudeCLIRun:
         monkeypatch.setenv('ANTHROPIC_MODEL', 'claude-other')
         monkeypatch.setenv('CLAUDE_CODE_ENTRYPOINT', 'cli')
         monkeypatch.setenv('CLAUDECODE', '1')
+        monkeypatch.setenv('ANTHROPIC_BASE_URL', 'http://127.0.0.1:9/desktop-gateway')
         monkeypatch.setenv('CLAUDE_CONFIG_DIR', '/home/app/.claude-yuzdanyuz')
+        # How a container logs in to the subscription (`claude setup-token`).
+        monkeypatch.setenv('CLAUDE_CODE_OAUTH_TOKEN', 'oauth-token-for-the-container')
         monkeypatch.setenv('PATH_MARKER', 'kept')
 
         claude_cli.run('salom', system='', model='m')
@@ -101,11 +104,13 @@ class TestClaudeCLIRun:
         for name in (
             'ANTHROPIC_API_KEY',
             'ANTHROPIC_MODEL',
+            'ANTHROPIC_BASE_URL',
             'CLAUDE_CODE_ENTRYPOINT',
             'CLAUDECODE',
         ):
             assert name not in env
         assert env['CLAUDE_CONFIG_DIR'] == '/home/app/.claude-yuzdanyuz'
+        assert env['CLAUDE_CODE_OAUTH_TOKEN'] == 'oauth-token-for-the-container'
         assert env['PATH_MARKER'] == 'kept'
 
     def test_returns_text_usage_and_cost(self, fake_cli):

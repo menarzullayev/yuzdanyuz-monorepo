@@ -217,6 +217,7 @@ secretRef:
     - CLICK_MERCHANT_ID
     - CLICK_SECRET_KEY
     - ANTHROPIC_API_KEY
+    - CLAUDE_CODE_OAUTH_TOKEN   # `claude setup-token`; used when LLM_BACKEND=claude_cli (default)
     - MEILISEARCH_API_KEY
 
 # ── DB / Redis hostnames (assume managed services or separate Helm release) ──
