@@ -4,7 +4,7 @@ asgiref==3.11.1
 sqlparse==0.5.5
 
 # ── Database ──────────────────────────────────────────────────────────────────
-psycopg2-binary==2.9.12        # Task 1: PostgreSQL driver (dev/prod uchun binary)
+psycopg2-binary==2.9.13        # Task 1: PostgreSQL driver (dev/prod uchun binary)
 
 # ── Environment ───────────────────────────────────────────────────────────────
 python-dotenv==1.2.2           # Task 1: .env fayl o'qish
