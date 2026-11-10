@@ -1,5 +1,7 @@
 import logging
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +28,11 @@ class AIParserService:
         ).order_by('priority')
 
         if not configs.exists():
+            if getattr(settings, 'LLM_BACKEND', '') == 'claude_cli':
+                # The local subscription is the default AI when no provider is configured.
+                from .ai_providers.claude_cli import ClaudeCLIProvider
+
+                return ClaudeCLIProvider(model=settings.ANTHROPIC_MODEL).parse_text_block(text)
             return {
                 'error': 'Hech qanday AI provider sozlanmagan. '
                 'Admin panel → AI Provider konfiguratsiyalari ga kiring.',

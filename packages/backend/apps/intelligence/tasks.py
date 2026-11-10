@@ -48,11 +48,17 @@ def _generate_text(
     max_tokens: int = 2048,
     model: str | None = None,
     system: str | None = None,
+    json_schema: dict | None = None,
 ) -> str:
     """
-    Anthropic API'ga bitta so'rov. Test paytida bu funksiya monkey-patch qilinadi.
+    Claude'ga bitta so'rov. Test paytida bu funksiya monkey-patch qilinadi.
 
-    Production'da: settings.ANTHROPIC_API_KEY va ANTHROPIC_MODEL .env'dan keladi.
+    settings.LLM_BACKEND tanlaydi: 'claude_cli' — mahalliy Claude subscription
+    (`claude -p`, core/claude_cli.py); 'anthropic_api' — ANTHROPIC_API_KEY bilan API.
+    Model ikkalasida ham settings.ANTHROPIC_MODEL.
+
+    `json_schema` is enforced by the CLI backend (the reply is that JSON);
+    the API backend relies on the prompt asking for JSON.
 
     ISSUE-X04: agar `system` berilsa, ephemeral prompt cache qo'llaniladi —
     bir xil system bloki qayta ishlatilganida token narxi sezilarli kamayadi.
@@ -61,13 +67,27 @@ def _generate_text(
     `max_tokens`, so the limit leaves room for it; `effort: low` keeps thinking
     short (and skips it on most of these short generation/scoring requests).
     """
+    model = model or settings.ANTHROPIC_MODEL
+    if settings.LLM_BACKEND == 'claude_cli':
+        from core import claude_cli
+
+        result = claude_cli.run(
+            prompt,
+            system=system or '',
+            model=model,
+            json_schema=json_schema,
+            timeout=settings.CLAUDE_CLI_TIMEOUT,
+        )
+        if json_schema is not None:
+            return json.dumps(result.structured, ensure_ascii=False)
+        return result.text
+
     import anthropic
 
     api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY settings/env'da yo'q")
 
-    model = model or settings.ANTHROPIC_MODEL
     client = anthropic.Anthropic(api_key=api_key)
     kwargs: dict = {
         'model': model,
@@ -111,6 +131,20 @@ ESSAY_RUBRIC_SYSTEM_PROMPT = (
     'Mezonlar: grammar, content, structure, relevance (har biri 0-100). '
     "Faqat valid JSON qaytar — hech qanday markdown yoki prefiks qo'shma."
 )
+
+_SCORE = {'type': 'integer', 'minimum': 0, 'maximum': 100}
+ESSAY_RUBRIC_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'grammar': _SCORE,
+        'content': _SCORE,
+        'structure': _SCORE,
+        'relevance': _SCORE,
+        'rationale': {'type': 'string'},
+    },
+    'required': ['grammar', 'content', 'structure', 'relevance', 'rationale'],
+    'additionalProperties': False,
+}
 
 
 # ── 1. AI Tutor — on-demand motivational feedback ────────────────────────────
@@ -248,7 +282,9 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
             raise RuntimeError('Audio transcription hali implement qilinmagan (Whisper SDK kerak)')
 
         prompt = _build_essay_rubric_prompt(question_text, answer_text)
-        text = _generate_text(prompt, system=ESSAY_RUBRIC_SYSTEM_PROMPT)
+        text = _generate_text(
+            prompt, system=ESSAY_RUBRIC_SYSTEM_PROMPT, json_schema=ESSAY_RUBRIC_SCHEMA
+        )
 
         # JSON parse
         try:
