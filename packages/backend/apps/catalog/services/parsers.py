@@ -132,10 +132,13 @@ class DocxParserService:
 
     @staticmethod
     def _extract_images(para) -> list:
+        # One entry per picture element in the run (DrawingML, or legacy VML
+        # w:pict). A substring check on run XML matched every run: the word
+        # "drawing" is part of the namespace URIs serialised with it.
         return [
             {'type': 'image', 'status': 'extracted_from_docx'}
             for run in para.runs
-            if 'drawing' in run._element.xml
+            for _ in run._element.xpath('./w:drawing | ./w:pict')
         ]
 
 
