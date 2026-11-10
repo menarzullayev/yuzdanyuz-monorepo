@@ -4,6 +4,7 @@ MANAGE = $(PYTHON) manage.py
 PG_DATA = $(HOME)/.local/pgsql/data
 PG_BIN  = $(HOME)/.local/pgsql/bin
 PGSHAREDIR = $(HOME)/.local/pgsql/share
+DB_PORT ?= 5432
 
 .PHONY: help db-start db-stop run migrate makemigrations shell test test-fast test-unit test-integration \
         test-security test-coverage test-all createsuperuser collectstatic install install-dev
@@ -30,8 +31,8 @@ help:
 
 db-start:
 	@rm -f $(PG_DATA)/postmaster.pid
-	@PGSHAREDIR=$(PGSHAREDIR) $(PG_BIN)/postgres -D $(PG_DATA) -p <db-port> &
-	@echo "PostgreSQL ishga tushdi (port <db-port>)"
+	@PGSHAREDIR=$(PGSHAREDIR) $(PG_BIN)/postgres -D $(PG_DATA) -p $(DB_PORT) &
+	@echo "PostgreSQL ishga tushdi (port $(DB_PORT))"
 
 db-stop:
 	@PGSHAREDIR=$(PGSHAREDIR) $(PG_BIN)/pg_ctl -D $(PG_DATA) stop || true

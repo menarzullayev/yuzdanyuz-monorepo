@@ -33,6 +33,12 @@ repos:
       - id: mixed-line-ending
         args: ['--fix=lf']
 
+  # ── Secrets: scans staged changes with the repo's .gitleaks.toml ────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
   # ── Python lint + format (ultra-tezkor) ─────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.13

@@ -1,0 +1,62 @@
+title = "yuzdanyuz-monorepo gitleaks config"
+
+# Default rules catch high-entropy keys and tokens. They did not catch a
+# low-entropy Redis password that once sat in docs and docker-compose, so the
+# rules below target Redis credentials and literal password assignments.
+# scripts/test-gitleaks-rules.sh proves each rule fires and ignores placeholders.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "redis-url-password"
+description = "Password embedded in a redis:// or rediss:// URL"
+regex = '''rediss?://[^:@\s/]*:([^@\s$<{*][^@\s]{3,})@'''
+secretGroup = 1
+keywords = ["redis://", "rediss://"]
+
+[[rules]]
+id = "redis-requirepass"
+description = "Redis requirepass value (redis.conf line, CLI flag or compose list item)"
+regex = '''(?i)requirepass["']?[\s:=]+(?:-\s+)?["']?([^\s"'$<{*-][^\s"']{3,})'''
+secretGroup = 1
+keywords = ["requirepass"]
+
+[[rules]]
+id = "redis-cli-password"
+description = "Password passed to redis-cli with -a"
+regex = '''redis-cli\b[^\n]*?[\s"']-a["',\s]+([^\s"'$<{*-][^\s"',\]]{3,})'''
+secretGroup = 1
+keywords = ["redis-cli"]
+
+[[rules]]
+id = "inline-password"
+description = "Literal password=value in docs, runbooks or config"
+regex = '''(?i)\bpassword\s*=\s*["']?([^\s"',)$<{*\]]{6,})'''
+secretGroup = 1
+keywords = ["password"]
+
+[[rules.allowlists]]
+description = "Code passes password variables (password=password); tests use fixture values"
+paths = [
+  '''\.(py|pyi|ts|tsx|js|mjs|cjs)$''',
+  '''(^|/)tests?/''',
+]
+
+[[rules.allowlists]]
+description = "Code snippets and fixture passwords quoted in Markdown docs"
+regexTarget = "secret"
+regexes = [
+  '''^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+\(?$''',
+  '''^(?i)(test|admin)?pass(word)?[0-9]{0,4}$''',
+]
+
+# The rule self-test builds its fixtures at runtime; its own source only
+# contains rule names and placeholders. Template values in docs such as
+# "secure_redis_password" or "your_password_here" are not secrets (letters only,
+# placeholder prefix and suffix).
+[allowlist]
+paths = ['''(^|/)scripts/test-gitleaks-rules\.sh$''']
+regexTarget = "secret"
+regexes = [
+  '''^(?i)(secure|your|change|example|dummy|placeholder)[a-z_-]*(password|passwd|secret|here|me)$''',
+]

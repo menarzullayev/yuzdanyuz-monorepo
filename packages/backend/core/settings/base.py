@@ -157,7 +157,11 @@ SPECTACULAR_SETTINGS = {
     'SCHEMA_PATH_PREFIX': r'/api/v[0-9]+',
     'SERVERS': [
         {'url': 'http://localhost:8001', 'description': 'Dev'},
-        {'url': 'https://<host>', 'description': 'Production (PHP proxy)'},
+        *(
+            [{'url': os.environ['API_PUBLIC_URL'], 'description': 'Production'}]
+            if os.getenv('API_PUBLIC_URL')
+            else []
+        ),
     ],
     'TAGS': [
         {'name': 'auth', 'description': 'Authentication (email, OTP, OAuth, Telegram)'},

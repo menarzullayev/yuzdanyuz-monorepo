@@ -19,16 +19,16 @@ if not os.environ.get('SECRET_KEY'):
     )
 SECRET_KEY = os.environ['SECRET_KEY']
 
-# Hardcoded ALLOWED_HOSTS — security-first (env override only if explicitly set)
-ALLOWED_HOSTS = ['<host>', '<host>', '127.0.0.1', 'localhost']
+# Loopback only by default; public hostnames come from ALLOWED_HOSTS (comma-separated).
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 _extra_hosts = os.getenv('ALLOWED_HOSTS', '').strip()
 if _extra_hosts:
     ALLOWED_HOSTS = list(
         set(ALLOWED_HOSTS) | {h.strip() for h in _extra_hosts.split(',') if h.strip()}
     )
 
-# CSRF — production domain + frontend (Vercel) origins env-driven
-CSRF_TRUSTED_ORIGINS = ['https://<host>']
+# CSRF — production and frontend origins come from CSRF_TRUSTED_ORIGINS (comma-separated).
+CSRF_TRUSTED_ORIGINS = []
 _csrf_extra = os.getenv('CSRF_TRUSTED_ORIGINS', '').strip()
 if _csrf_extra:
     CSRF_TRUSTED_ORIGINS = list(

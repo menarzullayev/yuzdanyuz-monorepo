@@ -162,12 +162,40 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:8013
 
   # ──────────────────────────────────────────────────────────────────
+  # Secrets — gitleaks over the full history + rule self-test
+  # ──────────────────────────────────────────────────────────────────
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.24.3
+      GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (checksum-pinned)
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+
+      - name: Rule self-test (must catch fakes, ignore placeholders)
+        run: bash scripts/test-gitleaks-rules.sh
+
+      - name: Scan full git history
+        run: gitleaks git . --config .gitleaks.toml --redact --no-banner
+
+  # ──────────────────────────────────────────────────────────────────
   # Aggregator — barcha job'lar yashilmi (branch protection uchun)
   # ──────────────────────────────────────────────────────────────────
   all-checks-passed:
     name: All Checks Passed
     if: always()
-    needs: [lint, backend, frontend-web]
+    needs: [lint, backend, frontend-web, secrets]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
@@ -182,6 +210,10 @@ jobs:
           fi
           if [[ "${{ needs.frontend-web.result }}" != "success" ]]; then
             echo "❌ Frontend Web failed"
+            exit 1
+          fi
+          if [[ "${{ needs.secrets.result }}" != "success" ]]; then
+            echo "❌ Secrets scan failed"
             exit 1
           fi
           echo "✅ Hammasi yashil"

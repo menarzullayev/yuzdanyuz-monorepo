@@ -11,8 +11,8 @@
       "Bash(pytest *)",
       "Bash(python *)",
       "Bash(./.claude/hooks/* *)",
-      "Bash(<server-home>/scripts/* *)",
-      "Bash(<server-home>/.local/pgsql/bin/* *)"
+      "Bash(~/scripts/* *)",
+      "Bash(~/.local/pgsql/bin/* *)"
     ],
     "deny": [
       "Bash(rm -rf /*)",

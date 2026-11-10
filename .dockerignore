@@ -27,4 +27,4 @@ charts/**/Chart.lock
 docker-compose*.yml
 README.md
 LESSONS.md
-docs/
+**/docs/

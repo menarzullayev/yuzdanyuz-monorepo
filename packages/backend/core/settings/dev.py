@@ -1,3 +1,5 @@
+import os
+
 from .base import *
 
 DEBUG = True
@@ -21,12 +23,12 @@ except ImportError:
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
-# PHP proxy orqali https://<host>/yuzdanyuz/ da ishlash uchun +
 # Next.js frontend dev server (localhost:3000) ham CSRF post qila olishi shart.
+# Reverse proxy orqali ishlaganda uning origin'i CSRF_TRUSTED_ORIGINS env'ga yoziladi.
 CSRF_TRUSTED_ORIGINS = [
-    'https://<host>',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    *[o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()],
 ]
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
