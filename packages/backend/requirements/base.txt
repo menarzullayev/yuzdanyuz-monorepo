@@ -51,7 +51,7 @@ pypdf==7.0.0                   # Task 3: PDF bulk import parser (text-based PDFs
 meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
-anthropic==0.102.0             # Task 3, 6: AI parser (bulk import) + AI tutor feedback
+anthropic==2.6.0             # Task 3, 6: AI parser (bulk import) + AI tutor feedback
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
