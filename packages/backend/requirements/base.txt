@@ -45,7 +45,7 @@ django-htmx==1.29.0            # Task 1+: HTMX request detection middleware
 Pillow==11.2.1                 # Task 3: Rasm ishlash, watermark
 openpyxl==3.1.5                # Task 3: Excel/CSV bulk import parser
 python-docx==1.1.2             # Task 3: Word (.docx) bulk import parser
-pypdf==6.11.0                  # Task 3: PDF bulk import parser (text-based PDFs)
+pypdf==7.0.0                  # Task 3: PDF bulk import parser (text-based PDFs)
 
 # ── Search ────────────────────────────────────────────────────────────────────
 meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
