@@ -227,6 +227,7 @@ class AIProviderConfig(models.Model):
         OPENAI = 'openai', 'OpenAI GPT'
         GEMINI = 'gemini', 'Google Gemini'
         OLLAMA = 'ollama', 'Ollama (Mahalliy / Bepul)'
+        CLAUDE_CLI = 'claude_cli', 'Claude (subscription, claude -p)'
 
     class UseFor(models.TextChoices):
         PARSER = 'parser', 'Savol Parseri (Bulk Import)'
@@ -244,7 +245,7 @@ class AIProviderConfig(models.Model):
     model = models.CharField(
         max_length=100,
         verbose_name=_('Model nomi'),
-        help_text=_('claude-sonnet-4-6 | gpt-4o | gemini-1.5-pro | llama3'),
+        help_text=_('claude-sonnet-5-5 | gpt-4o | gemini-1.5-pro | llama3'),
     )
     api_key = models.CharField(
         max_length=500,

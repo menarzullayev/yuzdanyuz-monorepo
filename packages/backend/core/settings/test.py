@@ -95,3 +95,6 @@ YANDEX_CLIENT_SECRET = 'test-yandex-secret'
 # Apple OAuth
 APPLE_CLIENT_ID = 'test-apple-id'
 APPLE_SECRET = 'test-apple-secret'
+
+# AI: never spawn a real `claude -p` from tests; tests that cover it set LLM_BACKEND themselves.
+LLM_BACKEND = 'anthropic_api'

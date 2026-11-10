@@ -16,6 +16,7 @@ class ProviderFactory:
         'openai': ('apps.catalog.services.ai_providers.openai_p', 'OpenAIProvider'),
         'gemini': ('apps.catalog.services.ai_providers.gemini', 'GeminiProvider'),
         'ollama': ('apps.catalog.services.ai_providers.ollama', 'OllamaProvider'),
+        'claude_cli': ('apps.catalog.services.ai_providers.claude_cli', 'ClaudeCLIProvider'),
     }
 
     @classmethod

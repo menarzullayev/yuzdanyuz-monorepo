@@ -393,5 +393,10 @@ FLAGS = {
 }
 
 # Anthropic AI — Task 3 bulk import parser + Task 6 AI tutor + open-ended grading
+# LLM_BACKEND: 'claude_cli' = local Claude subscription via `claude -p` (core/claude_cli.py),
+# the main AI for now; 'anthropic_api' = Messages API with ANTHROPIC_API_KEY.
+LLM_BACKEND = os.getenv('LLM_BACKEND', 'claude_cli')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
+CLAUDE_CLI_PATH = os.getenv('CLAUDE_CLI_PATH', '')  # empty -> `claude` on PATH
+CLAUDE_CLI_TIMEOUT = int(os.getenv('CLAUDE_CLI_TIMEOUT', '300'))

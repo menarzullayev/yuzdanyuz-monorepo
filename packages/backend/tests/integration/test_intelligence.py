@@ -264,10 +264,11 @@ class TestOpenEndedAPI:
     def test_submit_essay_triggers_evaluation(
         self, db, user, member, oe_question_version, monkeypatch
     ):
-        monkeypatch.setattr(
-            tasks,
-            '_generate_text',
-            lambda p, **kw: json.dumps(
+        llm_kwargs = []
+
+        def fake_llm(p, **kw):
+            llm_kwargs.append(kw)
+            return json.dumps(
                 {
                     'grammar': 80,
                     'content': 70,
@@ -275,8 +276,9 @@ class TestOpenEndedAPI:
                     'relevance': 85,
                     'rationale': 'Yaxshi javob',
                 }
-            ),
-        )
+            )
+
+        monkeypatch.setattr(tasks, '_generate_text', fake_llm)
 
         client = Client()
         client.force_login(user)
@@ -295,6 +297,8 @@ class TestOpenEndedAPI:
         assert body['status'] == 'ai_reviewed'
         assert float(body['ai_score']) == pytest.approx((80 + 70 + 75 + 85) / 4, rel=1e-3)
         assert 'Yaxshi javob' in body['ai_feedback']['rationale']
+        # The rubric schema is what makes the claude_cli backend return strict JSON.
+        assert llm_kwargs[0]['json_schema'] == tasks.ESSAY_RUBRIC_SCHEMA
 
     def test_qa_approve_by_staff(
         self, db, user, member, oe_question_version, superuser, monkeypatch
