@@ -13,7 +13,7 @@ pytest-cov==7.1.0              # Coverage reporting plugin
 pytest-xdist==3.8.0            # Parallel test execution (-n auto, 1.8x+ speedup)
 factory-boy==3.3.3             # Test fixture (User, Org, Question factory)
 coverage==7.17.2               # Test qamrovi hisoboti
-fakeredis==2.35.1              # Redis mock for tests (conftest mock_redis fixture)
+fakeredis==2.40.0              # Redis mock for tests (conftest mock_redis fixture)
 httpx2==2.16.0                 # MockTransport in tests/unit/test_anthropic_client_contract.py (anthropic 2.x HTTP layer)
 
 # ── Code Quality ──────────────────────────────────────────────────────────────

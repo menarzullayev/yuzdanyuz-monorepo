@@ -103,8 +103,8 @@ def _create_refresh_token(user: CustomUser, fingerprint: str) -> str:
     act_key = f'session:active:{user.pk}'
     ttl_sec = int(REFRESH_TOKEN_TTL.total_seconds())
     pipe = r.pipeline()
-    pipe.setex(r_key, ttl_sec, token)
-    pipe.setex(act_key, ttl_sec, fingerprint)
+    pipe.set(r_key, token, ex=ttl_sec)
+    pipe.set(act_key, fingerprint, ex=ttl_sec)
     pipe.execute()
     return token
 
