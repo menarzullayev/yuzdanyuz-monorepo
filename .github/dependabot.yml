@@ -30,6 +30,11 @@ updates:
           - "pytest*"
           - "factory-boy"
           - "coverage"
+      # The OpenTelemetry distro pins exact instrumentation/exporter versions,
+      # so single-package bumps never resolve.
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
 
   # npm workspaces (root package-lock.json covers packages/frontend-web and
   # packages/shared). A separate /packages/frontend-web entry produced PRs that

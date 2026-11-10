@@ -10,13 +10,13 @@ sentry-sdk[django]==2.25.1     # Task 10: Error tracking + performance tracing
 
 # ── OpenTelemetry (Task 10) ───────────────────────────────────────────────────
 # Wrapped at runtime with `opentelemetry-instrument` (entrypoint.sh OTEL_ENABLED).
-opentelemetry-distro==0.62b1
-opentelemetry-exporter-otlp==1.41.1
-opentelemetry-instrumentation-django==0.62b1
-opentelemetry-instrumentation-celery==0.62b1
-opentelemetry-instrumentation-psycopg2==0.62b1
-opentelemetry-instrumentation-redis==0.62b1
-opentelemetry-instrumentation-requests==0.62b1
+opentelemetry-distro==0.66b2
+opentelemetry-exporter-otlp==1.45.2
+opentelemetry-instrumentation-django==0.66b2
+opentelemetry-instrumentation-celery==0.66b2
+opentelemetry-instrumentation-psycopg2==0.66b2
+opentelemetry-instrumentation-redis==0.66b2
+opentelemetry-instrumentation-requests==0.66b2
 
 # ── Security ──────────────────────────────────────────────────────────────────
 django-ratelimit==4.1.0        # Task 3, 4: Rate limiting (anti-scraping)
