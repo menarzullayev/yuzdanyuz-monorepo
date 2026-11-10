@@ -38,6 +38,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=core.settings.prod
 
 # Runtime deps only (no -dev)
+# UID/GID 1000 must match securityContext.runAsUser/runAsGroup in
+# charts/yuzdanyuz/values.yaml. With any other UID the pod user has no passwd
+# entry: HOME becomes "/", Python cannot see /home/app/.local and the claude CLI
+# has nowhere to write ~/.claude. scripts/smoke-backend-image.sh checks this.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libjpeg62-turbo \
@@ -47,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tini \
  && rm -rf /var/lib/apt/lists/* \
- && groupadd -r app && useradd -r -g app -d /home/app -m app
+ && groupadd -r -g 1000 app && useradd -r -u 1000 -g app -d /home/app -m app
 
 # Claude Code CLI for LLM_BACKEND=claude_cli (packages/backend/core/claude_cli.py).
 # Pinned and checked against the SHA-256 from the release manifest
