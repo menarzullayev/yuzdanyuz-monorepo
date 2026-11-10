@@ -55,6 +55,10 @@ updates:
       # Keep types in line with the Node runtime used in CI (Node 24).
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 drops `baseUrl` (TS5102) and the JS compiler API that
+      # `next build` type-checks with; revisit once Next.js supports it.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       next:
         patterns:
