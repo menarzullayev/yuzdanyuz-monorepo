@@ -196,11 +196,12 @@ TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')  # ixtiyoriy 
 # ── django-allauth ────────────────────────────────────────────
 ACCOUNT_ADAPTER = 'apps.accounts.adapters.AccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'apps.accounts.adapters.SocialAccountAdapter'
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+# Email required, no username field (allauth 65.x replacement for
+# ACCOUNT_EMAIL_REQUIRED / ACCOUNT_USERNAME_REQUIRED / ACCOUNT_AUTHENTICATION_METHOD).
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 # 'optional': Google bypass (already verified), email/password requires verify
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { isAxiosError } from 'axios';
 import { authService } from '@/services/auth';
 
 export default function LoginPage() {
@@ -19,8 +20,9 @@ export default function LoginPage() {
     try {
       await authService.login(email, password);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed');
+    } catch (err) {
+      const message = isAxiosError<{ message?: string }>(err) ? err.response?.data?.message : undefined;
+      setError(message || 'Login failed');
     } finally {
       setIsLoading(false);
     }

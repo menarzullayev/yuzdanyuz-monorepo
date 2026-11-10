@@ -16,6 +16,11 @@ updates:
     labels:
       - dependencies
       - backend
+    ignore:
+      # Django 6.x requires Python 3.12+; the backend runs on 3.11 and stays on
+      # the 5.2 LTS line until the Python upgrade.
+      - dependency-name: "django"
+        update-types: ["version-update:semver-major"]
     groups:
       django:
         patterns:
@@ -26,9 +31,11 @@ updates:
           - "factory-boy"
           - "coverage"
 
-  # Frontend Web dependencies (Next.js)
+  # npm workspaces (root package-lock.json covers packages/frontend-web and
+  # packages/shared). A separate /packages/frontend-web entry produced PRs that
+  # changed package.json without the root lockfile, so `npm ci` failed in CI.
   - package-ecosystem: npm
-    directory: /packages/frontend-web
+    directory: /
     schedule:
       interval: weekly
       day: monday
@@ -39,27 +46,22 @@ updates:
     labels:
       - dependencies
       - frontend-web
+    ignore:
+      # Keep types in line with the Node runtime used in CI (Node 24).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       next:
         patterns:
           - "next"
+          - "eslint-config-next"
           - "react*"
           - "@types/react*"
       tailwind:
         patterns:
           - "tailwindcss"
+          - "@tailwindcss/*"
           - "postcss*"
-          - "autoprefixer"
-
-  # Monorepo root
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-    labels:
-      - dependencies
-      - monorepo
 
   # GitHub Actions (workflow versiyalari)
   - package-ecosystem: github-actions
@@ -69,3 +71,7 @@ updates:
     labels:
       - dependencies
       - ci
+    groups:
+      actions:
+        patterns:
+          - "*"

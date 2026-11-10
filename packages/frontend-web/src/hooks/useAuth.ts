@@ -1,21 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
+
+// Cookies expose no change event, so there is nothing to subscribe to.
+const subscribe = () => () => {};
+
+function hasAccessToken(): boolean {
+  const token = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('access_token='))
+    ?.split('=')[1];
+  return !!token;
+}
 
 export function useAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  // The server snapshot is null: the cookie is unknown until the client hydrates.
+  const authenticated = useSyncExternalStore<boolean | null>(subscribe, hasAccessToken, () => null);
 
-  useEffect(() => {
-    // Check if access_token exists in cookies
-    const token = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('access_token='))
-      ?.split('=')[1];
-
-    setIsAuthenticated(!!token);
-    setIsLoading(false);
-  }, []);
-
-  return { isAuthenticated, isLoading };
+  return { isAuthenticated: authenticated === true, isLoading: authenticated === null };
 }
