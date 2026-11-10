@@ -52,6 +52,7 @@ meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
 anthropic==2.6.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
+httpx2==2.16.0                 # anthropic 2.x HTTP layer; aliased over httpx in core/__init__.py
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
