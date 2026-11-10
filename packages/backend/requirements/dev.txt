@@ -20,5 +20,5 @@ ruff==0.15.13                  # Linter + formatter (flake8 + isort o'rniga)
 pre-commit==4.6.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────
-ipython==8.35.0                # Django shell uchun
+ipython==9.18.1                # Django shell uchun
 django-extensions==4.1         # shell_plus, show_urls, graph_models
