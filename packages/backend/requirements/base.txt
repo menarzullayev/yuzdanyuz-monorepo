@@ -15,7 +15,7 @@ django-celery-beat==2.9.0      # Task 9: Cron jobs (streak, league reset) — Dj
 django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — Django 5.2 support
 
 # ── Cache & Session ───────────────────────────────────────────────────────────
-redis==5.2.1                   # Task 2, 5: Device fingerprinting, leaderboard
+redis==8.1.0                   # Task 2, 5: Device fingerprinting, leaderboard
 django-redis==7.0.0            # Task 2, 5: Django cache backend for Redis
 # ISSUE-102: distributed lock — core/locks.py SET NX EX pattern, dep'siz
 
@@ -44,14 +44,14 @@ django-htmx==1.29.0            # Task 1+: HTMX request detection middleware
 # ── File & Media ──────────────────────────────────────────────────────────────
 Pillow==11.2.1                 # Task 3: Rasm ishlash, watermark
 openpyxl==3.1.5                # Task 3: Excel/CSV bulk import parser
-python-docx==1.1.2             # Task 3: Word (.docx) bulk import parser
+python-docx==1.2.0             # Task 3: Word (.docx) bulk import parser
 pypdf==7.0.0                   # Task 3: PDF bulk import parser (text-based PDFs)
 
 # ── Search ────────────────────────────────────────────────────────────────────
 meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
-anthropic==0.102.0             # Task 3, 6: AI parser (bulk import) + AI tutor feedback
+anthropic==2.6.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
@@ -60,7 +60,7 @@ cryptography==44.0.2           # Task 2: allauth Google JWT verification
 
 # ── Observability (Task 10) ───────────────────────────────────────────────────
 django-prometheus==2.5.0       # /metrics endpoint (Prometheus exporter)
-python-json-logger==3.3.0      # Structured JSON logging (prod)
+python-json-logger==4.2.0      # Structured JSON logging (prod)
 
 # ── Audit / Compliance (ISSUE-401) ────────────────────────────────────────────
 # SOC2/ISO 27001: kim qachon nima o'zgartirgan? — historical_<model> shadow tables

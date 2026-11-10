@@ -44,7 +44,7 @@ def _key(token: str) -> str:
 def _save(token: str, data: dict) -> None:
     r = _redis()
     ttl = r.ttl(_key(token))
-    r.setex(_key(token), ttl if ttl > 0 else SESSION_TTL, json.dumps(data))
+    r.set(_key(token), json.dumps(data), ex=ttl if ttl > 0 else SESSION_TTL)
 
 
 # ── Session boshqaruv ─────────────────────────────────────────
@@ -59,10 +59,10 @@ def create_session() -> dict:
     bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', '')
     deep_link = f'https://t.me/{bot_username}?start=tgauth_{token}'
 
-    _redis().setex(
+    _redis().set(
         _key(token),
-        SESSION_TTL,
         json.dumps({'status': 'pending', 'telegram_id': None, 'phone': None, 'user_pk': None}),
+        ex=SESSION_TTL,
     )
     return {'token': token, 'deep_link': deep_link}
 
@@ -159,7 +159,7 @@ def _find_token_by_telegram_id(telegram_id: int) -> str | None:
 def _register_waiting(token: str, telegram_id: int) -> None:
     """telegram_id → token xaritasini Redis ga yozadi."""
     r = _redis()
-    r.setex(f'tg_waiting:{telegram_id}', SESSION_TTL, token)
+    r.set(f'tg_waiting:{telegram_id}', token, ex=SESSION_TTL)
 
 
 def _find_or_create_user(telegram_id: int, phone: str) -> str:

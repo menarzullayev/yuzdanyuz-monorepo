@@ -59,7 +59,7 @@ def json_logging_dict(level: str = 'INFO') -> dict[str, Any]:
         'disable_existing_loggers': False,
         'formatters': {
             'json': {
-                '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+                '()': 'pythonjsonlogger.json.JsonFormatter',
                 'fmt': '%(asctime)s %(levelname)s %(name)s %(module)s %(message)s',
                 'rename_fields': {'asctime': 'time', 'levelname': 'level'},
             },

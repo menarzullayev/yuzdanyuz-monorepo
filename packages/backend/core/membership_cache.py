@@ -57,7 +57,7 @@ def is_active_member(user, org) -> bool:
     is_member = user.memberships.filter(organization=org, status='active').exists()
 
     try:
-        _redis().setex(key, TTL_SECONDS, '1' if is_member else '0')
+        _redis().set(key, '1' if is_member else '0', ex=TTL_SECONDS)
     except redis.RedisError as e:
         logger.warning('membership cache write failed: %s', e)
 
