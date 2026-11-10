@@ -581,7 +581,7 @@ Return error to user
 | POST | `/api/intelligence/openended/<id>/qa/` | admin tasdiqlash (approve/dispute) |
 
 ### Tech Stack
-`Celery` · `Anthropic SDK` (claude-sonnet-4-5) · `Bayesian beta distribution`
+`Celery` · `Anthropic SDK` (claude-sonnet-5-5) · `Bayesian beta distribution`
 
 ### Arxitektura qaror
 > **Gibrid Dvigatel** — Zero-Hallucination: matematika backend'da (Bayesian update),

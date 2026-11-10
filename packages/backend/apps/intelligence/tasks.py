@@ -29,20 +29,37 @@ logger = logging.getLogger(__name__)
 # ── LLM client wrapper ────────────────────────────────────────────────────────
 
 
+# Models that accept server-side refusal fallback (`fallbacks: "default"`).
+# Exact IDs: a prefix match on 'claude-opus-5' would also catch other models.
+_SERVER_FALLBACK_MODELS = frozenset(
+    {
+        'claude-sonnet-5-5',
+        'claude-opus-5-5',
+        'claude-opus-5',
+        'claude-fable-5-1',
+        'claude-fable-5-2',
+    }
+)
+
+
 def _generate_text(
     prompt: str,
     *,
-    max_tokens: int = 1024,
-    model: str = 'claude-sonnet-4-5',
+    max_tokens: int = 2048,
+    model: str | None = None,
     system: str | None = None,
 ) -> str:
     """
     Anthropic API'ga bitta so'rov. Test paytida bu funksiya monkey-patch qilinadi.
 
-    Production'da: settings.ANTHROPIC_API_KEY .env'dan keladi.
+    Production'da: settings.ANTHROPIC_API_KEY va ANTHROPIC_MODEL .env'dan keladi.
 
     ISSUE-X04: agar `system` berilsa, ephemeral prompt cache qo'llaniladi —
     bir xil system bloki qayta ishlatilganida token narxi sezilarli kamayadi.
+
+    Claude Sonnet 5.5 thinks adaptively by default and thinking counts toward
+    `max_tokens`, so the limit leaves room for it; `effort: low` keeps thinking
+    short (and skips it on most of these short generation/scoring requests).
     """
     import anthropic
 
@@ -50,10 +67,12 @@ def _generate_text(
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY settings/env'da yo'q")
 
+    model = model or settings.ANTHROPIC_MODEL
     client = anthropic.Anthropic(api_key=api_key)
     kwargs: dict = {
         'model': model,
         'max_tokens': max_tokens,
+        'output_config': {'effort': 'low'},
         'messages': [{'role': 'user', 'content': prompt}],
     }
     if system:
@@ -61,9 +80,22 @@ def _generate_text(
         kwargs['system'] = [
             {'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}},
         ]
-    message = client.messages.create(**kwargs)
-    # Anthropic SDK 0.x: message.content[0].text
-    return message.content[0].text if message.content else ''
+    if model in _SERVER_FALLBACK_MODELS:
+        # On a policy decline the API re-runs the request on a fallback model.
+        message = client.beta.messages.create(
+            betas=['server-side-fallback-2026-07-01'], fallbacks='default', **kwargs
+        )
+    else:
+        message = client.messages.create(**kwargs)
+
+    if message.stop_reason == 'refusal':
+        category = getattr(message.stop_details, 'category', None)
+        raise RuntimeError(f'Claude declined the request (refusal, category={category})')
+    # A reply can start with a thinking block, so read text blocks by type.
+    text = ''.join(block.text for block in message.content if block.type == 'text')
+    if message.stop_reason == 'max_tokens':
+        raise RuntimeError(f'Claude reply truncated at max_tokens={max_tokens}')
+    return text
 
 
 # ── Stable SYSTEM prompts (cacheable via Anthropic ephemeral cache) ───────────
@@ -216,7 +248,7 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
             raise RuntimeError('Audio transcription hali implement qilinmagan (Whisper SDK kerak)')
 
         prompt = _build_essay_rubric_prompt(question_text, answer_text)
-        text = _generate_text(prompt, max_tokens=512, system=ESSAY_RUBRIC_SYSTEM_PROMPT)
+        text = _generate_text(prompt, system=ESSAY_RUBRIC_SYSTEM_PROMPT)
 
         # JSON parse
         try:

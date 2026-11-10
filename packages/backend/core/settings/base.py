@@ -394,4 +394,4 @@ FLAGS = {
 
 # Anthropic AI — Task 3 bulk import parser + Task 6 AI tutor + open-ended grading
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-5')
+ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
