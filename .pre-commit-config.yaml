@@ -13,6 +13,8 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # Keep Markdown hard line breaks (two trailing spaces) intact.
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
         # Helm templates contain Go template syntax — not parseable as YAML.
