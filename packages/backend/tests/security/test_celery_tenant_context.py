@@ -59,6 +59,7 @@ EXPECTED_TASKS = {
     # apps/intelligence/tasks.py
     'generate_ai_tutor_feedback': 'tenant',  # attempt-scoped
     'evaluate_openended_submission': 'tenant',
+    'check_ai_token_expiry': 'stateless',  # reads a setting only, no DB
     # apps/analytics/tasks.py
     'generate_export': 'tenant',  # report.organization
 }

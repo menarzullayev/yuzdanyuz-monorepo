@@ -22,7 +22,8 @@ x-backend-base: &backend-base
     CLICKHOUSE_HOST: clickhouse
     CLICKHOUSE_PORT: "9000"
     # AI via the Claude subscription: put CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`)
-    # in packages/backend/.env, or set LLM_BACKEND=anthropic_api with ANTHROPIC_API_KEY.
+    # and CLAUDE_CODE_OAUTH_TOKEN_EXPIRES (that date + 1 year, YYYY-MM-DD) in
+    # packages/backend/.env, or set LLM_BACKEND=anthropic_api with ANTHROPIC_API_KEY.
     LLM_BACKEND: ${LLM_BACKEND:-claude_cli}
   depends_on:
     postgres:

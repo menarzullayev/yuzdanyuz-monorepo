@@ -15,6 +15,7 @@ override qilish mumkin.
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
@@ -55,6 +56,16 @@ app.conf.task_routes = {
     'analytics.generate_export': {'queue': 'batch'},
     'exams.publish_scheduled_mocks': {'queue': 'batch'},
     'exams.quarantine_check': {'queue': 'batch'},
+    'intelligence.check_ai_token_expiry': {'queue': 'batch'},
+}
+
+# Static schedules; DatabaseScheduler copies them into django-celery-beat on start.
+app.conf.beat_schedule = {
+    # Warns (Sentry via ERROR logs) before the `claude setup-token` token expires.
+    'ai-token-expiry-daily': {
+        'task': 'intelligence.check_ai_token_expiry',
+        'schedule': crontab(hour=9, minute=0),
+    },
 }
 
 

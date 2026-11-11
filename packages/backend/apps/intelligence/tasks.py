@@ -4,6 +4,11 @@ Task 6 — AI Diagnostika Celery tasks.
 Tasklar:
   - generate_ai_tutor_feedback(feedback_id) — on-demand LLM call
   - evaluate_openended_submission(submission_id) — essay/audio AI scoring
+  - check_ai_token_expiry() — daily reminder before the `claude setup-token` token expires
+
+A rate limit or a timeout on the Claude subscription defers the task (retry
+until the limit resets) instead of failing the record; an auth error fails it
+at once and is tagged ai.error_kind=auth in Sentry.
 
 LLM client: Anthropic SDK (apps/catalog'dan ishlatilgan pattern).
 Test paytida `_generate_text` mock qilinadi.
@@ -16,14 +21,50 @@ Architecture (Bosqich 5+20):
 import hashlib
 import json
 import logging
+from datetime import date
 
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
 
+from core.claude_cli import ClaudeRateLimitError, ClaudeTimeoutError
+
 from .models import AIFeedback, OpenEndedSubmission
 
 logger = logging.getLogger(__name__)
+
+
+# ── Retry policy for subscription limits ──────────────────────────────────────
+
+AI_RETRY_MAX = 6  # deferred runs before the record is marked FAILED
+_RATE_LIMIT_WAIT = 15 * 60  # when the CLI does not say when the limit resets
+_MAX_WAIT = 6 * 60 * 60
+_TIMEOUT_WAIT = 2 * 60
+
+
+def ai_retry_countdown(exc: Exception) -> int | None:
+    """Seconds to wait before retrying an AI call, or None when retrying cannot help."""
+    if isinstance(exc, ClaudeRateLimitError):
+        if exc.resets_at is None:
+            return _RATE_LIMIT_WAIT
+        wait = (exc.resets_at - timezone.now()).total_seconds() + 60
+        return int(min(max(wait, 60), _MAX_WAIT))
+    if isinstance(exc, ClaudeTimeoutError):
+        return _TIMEOUT_WAIT
+    return None
+
+
+def _report_ai_failure(exc: Exception, what: str, obj_id: str) -> None:
+    """Log the failure; LoggingIntegration turns it into a Sentry event tagged ai.error_kind."""
+    kind = getattr(exc, 'kind', 'error')
+    try:
+        import sentry_sdk
+    except ImportError:  # pragma: no cover - sentry-sdk is in common.txt
+        logger.exception('%s failed for %s (ai.error_kind=%s)', what, obj_id, kind)
+        return
+    with sentry_sdk.new_scope() as scope:
+        scope.set_tag('ai.error_kind', kind)
+        logger.exception('%s failed for %s (ai.error_kind=%s)', what, obj_id, kind)
 
 
 # ── LLM client wrapper ────────────────────────────────────────────────────────
@@ -219,7 +260,12 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
         AI_TUTOR_CALLS.labels(task_type='tutor', status='ok').inc()
         return {'status': 'ready', 'feedback_id': str(fb.id)}
     except Exception as e:
-        logger.exception('AI Tutor LLM failed for %s', feedback_id)
+        countdown = ai_retry_countdown(e)
+        if countdown is not None and self.request.retries < AI_RETRY_MAX:
+            logger.warning('AI Tutor for %s deferred %ss: %s', feedback_id, countdown, e)
+            AI_TUTOR_CALLS.labels(task_type='tutor', status='deferred').inc()
+            raise self.retry(exc=e, countdown=countdown, max_retries=AI_RETRY_MAX) from e
+        _report_ai_failure(e, 'AI Tutor', feedback_id)
         fb.status = AIFeedback.Status.FAILED
         fb.error = str(e)[:1000]
         fb.completed_at = timezone.now()
@@ -309,9 +355,64 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
             'score': float(sub.ai_score),
         }
     except Exception as e:
-        logger.exception('Open-ended evaluation failed for %s', submission_id)
+        countdown = ai_retry_countdown(e)
+        if countdown is not None and self.request.retries < AI_RETRY_MAX:
+            logger.warning('Open-ended %s deferred %ss: %s', submission_id, countdown, e)
+            raise self.retry(exc=e, countdown=countdown, max_retries=AI_RETRY_MAX) from e
+        _report_ai_failure(e, 'Open-ended evaluation', submission_id)
         sub.status = OpenEndedSubmission.Status.FAILED
         sub.ai_feedback = {'error': str(e)[:500]}
         sub.ai_completed_at = timezone.now()
         sub.save(update_fields=['status', 'ai_feedback', 'ai_completed_at'])
         return {'status': 'failed', 'error': str(e)[:200]}
+
+
+# ── 3. Claude subscription token expiry ──────────────────────────────────────
+
+TOKEN_WARN_DAYS = 30
+TOKEN_URGENT_DAYS = 14
+
+
+def ai_token_days_left(today: date | None = None) -> int | None:
+    """Days until CLAUDE_CODE_OAUTH_TOKEN_EXPIRES (YYYY-MM-DD); None when unset.
+
+    Raises ValueError when the setting is not an ISO date.
+    """
+    raw = (getattr(settings, 'CLAUDE_CODE_OAUTH_TOKEN_EXPIRES', '') or '').strip()
+    if not raw:
+        return None
+    return (date.fromisoformat(raw) - (today or timezone.localdate())).days
+
+
+@shared_task(name='intelligence.check_ai_token_expiry')
+def check_ai_token_expiry() -> dict:
+    """Daily (core/celery.py beat_schedule). ERROR logs reach Sentry via LoggingIntegration."""
+    if settings.LLM_BACKEND != 'claude_cli':
+        return {'status': 'not_used'}
+    try:
+        days = ai_token_days_left()
+    except ValueError:
+        logger.error(
+            'CLAUDE_CODE_OAUTH_TOKEN_EXPIRES is not a YYYY-MM-DD date: %r',
+            settings.CLAUDE_CODE_OAUTH_TOKEN_EXPIRES,
+        )
+        return {'status': 'invalid'}
+    if days is None:
+        logger.warning('CLAUDE_CODE_OAUTH_TOKEN_EXPIRES is not set; token expiry is not tracked')
+        return {'status': 'unknown'}
+
+    renew = 'run `claude setup-token` and update CLAUDE_CODE_OAUTH_TOKEN and its _EXPIRES date'
+    if days < 0:
+        logger.error(
+            'Claude subscription token expired %s day(s) ago; AI is down: %s', -days, renew
+        )
+        status = 'expired'
+    elif days <= TOKEN_URGENT_DAYS:
+        logger.error('Claude subscription token expires in %s day(s): %s', days, renew)
+        status = 'urgent'
+    elif days <= TOKEN_WARN_DAYS:
+        logger.warning('Claude subscription token expires in %s day(s): %s', days, renew)
+        status = 'soon'
+    else:
+        status = 'ok'
+    return {'status': status, 'days_left': days}

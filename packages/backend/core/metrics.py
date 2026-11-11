@@ -46,6 +46,20 @@ AI_TUTOR_LATENCY = Histogram(
     buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
 )
 
+# ── Claude CLI (`claude -p`, LLM_BACKEND=claude_cli) ────────────────────────
+# Every call through core/claude_cli.run(): tutor, essay grading, AI import parser.
+AI_CLI_CALLS = Counter(
+    'yz_ai_cli_calls_total',
+    'claude -p calls by outcome',
+    ['outcome'],  # ok|rate_limit|auth|timeout|error
+)
+
+AI_CLI_SECONDS = Histogram(
+    'yz_ai_cli_seconds',
+    'claude -p call duration',
+    buckets=(1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+)
+
 # ── Leaderboard ─────────────────────────────────────────────────────────────
 LEADERBOARD_UPDATES = Counter(
     'yz_leaderboard_updates_total',

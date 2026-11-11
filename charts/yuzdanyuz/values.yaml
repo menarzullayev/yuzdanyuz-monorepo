@@ -185,6 +185,9 @@ env:
   CLICKHOUSE_ENABLED: "false"
   # Payments — stub mode (PR #35 default)
   ENABLE_REAL_PAYMENTS: "false"
+  # AI: date the CLAUDE_CODE_OAUTH_TOKEN secret expires (`claude setup-token` + 1 year,
+  # YYYY-MM-DD). Not secret. Drives the system check and the daily expiry reminder.
+  CLAUDE_CODE_OAUTH_TOKEN_EXPIRES: ""
 
 # ── Secret keys (must be created out-of-band via kubectl create secret) ──────
 # Helm intentionally does NOT manage the Secret content — it only references it.

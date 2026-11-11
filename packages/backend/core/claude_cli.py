@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 # Dropped from the child's environment, except _ENV_KEEP. CLAUDECODE is what a parent
 # Claude Code session sets; it has no underscore, so it needs its own entry.
@@ -24,7 +27,56 @@ _ENV_KEEP = {'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN'}
 
 
 class ClaudeCLIError(RuntimeError):
-    pass
+    """A `claude -p` call that gave no usable reply. `kind` labels metrics and Sentry."""
+
+    kind = 'error'
+
+
+class ClaudeTimeoutError(ClaudeCLIError):
+    kind = 'timeout'
+
+
+class ClaudeAuthError(ClaudeCLIError):
+    """Not logged in, or the subscription token is invalid or expired. Retrying won't help."""
+
+    kind = 'auth'
+
+
+class ClaudeRateLimitError(ClaudeCLIError):
+    """Usage or rate limit reached, or the service is overloaded; worth retrying later.
+
+    `resets_at` is set when the CLI says when the limit resets
+    ("Claude AI usage limit reached|<unix time>").
+    """
+
+    kind = 'rate_limit'
+
+    def __init__(self, message: str, resets_at: datetime | None = None):
+        super().__init__(message)
+        self.resets_at = resets_at
+
+
+_AUTH_RE = re.compile(
+    r'not logged in|/login|invalid (?:api|x-api)[- ]key|oauth token (?:has )?expired'
+    r'|authentication_error|unauthorized|\b401\b',
+    re.IGNORECASE,
+)
+_LIMIT_RE = re.compile(
+    r'usage limit|rate limit|limit reached|reached your limit|hit your limit|\b429\b|overloaded',
+    re.IGNORECASE,
+)
+_RESET_EPOCH_RE = re.compile(r'\|(\d{10})\b')
+
+
+def _classify(model: str, detail: str) -> ClaudeCLIError:
+    message = f'{model}: {detail[:300]}'
+    if _AUTH_RE.search(detail):
+        return ClaudeAuthError(message)
+    if _LIMIT_RE.search(detail):
+        epoch = _RESET_EPOCH_RE.search(detail)
+        resets_at = datetime.fromtimestamp(int(epoch.group(1)), tz=UTC) if epoch else None
+        return ClaudeRateLimitError(message, resets_at=resets_at)
+    return ClaudeCLIError(message)
 
 
 @dataclass
@@ -62,7 +114,32 @@ def run(
     json_schema: dict | None = None,
     timeout: int = 300,
 ) -> ClaudeCLIResult:
-    """One `claude -p` turn. Raises ClaudeCLIError on timeout, CLI error or bad output."""
+    """One `claude -p` turn. Raises a ClaudeCLIError subclass on timeout, CLI error or bad output.
+
+    Every call is counted in yz_ai_cli_calls_total{outcome} and timed in yz_ai_cli_seconds.
+    """
+    from core.metrics import AI_CLI_CALLS, AI_CLI_SECONDS
+
+    started = time.monotonic()
+    try:
+        result = _run(prompt, system=system, model=model, json_schema=json_schema, timeout=timeout)
+    except ClaudeCLIError as e:
+        AI_CLI_CALLS.labels(outcome=e.kind).inc()
+        raise
+    finally:
+        AI_CLI_SECONDS.observe(time.monotonic() - started)
+    AI_CLI_CALLS.labels(outcome='ok').inc()
+    return result
+
+
+def _run(
+    prompt: str,
+    *,
+    system: str,
+    model: str,
+    json_schema: dict | None,
+    timeout: int,
+) -> ClaudeCLIResult:
     cmd = [
         _executable(),
         '-p',
@@ -108,7 +185,7 @@ def run(
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
     except subprocess.TimeoutExpired:
-        raise ClaudeCLIError(f'{model}: timeout after {timeout}s') from None
+        raise ClaudeTimeoutError(f'{model}: timeout after {timeout}s') from None
     finally:
         try:
             os.remove(prompt_file)
@@ -124,9 +201,9 @@ def run(
         if isinstance(obj, dict) and obj.get('type') == 'result':
             result = obj
     if result is None:
-        raise ClaudeCLIError(f'{model}: no result (rc={proc.returncode}) {proc.stderr[:300]}')
+        raise _classify(model, f'no result (rc={proc.returncode}) {proc.stderr[:300]}')
     if result.get('is_error'):
-        raise ClaudeCLIError(f'{model}: {str(result.get("result"))[:300]}')
+        raise _classify(model, str(result.get('result')))
 
     structured = result.get('structured_output')
     if json_schema is not None and not isinstance(structured, dict):
