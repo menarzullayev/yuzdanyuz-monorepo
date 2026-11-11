@@ -6,8 +6,11 @@ TIER SELECTION (path + method bo'yicha)
 
 LOGIN paths (5/min — brute force protection):
   /accounts/login/, /accounts/password/, /accounts/signup/
-  /api/auth/login/, /api/auth/otp/, /api/auth/password-reset/
-  /api/v1/auth/* (login, otp, password)
+  /api/auth/login/, /api/auth/email/ (password login), /api/auth/register/,
+  /api/auth/otp/, /api/auth/password-reset/
+  /api/v1/auth/* (login, email, register, otp, password)
+  Password login additionally has a per-account backoff
+  (core.utils.login_throttle) so rotating source IPs does not help.
 
 ANTI-CHEAT (30/min — spam guard):
   /api/v1/exams/*/anticheat/  (POST)
@@ -28,7 +31,8 @@ IDENTIFIER (NAT-aware)
 ═══════════════════════════════════════════════════════════════════════
 
   Authenticated: f"user:{user.pk}"  (NAT immune)
-  Anonymous:     f"ip:{client_ip}"
+  Anonymous:     f"ip:{client_ip}"   (core.utils.client_ip.get_client_ip —
+                 forwarding headers only from TRUSTED_PROXY_CIDRS peers)
 
 ═══════════════════════════════════════════════════════════════════════
 BYPASS
@@ -49,6 +53,7 @@ import logging
 from django.http import JsonResponse
 
 from core.utils import rate_limiter as rl
+from core.utils.client_ip import get_client_ip
 
 log = logging.getLogger(__name__)
 
@@ -64,9 +69,13 @@ LOGIN_PATH_MARKERS = (
     '/auth/otp',
     '/auth/password-reset',
     '/api/auth/login',
+    '/api/auth/email',
+    '/api/auth/register',
     '/api/auth/otp',
     '/api/auth/password',
     '/api/v1/auth/login',
+    '/api/v1/auth/email',
+    '/api/v1/auth/register',
     '/api/v1/auth/otp',
     '/api/v1/auth/password',
 )
@@ -84,20 +93,12 @@ READ_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _client_ip(request) -> str:
-    """X-Forwarded-For (first IP) yoki REMOTE_ADDR."""
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR', '0.0.0.0')
-
-
 def _identifier(request) -> str:
     """User-level bucket if authenticated (NAT immune), else IP-level."""
     user = getattr(request, 'user', None)
     if user is not None and user.is_authenticated:
         return f'user:{user.pk}'
-    return f'ip:{_client_ip(request)}'
+    return f'ip:{get_client_ip(request)}'
 
 
 def _select_tier(request) -> rl.RateTier:
