@@ -21,8 +21,6 @@ x-backend-base: &backend-base
     CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-yuzdanyuz_dev_redis}@redis:6379/0
     CLICKHOUSE_HOST: clickhouse
     CLICKHOUSE_PORT: "9000"
-    MEILISEARCH_URL: http://meilisearch:7700
-    MEILISEARCH_API_KEY: dev_master_key
     # AI via the Claude subscription: put CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`)
     # in packages/backend/.env, or set LLM_BACKEND=anthropic_api with ANTHROPIC_API_KEY.
     LLM_BACKEND: ${LLM_BACKEND:-claude_cli}
@@ -85,16 +83,6 @@ services:
         soft: 262144
         hard: 262144
 
-  meilisearch:
-    image: getmeili/meilisearch:v1.10
-    environment:
-      MEILI_ENV: development
-      MEILI_MASTER_KEY: dev_master_key
-    volumes:
-      - meilidata:/meili_data
-    ports:
-      - "127.0.0.1:7700:7700"
-
   backend:
     <<: *backend-base
     command: ["web"]
@@ -148,6 +136,5 @@ volumes:
   pgdata:
   redisdata:
   chdata:
-  meilidata:
   staticdata:
   mediadata:

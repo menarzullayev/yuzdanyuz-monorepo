@@ -229,7 +229,7 @@ class TestNotifications:
         assert resp.json()['count'] == 1
 
 
-# ─── Search (Meilisearch stub / PG FTS fallback) ─────────────────────────────
+# ─── Search (PostgreSQL) ─────────────────────────────
 
 
 @pytest.mark.integration
@@ -252,6 +252,28 @@ class TestSearch:
     def test_search_too_short_query_returns_empty(self, db):
         results = search_service.search_questions('a')
         assert results == []
+
+    def test_old_meilisearch_settings_do_not_change_search(
+        self, db, org, subject, member, user, settings
+    ):
+        # The never-implemented Meilisearch branch raised NotImplementedError when
+        # these were set; search must keep using PostgreSQL.
+        settings.MEILISEARCH_URL = 'http://meilisearch:7700'
+        settings.MEILISEARCH_ENABLED = True
+        with tenant_context(org):
+            q = Question.objects.create(
+                organization=org, subject=subject, type=Question.Type.SINGLE_CHOICE
+            )
+            QuestionVersion.objects.create(
+                question=q,
+                version_number=1,
+                content={'text': 'kimyo reaksiyalari'},
+                options=[],
+            )
+
+        results = search_service.search_questions('kimyo', org=org)
+
+        assert [r['question_id'] for r in results] == [str(q.id)]
 
     def test_search_excludes_quarantined(self, db, org, subject, member, user):
         with tenant_context(org):

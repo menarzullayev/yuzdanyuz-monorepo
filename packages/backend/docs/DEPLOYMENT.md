@@ -9,7 +9,7 @@ Production Stack:
 ├── Cache/Session: Redis
 ├── Database: PostgreSQL (with WAL-G backups)
 ├── Analytics: ClickHouse
-├── Search: Meilisearch
+├── Search: PostgreSQL (JSONB icontains)
 ├── Monitoring: Prometheus + Grafana + Sentry
 └── CDN: Cloudflare
 ```

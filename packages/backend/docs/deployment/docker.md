@@ -31,7 +31,6 @@ Servislar (lokal portlar):
 | postgres       | <db-port>  | PostgreSQL 16                 |
 | redis          | 6379  | Redis 7 (with password)       |
 | clickhouse     | 8123  | ClickHouse HTTP               |
-| meilisearch    | 7700  | Meilisearch                   |
 
 ```bash
 # Web App: http://localhost:8013
