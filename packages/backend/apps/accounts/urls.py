@@ -27,6 +27,13 @@ from apps.accounts.views.telegram_deeplink import (
     TGDeeplinkInitView,
     TGDeeplinkStatusView,
 )
+from apps.accounts.views.two_factor import (
+    BackupCodesRegenerateView,
+    TwoFactorConfirmView,
+    TwoFactorDisableView,
+    TwoFactorSetupView,
+    TwoFactorStatusView,
+)
 
 app_name = 'accounts'
 
@@ -37,6 +44,16 @@ urlpatterns = [
     path('api/auth/username/check/', UsernameCheckView.as_view(), name='username_check'),
     path('api/auth/username/', UsernameChangeView.as_view(), name='username_change'),
     path('api/auth/password/change/', PasswordChangeView.as_view(), name='password_change'),
+    # Two-factor authentication
+    path('api/auth/2fa/', TwoFactorStatusView.as_view(), name='2fa_status'),
+    path('api/auth/2fa/setup/', TwoFactorSetupView.as_view(), name='2fa_setup'),
+    path('api/auth/2fa/confirm/', TwoFactorConfirmView.as_view(), name='2fa_confirm'),
+    path('api/auth/2fa/disable/', TwoFactorDisableView.as_view(), name='2fa_disable'),
+    path(
+        'api/auth/2fa/backup-codes/regenerate/',
+        BackupCodesRegenerateView.as_view(),
+        name='2fa_backup_regenerate',
+    ),
     # Telegram TMA (initData)
     path('api/auth/telegram/', TelegramAuthView.as_view(), name='telegram_auth'),
     # Telegram Deep Link OTP (web sign in)

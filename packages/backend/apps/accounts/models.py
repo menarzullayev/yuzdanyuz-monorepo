@@ -5,7 +5,7 @@ import secrets
 from uuid import uuid4
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -67,6 +67,14 @@ class StudyYear(models.TextChoices):
 
 
 # ─── CustomUser ───────────────────────────────────────────────────────────────
+
+
+class CustomUserManager(UserManager):
+    """Stores a missing email as NULL: '' would collide on the unique email column."""
+
+    @classmethod
+    def normalize_email(cls, email):
+        return super().normalize_email(email) or None
 
 
 class CustomUser(AbstractUser):
@@ -160,6 +168,8 @@ class CustomUser(AbstractUser):
     # Text consent (no checkbox): terms version shown at signup + when.
     terms_version = models.CharField(max_length=20, blank=True)
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = CustomUserManager()
 
     # ── Django AbstractUser REQUIRED_FIELDS ni tozalaymiz ────────────────────
     # Multi-auth da email majburiy emas.
@@ -374,3 +384,45 @@ class DeviceSession(models.Model):
     @property
     def is_active(self) -> bool:
         return self.revoked_at is None and self.expires_at > timezone.now()
+
+
+# ─── Two-factor authentication ────────────────────────────────────────────────
+
+
+class TOTPDevice(models.Model):
+    """The user's authenticator-app secret (encrypted); active once ``confirmed_at`` is set."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='totp_device'
+    )
+    secret_enc = models.TextField()
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # Highest accepted 30 s step: a code can be used only once.
+    last_used_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'TOTP qurilma'
+        verbose_name_plural = 'TOTP qurilmalar'
+
+    def __str__(self):
+        return f'TOTP {self.user_id} ({"on" if self.confirmed_at else "pending"})'
+
+
+class BackupCode(models.Model):
+    """One-time 2FA backup code, stored as a keyed hash."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='backup_codes'
+    )
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Zaxira kod'
+        verbose_name_plural = 'Zaxira kodlar'
+        indexes = [models.Index(fields=['user', 'used_at'], name='accounts_bc_user_used_idx')]
+
+    def __str__(self):
+        return f'backup code {self.pk} ({"used" if self.used_at else "free"})'

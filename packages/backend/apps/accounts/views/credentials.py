@@ -20,6 +20,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 
 from apps.accounts.models import CustomUser
+from apps.accounts.services import two_factor
 from apps.accounts.services import usernames as un
 from apps.accounts.services.password_policy import password_errors
 from apps.accounts.services.security_notifications import notify, notify_account_locked
@@ -198,6 +199,17 @@ class LoginView(PublicAPIView):
             if locked_for and target is not None:
                 notify_account_locked(target, locked_for)
             return api_error('invalid_credentials', MSG_INVALID, 400)
+
+        # Second factor: password alone never signs in an account that has 2FA.
+        if two_factor.is_enabled(user):
+            code = raw_text_field(data, 'code')
+            if not code:
+                return Response({'need_code': True})
+            if not two_factor.verify_second_factor(user, code):
+                locked_for = login_throttle.register_failure(key)
+                if locked_for:
+                    notify_account_locked(user, locked_for)
+                return api_error('invalid_code', 'Kod notoʻgʻri.', 400)
 
         login_throttle.reset(key)
         return finish_login(request, user, remember=remember)
