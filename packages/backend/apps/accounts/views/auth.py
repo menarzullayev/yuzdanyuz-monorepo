@@ -69,16 +69,7 @@ class TelegramAuthView(View):
 
         issued = issue_login(request, user, remember=True)
 
-        response = JsonResponse(
-            {
-                'user': {
-                    'id': user.pk,
-                    'display_name': user.display_name,
-                    'user_type': user.user_type,
-                    'is_new': created,
-                }
-            }
-        )
+        response = JsonResponse({'user': {**user_payload(user), 'is_new': created}})
         attach_session(response, issued, request)
         return response
 

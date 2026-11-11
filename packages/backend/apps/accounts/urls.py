@@ -11,10 +11,10 @@ from apps.accounts.views.credentials import (
     UsernameCheckView,
 )
 from apps.accounts.views.linking import (
-    GetLinkedAccountsView,
-    LinkPhoneView,
-    LinkTelegramView,
-    UnlinkAuthMethodView,
+    LinkedAccountsView,
+    LinkTelegramStartView,
+    TelegramLinkView,
+    UnlinkGoogleView,
 )
 from apps.accounts.views.otp import OTPSendView, OTPVerifyView
 from apps.accounts.views.recovery import (
@@ -99,9 +99,17 @@ urlpatterns = [
     path('api/auth/gdpr/erasure/', GDPRErasureView.as_view(), name='gdpr_erasure'),
     # Telegram Bot webhook
     path('api/bot/webhook/', BotWebhookView.as_view(), name='bot_webhook'),
-    # Account linking
-    path('api/linking/phone/', LinkPhoneView.as_view(), name='link_phone'),
-    path('api/linking/telegram/', LinkTelegramView.as_view(), name='link_telegram'),
-    path('api/linking/unlink/', UnlinkAuthMethodView.as_view(), name='unlink_method'),
-    path('api/linking/list/', GetLinkedAccountsView.as_view(), name='list_linked'),
+    # Account linking (profile)
+    path('api/auth/linked/', LinkedAccountsView.as_view(), name='linked'),
+    path(
+        'api/auth/linked/telegram/',
+        TelegramLinkView.as_view(),
+        name='link_telegram',
+    ),
+    path(
+        'api/auth/linked/telegram/start/',
+        LinkTelegramStartView.as_view(),
+        name='link_telegram_start',
+    ),
+    path('api/auth/linked/google/', UnlinkGoogleView.as_view(), name='unlink_google'),
 ]

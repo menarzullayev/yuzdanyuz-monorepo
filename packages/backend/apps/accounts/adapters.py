@@ -1,31 +1,31 @@
 """
-django-allauth custom adapters.
+django-allauth custom adapters (Google is the only social provider).
 
 AccountAdapter:
-  - login() ni override qilib JWT cookie o'rnatadi
-  - allauth session → JWT bridge
+  - login() issues a device session instead of leaving a Django-session login
+    behind; JWTCookieWriterMiddleware copies the tokens onto the response.
 
 SocialAccountAdapter:
-  - Email to'qnashuvini boshqaradi:
-      * Google verified email > bazadagi unverified email
-      * Phone/TG akkauntiga Google bog'lash
+  - Pre-hijacking protection: an existing account is linked to a Google login
+    automatically ONLY when that account's email is already verified. An
+    unverified email (anyone can type any address at signup) never grants
+    access: it is stripped from the squatting account and the Google user gets
+    a fresh account with the verified address.
+  - New Google users get a username generated from their name (one free change).
 """
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
+from django.conf import settings
 from django.http import HttpRequest
+from django.utils import timezone
 
 from apps.accounts.services.token_service import issue_login
 from core.utils.client_ip import get_client_ip
 
 
 class AccountAdapter(DefaultAccountAdapter):
-    """
-    Login muvaffaqiyatli bo'lgandan keyin JWT cookie ham o'rnatiladi.
-    allauth o'z sessionini saqlayd — JWT parallel ishlaydi.
-    """
-
     def get_client_ip(self, request: HttpRequest) -> str:
         # allauth's own rate limits must key on the same address as ours.
         return get_client_ip(request)
@@ -43,58 +43,61 @@ class AccountAdapter(DefaultAccountAdapter):
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
-    """
-    Google OAuth account linking strategiyasi.
-
-    Qoidalar:
-      1. Google email verified=True → ishonchli
-      2. Agar shu email bilan akkaunt bor + email verified → auto-link
-      3. Agar shu email bilan akkaunt bor + email unverified → Google ustun:
-           eski unverified email tozalanadi, Google akkaunt bog'lanadi
-      4. Phone yoki Telegram akkauntida email yo'q → yangi social connection
-    """
-
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin) -> None:
         from allauth.account.models import EmailAddress
 
         from apps.accounts.models import CustomUser
 
         if sociallogin.is_existing:
-            return  # allaqachon bog'langan
+            return  # already linked to an account
+        if request.user.is_authenticated:
+            return  # "connect" flow from the profile: allauth attaches it to request.user
 
-        email = sociallogin.account.extra_data.get('email', '').lower()
-        if not email:
+        extra = sociallogin.account.extra_data or {}
+        email = (extra.get('email') or '').strip().lower()
+        if not email or extra.get('email_verified') is False:
+            return  # nothing trustworthy to match on
+
+        existing = CustomUser.objects.filter(email__iexact=email).first()
+        if existing is None:
             return
 
-        try:
-            existing_user = CustomUser.objects.get(email__iexact=email)
-        except CustomUser.DoesNotExist:
+        verified = EmailAddress.objects.filter(
+            user=existing, email__iexact=email, verified=True
+        ).exists()
+        if verified and existing.is_active:
+            sociallogin.connect(request, existing)
             return
 
-        # Agar shu email allauth EmailAddress da verified bo'lsa — xavfsiz link
-        ea = EmailAddress.objects.filter(user=existing_user, email__iexact=email).first()
-        if ea and ea.verified:
-            sociallogin.connect(request, existing_user)
-            return
-
-        # Email unverified: Google verified email ustun turadi
-        # Unverified email ni Google verified bilan almashtirish
-        if ea and not ea.verified:
-            ea.delete()
-
-        # Akkauntga Google bog'lash
-        sociallogin.connect(request, existing_user)
+        # Unverified: the email was merely typed at signup. Google's verified
+        # ownership wins; the squatter loses the address, never the other way round.
+        EmailAddress.objects.filter(user=existing, email__iexact=email).delete()
+        existing.email = None
+        existing.save(update_fields=['email'])
 
     def populate_user(self, request: HttpRequest, sociallogin: SocialLogin, data: dict):
-        """Google profilidan CustomUser maydonlarini to'ldiradi."""
         user = super().populate_user(request, sociallogin, data)
-        extra = sociallogin.account.extra_data
-
+        extra = sociallogin.account.extra_data or {}
         if not user.first_name:
-            user.first_name = extra.get('given_name', '')
+            user.first_name = extra.get('given_name', '') or ''
         if not user.last_name:
-            user.last_name = extra.get('family_name', '')
-
-        # Avatar — Google photo URL sifatida saqlanadi (ImageField emas)
-        # TODO: Task 3 da Pillow orqali download + S3 upload qo'shiladi
+            user.last_name = extra.get('family_name', '') or ''
         return user
+
+    def save_user(self, request: HttpRequest, sociallogin: SocialLogin, form=None):
+        from apps.accounts.services.usernames import generate_username
+
+        user = sociallogin.user
+        user.set_unusable_password()
+        user.email = (user.email or '').strip().lower() or None
+        user.username = generate_username(
+            user.first_name, user.last_name, fallback=(user.email or '').split('@')[0]
+        )
+        user.username_is_auto = True
+        user.terms_version = settings.TERMS_VERSION
+        user.terms_accepted_at = timezone.now()
+        sociallogin.save(request)
+        return user
+
+    def get_connect_redirect_url(self, request: HttpRequest, socialaccount) -> str:
+        return f'{settings.FRONTEND_BASE_URL}/profile'

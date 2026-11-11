@@ -207,18 +207,21 @@ def _signed_init_data(tg_user: dict, bot_token: str) -> str:
 @pytest.mark.security
 @pytest.mark.django_db
 class TestLinkingRequiresProof:
+    LINK_URL = '/api/auth/linked/telegram/'
+
     @pytest.fixture
-    def attacker_client(self, member):
-        # /api/linking/ is only open to org members, so the attacker is one.
-        attacker = member.user
+    def attacker_client(self, user):
         client = Client()
-        client.force_login(attacker)
-        return client, attacker
+        client.force_login(user)  # session login is enough for the Django test client
+        from apps.accounts.services.token_service import create_token_pair
+
+        client.cookies['access_token'] = create_token_pair(user, 'device-aaaaaaaaaaaaaaaa')[0]
+        return client, user
 
     def test_link_telegram_with_bare_id_is_rejected(self, attacker_client):
         client, attacker = attacker_client
 
-        response = client.post('/api/linking/telegram/', {'telegram_id': str(VICTIM_TG_ID)})
+        response = client.post(self.LINK_URL, {'telegram_id': str(VICTIM_TG_ID)})
 
         assert response.status_code == 400
         attacker.refresh_from_db()
@@ -228,7 +231,7 @@ class TestLinkingRequiresProof:
         client, attacker = attacker_client
         forged = _signed_init_data({'id': VICTIM_TG_ID}, 'not-the-bot-token')
 
-        response = client.post('/api/linking/telegram/', {'init_data': forged})
+        response = client.post(self.LINK_URL, {'init_data': forged})
 
         assert response.status_code == 400
         attacker.refresh_from_db()
@@ -238,22 +241,27 @@ class TestLinkingRequiresProof:
         client, user = attacker_client
         init_data = _signed_init_data({'id': VICTIM_TG_ID}, settings.TELEGRAM_BOT_TOKEN)
 
-        response = client.post(
-            '/api/linking/telegram/', {'init_data': init_data, 'telegram_id': '1'}
-        )
+        response = client.post(self.LINK_URL, {'init_data': init_data, 'telegram_id': '1'})
 
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.telegram_id == VICTIM_TG_ID
 
-    def test_link_phone_without_verification_is_rejected(self, attacker_client):
+    def test_phone_cannot_be_set_by_the_client(self, attacker_client):
+        """A phone number is attached only through Telegram attestation, never typed in."""
         client, attacker = attacker_client
 
-        response = client.post('/api/linking/phone/', {'phone': VICTIM_PHONE})
+        resp = client.patch(
+            '/api/auth/me/',
+            data=json.dumps({'phone_number': VICTIM_PHONE}),
+            content_type='application/json',
+        )
 
-        assert response.status_code >= 400
+        assert resp.status_code == 200
         attacker.refresh_from_db()
         assert not attacker.phone_number
+        # and the old phone-link endpoint is gone
+        assert client.post('/api/linking/phone/', {'phone': VICTIM_PHONE}).status_code in (403, 404)
 
 
 # ── WebSocket JWT auth ───────────────────────────────────────

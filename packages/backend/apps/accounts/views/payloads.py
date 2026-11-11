@@ -8,6 +8,15 @@ def username_change_available(user: CustomUser) -> bool:
     return bool(user.username_is_auto and user.username_changed_at is None)
 
 
+def email_verified(user: CustomUser) -> bool:
+    """True only for an address allauth has verified (today: Google-provided ones)."""
+    if not user.email:
+        return False
+    from allauth.account.models import EmailAddress
+
+    return EmailAddress.objects.filter(user=user, email__iexact=user.email, verified=True).exists()
+
+
 def user_payload(user: CustomUser) -> dict:
     """The user object returned by login/register/me (never contains secrets)."""
     org = user.primary_organization
@@ -18,7 +27,7 @@ def user_payload(user: CustomUser) -> dict:
         'last_name': user.last_name or None,
         'display_name': user.display_name,
         'email': user.email or None,
-        'email_verified': False,
+        'email_verified': email_verified(user),
         'phone_number': user.phone_number or None,
         'avatar': user.avatar.url if user.avatar else None,
         'preferred_lang': user.preferred_lang,

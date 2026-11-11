@@ -21,11 +21,15 @@ from django.views.decorators.csrf import csrf_exempt
 from apps.accounts.models import CustomUser
 from apps.accounts.services import telegram_deeplink as dl
 from apps.accounts.services.bot_sender import (
+    answer_callback,
     send_contact_request,
+    send_link_confirmation,
     send_message,
     send_success_message,
 )
 from apps.accounts.services.token_service import attach_session, issue_login
+from apps.accounts.views.credentials import flag_field
+from apps.accounts.views.payloads import user_payload
 
 log = logging.getLogger(__name__)
 
@@ -98,18 +102,9 @@ class TGDeeplinkCompleteView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        issued = issue_login(request, user, remember=True)
+        issued = issue_login(request, user, remember=flag_field(body, 'remember', True))
 
-        response = JsonResponse(
-            {
-                'user': {
-                    'id': str(user.pk),
-                    'display_name': user.display_name,
-                    'user_type': user.user_type,
-                    'phone': user.phone_number,
-                }
-            }
-        )
+        response = JsonResponse({'user': user_payload(user)})
         attach_session(response, issued, request)
         dl.expire_session(token)
         return response
@@ -140,6 +135,10 @@ class BotWebhookView(View):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse({'ok': True})
 
+        if update.get('callback_query'):
+            self._handle_callback(update['callback_query'])
+            return JsonResponse({'ok': True})
+
         message = update.get('message', {})
         if not message:
             return JsonResponse({'ok': True})
@@ -163,7 +162,11 @@ class BotWebhookView(View):
                 token = parts[1][len('tgauth_') :]
                 ok = dl.on_bot_start(token, tg_id)
                 if ok:
-                    send_contact_request(tg_id)
+                    target = dl.link_target(token)
+                    if target is not None:
+                        send_link_confirmation(tg_id, target.display_name, token)
+                    else:
+                        send_contact_request(tg_id)
                 else:
                     send_message(
                         tg_id,
@@ -177,7 +180,13 @@ class BotWebhookView(View):
             phone = contact.get('phone_number', '')
             contact_uid = contact.get('user_id')
 
-            ok = dl.on_bot_contact(tg_id, phone, contact_uid)
+            ok = dl.on_bot_contact(
+                tg_id,
+                phone,
+                contact_uid,
+                first_name=from_user.get('first_name', '') or '',
+                last_name=from_user.get('last_name', '') or '',
+            )
             if ok:
                 send_success_message(tg_id)
             else:
@@ -199,3 +208,25 @@ class BotWebhookView(View):
         else:
             link = recovery.recovery_link(recovery.create_token(user))
             send_message(tg_id, render('recovery_link', link=link))
+
+    @staticmethod
+    def _handle_callback(cb: dict) -> None:
+        """Inline-button presses of the link confirmation (only the chat owner can match)."""
+        data = cb.get('data', '') or ''
+        sender = cb.get('from') or {}
+        from_id = sender.get('id')
+        cb_id = cb.get('id', '')
+        if not from_id:
+            return
+        if data.startswith('tglink:'):
+            result = dl.on_link_confirm(data[len('tglink:') :], from_id, sender)
+            texts = {
+                'linked': '✅ Telegram hisobingizga ulandi.',
+                'conflict': '⚠️ Bu Telegram boshqa hisobga ulangan yoki hisobingizda Telegram bor.',
+                'invalid': "⚠️ Havola muddati o'tgan. Saytda qayta urinib ko'ring.",
+            }
+            answer_callback(cb_id, texts[result])
+            send_message(from_id, texts[result])
+        elif data.startswith('tgcancel:'):
+            dl.on_link_cancel(data[len('tgcancel:') :], from_id)
+            answer_callback(cb_id, 'Bekor qilindi.')

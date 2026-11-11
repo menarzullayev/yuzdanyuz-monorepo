@@ -24,8 +24,6 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
-    'allauth.socialaccount.providers.yandex',
-    'allauth.socialaccount.providers.apple',
     # SEO (Task 9)
     'django.contrib.sitemaps',
     # Observability (Task 10)
@@ -239,28 +237,11 @@ SOCIALACCOUNT_PROVIDERS = {
         'OAUTH_PKCE_ENABLED': True,
         'VERIFIED_EMAIL': True,
     },
-    'yandex': {
-        'APP': {
-            'client_id': os.getenv('YANDEX_CLIENT_ID', ''),
-            'secret': os.getenv('YANDEX_CLIENT_SECRET', ''),
-            'key': '',
-        },
-        'SCOPE': ['login:email', 'login:info', 'login:avatar'],
-    },
-    'apple': {
-        'APP': {
-            'client_id': os.getenv('APPLE_CLIENT_ID', ''),
-            'secret': os.getenv('APPLE_SECRET', ''),
-            'key': os.getenv('APPLE_PRIVATE_KEY', ''),
-        },
-        'VERIFIED_EMAIL': True,
-    },
 }
 
-YANDEX_CLIENT_ID = os.getenv('YANDEX_CLIENT_ID', '')
-YANDEX_CLIENT_SECRET = os.getenv('YANDEX_CLIENT_SECRET', '')
-APPLE_CLIENT_ID = os.getenv('APPLE_CLIENT_ID', '')
-APPLE_SECRET = os.getenv('APPLE_SECRET', '')
+# GET /accounts/google/login/ starts the flow (a plain link from the Next.js UI).
+SOCIALACCOUNT_LOGIN_ON_GET = True
+
 # allauth login/signup dan keyin JWT cookie o'rnatiladigan URL
 ACCOUNT_LOGIN_REDIRECT_URL = FRONTEND_BASE_URL + '/'
 ACCOUNT_LOGOUT_REDIRECT_URL = FRONTEND_BASE_URL + '/login'
