@@ -14,14 +14,6 @@
     "zustand": "^5.1.0"
   },
   "overrides": {
-    "@eslint/config-array@^0.23": {
-      "minimatch": "^11.0.8"
-    },
-    "eslint@^10": {
-      "minimatch": "^11.0.8"
-    },
-    "@typescript-eslint/typescript-estree@^8": {
-      "minimatch": "^11.0.8"
-    }
+    "minimatch@^10": "^11.0.8"
   }
 }
