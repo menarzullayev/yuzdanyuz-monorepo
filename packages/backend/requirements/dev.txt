@@ -16,7 +16,7 @@ coverage==7.17.2               # Test qamrovi hisoboti
 fakeredis==2.40.0              # Redis mock for tests (conftest mock_redis fixture)
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
-ruff==0.15.13                  # Linter + formatter (flake8 + isort o'rniga)
+ruff==0.17.4                   # Linter + formatter (flake8 + isort o'rniga)
 pre-commit==4.7.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────

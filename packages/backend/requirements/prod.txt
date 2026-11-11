@@ -1,7 +1,7 @@
 -r base.txt
 
 # ── WSGI Server ───────────────────────────────────────────────────────────────
-gunicorn==23.0.0               # Production WSGI server
+gunicorn==27.0.0               # Production WSGI server
 
 # Static fayllar uchun WhiteNoise base.txt'ga ko'chirildi (middleware base.py'da).
 
