@@ -1,0 +1,11 @@
+# Entry point for GitHub's dependency graph. Installing from it gives prod + dev.
+#
+# The Dependabot graph job for this folder keeps a .txt only when its name looks
+# like a manifest (requirements.txt, *-requirements.txt, ...) or when a kept file
+# pulls it in with -r. base.txt, dev.txt and prod.txt match neither, so without
+# this file the job submitted no dependencies and Python alerts never closed.
+# scripts/check-dependabot-pip.py guards this.
+#
+# Keep the -r lines bare: Dependabot reads the path up to the last ".txt".
+-r prod.txt
+-r dev.txt

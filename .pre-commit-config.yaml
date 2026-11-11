@@ -54,21 +54,19 @@ repos:
   - repo: local
     hooks:
       - id: dependabot-pip-manifests
-        name: Dependabot pip graph sees the requirements files
+        name: Dependabot pip graph keeps every requirements file
         entry: python scripts/check-dependabot-pip.py
         language: python
         language_version: python3
-        additional_dependencies: [pyyaml==6.0.3]
         pass_filenames: false
-        files: ^(\.github/dependabot\.yml|packages/backend/requirements/.*\.txt|scripts/check-dependabot-pip\.py)$
+        files: (\.txt|scripts/check-dependabot-pip\.py)$
       - id: dependabot-pip-manifests-test
         name: Dependabot pip check catches a dropped requirements file
         entry: bash scripts/test-check-dependabot-pip.sh
         language: python
         language_version: python3
-        additional_dependencies: [pyyaml==6.0.3]
         pass_filenames: false
-        files: ^(\.github/dependabot\.yml|scripts/(test-)?check-dependabot-pip\.(py|sh))$
+        files: ^scripts/(test-)?check-dependabot-pip\.(py|sh)$
 
   # ──────────────────────────────────────────────────────────────────────
   # pre-push stage — push'dan oldin (chuqur tekshiruv)
