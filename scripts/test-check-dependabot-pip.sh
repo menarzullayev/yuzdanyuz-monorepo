@@ -46,8 +46,12 @@ expect "no-entry-point" 1 "$(fixture no-entry "$BASE" "$DEV" "$PROD")" \
 expect "aggregator" 0 "$(fixture agg "$BASE" "$DEV" "$PROD" 'requirements.txt=-r prod.txt\n-r dev.txt\n')"
 expect "aggregator-misses-dev" 1 "$(fixture partial "$BASE" "$DEV" "$PROD" 'requirements.txt=-r prod.txt\n')" \
   "drops dev.txt"
-expect "renamed-files" 0 "$(fixture renamed 'base-requirements.txt=Django==5.2.19\n' \
-  'dev-requirements.txt=-r base-requirements.txt\npytest==9.0.0\n')"
+expect "several-entry-points" 1 "$(fixture several 'base-requirements.txt=Django==5.2.19\n' \
+  'dev-requirements.txt=-r base-requirements.txt\npytest==9.0.0\n')" \
+  "reports each shared package 2 times"
+expect "aggregator-plain-names" 0 "$(fixture plain 'common.txt=Django==5.2.19\n' \
+  'development.txt=-r common.txt\npytest==9.0.0\n' 'production.txt=-r common.txt\ngunicorn==27.0.0\n' \
+  'requirements.txt=-r production.txt\n-r development.txt\n')"
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures case(s) failed"; exit 1

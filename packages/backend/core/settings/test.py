@@ -65,7 +65,7 @@ DEBUG_TOOLBAR_CONFIG = {
 }
 
 # ── ISSUE-101: N+1 detection ──────────────────────────────────
-# nplusone library installed (dev.txt) ammo middleware test'da yoqilmaydi —
+# nplusone library installed (development.txt) ammo middleware test'da yoqilmaydi —
 # uning `lazy_load` signal'i har lazy QuerySet'da fire bo'ladi va false
 # positive ko'p. Buning o'rniga `assert_max_queries(N)` fixture (conftest.py)
 # har test uchun aniq query budget bilan ishlaydi.

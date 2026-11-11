@@ -1,4 +1,4 @@
--r base.txt
+-r common.txt
 
 # ── Debug & Profiling ─────────────────────────────────────────────────────────
 django-debug-toolbar==8.0.0    # SQL query va performance nazorat

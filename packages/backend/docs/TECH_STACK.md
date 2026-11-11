@@ -17,7 +17,7 @@
 ### HTMX + Alpine.js (No SPA)
 
 ```python
-# requirements/base.txt
+# requirements/common.txt
 django==5.2.0
 django-htmx==1.17.0  # hx-* attribute support
 ```
@@ -406,7 +406,7 @@ ADMIN_EMAIL=admin@example.com
 
 ## Dependencies by Category
 
-### Base Requirements (`requirements/base.txt`)
+### Base Requirements (`requirements/common.txt`)
 
 ```
 Django==5.2.0
@@ -430,10 +430,10 @@ django-celery-results==2.5.1
 clickhouse-driver==0.4.6
 ```
 
-### Development Requirements (`requirements/dev.txt`)
+### Development Requirements (`requirements/development.txt`)
 
 ```
--r base.txt
+-r common.txt
 Django==5.2.0
 django-debug-toolbar==4.2.0
 django-extensions==3.2.3
@@ -446,10 +446,10 @@ isort==5.13.2
 bandit==1.7.5
 ```
 
-### Production Requirements (`requirements/prod.txt`)
+### Production Requirements (`requirements/production.txt`)
 
 ```
--r base.txt
+-r common.txt
 gunicorn==21.2.0
 whitenoise==6.6.0
 ```
@@ -637,4 +637,4 @@ python manage.py diffsettings --default=django.conf.global_settings
 - **Redis 7+**: ACL support (multi-user), improved replication
 - **Celery 5.3+**: Better task routing, result backend persistence
 
-All packages are pinned to specific versions in `requirements/base.txt` for reproducibility.
+All packages are pinned to specific versions in `requirements/common.txt` for reproducibility.
