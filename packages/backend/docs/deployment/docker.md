@@ -6,7 +6,7 @@ Local development stack + image build pipeline.
 
 ```
 docker/
-├── Dockerfile.backend     multi-stage Python 3.11-slim → app + entrypoint
+├── Dockerfile.backend     multi-stage Python 3.12-slim → app + entrypoint
 ├── Dockerfile.nginx       Nginx reverse proxy + static
 ├── entrypoint.sh          web | asgi | worker | beat | migrate
 └── nginx/
