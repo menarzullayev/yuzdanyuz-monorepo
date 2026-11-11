@@ -11,16 +11,19 @@ Endpoints:
   POST /api/intelligence/openended/<id>/qa/      admin tasdiqlash
 """
 
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework import generics, status
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import QuestionVersion
 
-from .models import AIFeedback, OpenEndedSubmission
+from .mistakes import STAGE_INTERVAL_DAYS, NotDueError, ReviewError, review_card
+from .models import AIFeedback, MistakeCard, OpenEndedSubmission
+from .serializers import MistakeCardSerializer, MistakeReviewSerializer
 from .services import get_user_summary, recommend_questions
 from .tasks import (
     compute_summary_hash,
@@ -210,3 +213,81 @@ def _serialize_submission(sub: OpenEndedSubmission) -> dict:
         'ai_completed_at': sub.ai_completed_at,
         'human_completed_at': sub.human_completed_at,
     }
+
+
+# ─── Mistake notebook (xatolar daftari) ──────────────────────────────────────
+
+
+def _user_cards(request):
+    # TenantManager scopes to the current org; user filter scopes to the owner.
+    return MistakeCard.objects.filter(user=request.user)
+
+
+class MistakeDueListView(generics.ListAPIView):
+    """GET /api/intelligence/mistakes/due/ — due, not yet mastered cards (paginated)."""
+
+    serializer_class = MistakeCardSerializer
+
+    def get_queryset(self):
+        return (
+            _user_cards(self.request)
+            .filter(mastered_at__isnull=True, due_at__lte=timezone.now())
+            .select_related('question')
+            .prefetch_related('question__versions')
+            .order_by('due_at', 'id')
+        )
+
+
+class MistakeSummaryView(APIView):
+    """GET /api/intelligence/mistakes/summary/ — counts per stage, due and mastered."""
+
+    def get(self, request):
+        now = timezone.now()
+        active = _user_cards(request).filter(mastered_at__isnull=True)
+        totals = dict(active.values_list('stage').annotate(n=Count('id')))
+        due = dict(active.filter(due_at__lte=now).values_list('stage').annotate(n=Count('id')))
+        return Response(
+            {
+                'stages': [
+                    {
+                        'stage': stage,
+                        'interval_days': days,
+                        'total': totals.get(stage, 0),
+                        'due': due.get(stage, 0),
+                    }
+                    for stage, days in STAGE_INTERVAL_DAYS.items()
+                ],
+                'due_total': sum(due.values()),
+                'active_total': sum(totals.values()),
+                'mastered': _user_cards(request).filter(mastered_at__isnull=False).count(),
+            }
+        )
+
+
+class MistakeReviewView(APIView):
+    """POST /api/intelligence/mistakes/<card_id>/review/ {selected} — grade a review."""
+
+    def post(self, request, card_id):
+        ser = MistakeReviewSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            result = review_card(card_id, request.user, ser.validated_data['selected'])
+        except MistakeCard.DoesNotExist:
+            raise NotFound('Card not found.') from None  # also hides other users' cards
+        except NotDueError as e:
+            raise ValidationError({'detail': str(e), 'code': 'not_due'}) from None
+        except ReviewError as e:
+            raise ValidationError({'detail': str(e)}) from None
+
+        card = result['card']
+        return Response(
+            {
+                'correct': result['correct'],
+                'correct_option_ids': result['correct_option_ids'],
+                'explanation': result['explanation'],
+                'stage': card.stage,
+                'due_at': card.due_at,
+                'lapses': card.lapses,
+                'mastered': card.mastered_at is not None,
+            }
+        )
