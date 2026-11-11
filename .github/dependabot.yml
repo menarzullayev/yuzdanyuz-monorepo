@@ -23,8 +23,9 @@ updates:
       - dependencies
       - backend
     ignore:
-      # Django 6.x requires Python 3.12+; the backend runs on 3.11 and stays on
-      # the 5.2 LTS line until the Python upgrade.
+      # Stay on the 5.2 LTS line (security fixes until 2028-04). Django 6.0 is not
+      # LTS (fixes end ~2027-04) and 6.1 is blocked by django-celery-beat 2.9.0 and
+      # django-prometheus 2.5.0 (<6.1). Move to 6.2 LTS once those support it.
       - dependency-name: "django"
         update-types: ["version-update:semver-major"]
     groups:

@@ -632,7 +632,7 @@ python manage.py diffsettings --default=django.conf.global_settings
 ## Version Notes
 
 - **Django 5.2**: Latest LTS candidate, async support via `asgiref`
-- **Python 3.11+**: Type hints, match/case, performance improvements
+- **Python 3.12**: Type hints, match/case, performance improvements
 - **PostgreSQL 14+**: JIT compilation, B-tree deduplication
 - **Redis 7+**: ACL support (multi-user), improved replication
 - **Celery 5.3+**: Better task routing, result backend persistence
