@@ -9,9 +9,19 @@ RUN apk add --no-cache curl
 
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY docker/nginx/templates/ /etc/nginx/templates/
+
+# Upstream hosts: compose service names by default; the Helm chart sets the
+# <release>-web / <release>-channels Service names. The stock entrypoint renders
+# /etc/nginx/templates/*.template into NGINX_ENVSUBST_OUTPUT_DIR; the filter keeps
+# envsubst away from nginx's own $variables.
+ENV BACKEND_UPSTREAM=backend:8000 \
+    CHANNELS_UPSTREAM=channels:8000 \
+    NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/upstreams \
+    NGINX_ENVSUBST_FILTER=_UPSTREAM
 
 # Static + media volumes mounted at runtime
-RUN mkdir -p /var/www/static /var/www/media
+RUN mkdir -p /var/www/static /var/www/media /etc/nginx/upstreams
 
 EXPOSE 80
 
