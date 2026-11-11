@@ -24,8 +24,8 @@ fixture() {
 # manifest <file> <ai replicas> <ai concurrency> <keda max for ai, 0 = none>
 manifest() {
   {
-    printf 'kind: Deployment\nmetadata: {name: w}\nspec:\n  replicas: 1\n  template: {spec: {containers: [{command: [worker], env: [{name: CELERY_QUEUES, value: "default,celery,critical"}]}]}}\n'
-    printf -- '---\nkind: Deployment\nmetadata: {name: w-ai}\nspec:\n  replicas: %s\n  template: {spec: {containers: [{command: [worker], env: [{name: CELERY_QUEUES, value: ai}, {name: CELERY_CONCURRENCY, value: "%s"}]}]}}\n' "$2" "$3"
+    printf 'kind: Deployment\nmetadata: {name: w}\nspec:\n  replicas: 1\n  template: {spec: {containers: [{args: [worker], env: [{name: CELERY_QUEUES, value: "default,celery,critical"}]}]}}\n'
+    printf -- '---\nkind: Deployment\nmetadata: {name: w-ai}\nspec:\n  replicas: %s\n  template: {spec: {containers: [{args: [worker], env: [{name: CELERY_QUEUES, value: ai}, {name: CELERY_CONCURRENCY, value: "%s"}]}]}}\n' "$2" "$3"
     if [ "$4" -gt 0 ]; then
       printf -- '---\nkind: ScaledObject\nmetadata: {name: so-ai}\nspec: {scaleTargetRef: {name: w-ai}, maxReplicaCount: %s}\n' "$4"
     fi

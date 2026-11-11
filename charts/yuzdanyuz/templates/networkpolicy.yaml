@@ -33,6 +33,10 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+        # the release's own nginx pods proxy to web/channels (default-deny blocked it)
+        - podSelector:
+            matchLabels:
+              {{- include "yuzdanyuz.selectorLabels" . | nindent 14 }}
       ports:
         - protocol: TCP
           port: 8000
@@ -63,6 +67,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # nginx -> web/channels inside the release
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "yuzdanyuz.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8000
     # PostgreSQL
     - to:
         - podSelector:
