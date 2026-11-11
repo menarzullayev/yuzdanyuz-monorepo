@@ -11,10 +11,12 @@ files (here /packages/backend/requirements), whatever `directory` says in
   * a kept file pulls it in with `-r` / `-c`.
 
 Every other .txt is dropped as a bystander. With only base.txt, dev.txt and
-prod.txt in requirements/, all three were dropped: each graph job submitted
+prod.txt in requirements/ (now common.txt, development.txt and production.txt),
+all three were dropped: each graph job submitted
 `"manifests": {}`, the pip dependency graph stayed at the repo's first push, and
 Python alerts stayed open after the fixes were merged. requirements/requirements.txt
-(`-r prod.txt`, `-r dev.txt`) is the kept entry point that pulls in the rest.
+(`-r production.txt`, `-r development.txt`) is the kept entry point that pulls
+in the rest.
 
 Usage: check-dependabot-pip.py [--root PATH]
 """
@@ -93,12 +95,23 @@ def main() -> int:
     failed = False
     for directory, files in sorted(dirs.items()):
         dropped = sorted(set(files) - kept(files))
+        # Each manifest-looking file becomes its own manifest ("requirements layer"),
+        # and a file that -r's another repeats its packages, so every alert is
+        # reported once per such file. One entry point keeps it at one.
+        entry_points = sorted(name for name in files if looks_like_manifest(name))
         if dropped:
             print(
                 f'FAIL {directory}: the Dependabot graph job drops {", ".join(dropped)} '
                 '(name does not look like a manifest and no kept file pulls it in with -r), '
                 'so their dependencies never reach the dependency graph. Add a requirements.txt '
-                'there that `-r`s them, or rename them *requirements*.txt.'
+                'there that `-r`s them.'
+            )
+            failed = True
+        elif len(entry_points) > 1:
+            print(
+                f'FAIL {directory}: {", ".join(entry_points)} all look like manifests, so the '
+                f'graph job reports each shared package {len(entry_points)} times. Keep one '
+                'requirements.txt entry point and give the other files plain names.'
             )
             failed = True
         else:
