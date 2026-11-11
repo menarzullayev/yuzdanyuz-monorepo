@@ -20,6 +20,7 @@ from apps.accounts.services.token_service import (
     create_token_pair,
     make_fingerprint,
 )
+from core.utils.client_ip import get_client_ip
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -27,6 +28,10 @@ class AccountAdapter(DefaultAccountAdapter):
     Login muvaffaqiyatli bo'lgandan keyin JWT cookie ham o'rnatiladi.
     allauth o'z sessionini saqlayd — JWT parallel ishlaydi.
     """
+
+    def get_client_ip(self, request: HttpRequest) -> str:
+        # allauth's own rate limits must key on the same address as ours.
+        return get_client_ip(request)
 
     def login(self, request: HttpRequest, user) -> None:
         super().login(request, user)
