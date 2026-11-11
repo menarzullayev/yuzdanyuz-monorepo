@@ -1,7 +1,7 @@
 # ── Core Framework ────────────────────────────────────────────────────────────
 Django==5.2.19
 asgiref==3.11.1
-sqlparse==0.5.5
+sqlparse==0.6.1
 
 # ── Database ──────────────────────────────────────────────────────────────────
 psycopg2-binary==2.9.13        # Task 1: PostgreSQL driver (dev/prod uchun binary)
@@ -26,7 +26,7 @@ daphne==4.2.3                  # Task 4: ASGI server (channels.testing ham talab
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 django-allauth==65.21.1        # Task 2: Google OAuth, email auth
-PyJWT==2.10.1                  # Task 2: JWT token generation/verification
+PyJWT==2.15.1                  # Task 2: JWT token generation/verification
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 python-telegram-bot==22.7      # Task 2, 9: TMA auth, notifications bot
@@ -42,7 +42,7 @@ django-flags==5.2.0             # ISSUE-505: feature flag toggling (per-user/per
 django-htmx==1.29.0            # Task 1+: HTMX request detection middleware
 
 # ── File & Media ──────────────────────────────────────────────────────────────
-Pillow==11.2.1                 # Task 3: Rasm ishlash, watermark
+Pillow==13.0.0                 # Task 3: Rasm ishlash, watermark
 openpyxl==3.1.5                # Task 3: Excel/CSV bulk import parser
 python-docx==1.2.0             # Task 3: Word (.docx) bulk import parser
 pypdf==7.0.0                   # Task 3: PDF bulk import parser (text-based PDFs)
@@ -56,8 +56,8 @@ httpx2==2.16.0                 # anthropic 2.x HTTP layer; aliased over httpx in
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
-requests==2.32.3               # Task 2, 7: allauth Google OAuth + Payme/Click
-cryptography==44.0.2           # Task 2: allauth Google JWT verification
+requests==2.34.2               # Task 2, 7: allauth Google OAuth + Payme/Click
+cryptography==50.0.2           # Task 2: allauth Google JWT verification
 
 # ── Observability (Task 10) ───────────────────────────────────────────────────
 django-prometheus==2.5.0       # /metrics endpoint (Prometheus exporter)
