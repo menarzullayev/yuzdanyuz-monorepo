@@ -50,6 +50,9 @@ PASSWORD_HASHERS = [
 #
 # MIGRATION_MODULES = DisableMigrations()
 
+# Payments — pytest-django forces DEBUG=False, so allow the stub provider explicitly.
+PAYMENTS_STUB_ALLOWED = True
+
 # Email — in-memory
 EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 

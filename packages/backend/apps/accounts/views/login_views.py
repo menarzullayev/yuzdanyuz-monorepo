@@ -15,6 +15,8 @@ from apps.accounts.services.token_service import (
     make_fingerprint,
     set_auth_cookies,
 )
+from core.utils import login_throttle
+from core.utils.client_ip import get_client_ip
 
 
 def _is_secure(request):
@@ -40,9 +42,7 @@ class OTPSendHTMXView(View):
     def post(self, request):
         raw_phone = request.POST.get('phone', '').strip()
         # ISSUE-106: IP-tier rate limit
-        client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[
-            0
-        ].strip() or request.META.get('REMOTE_ADDR')
+        client_ip = get_client_ip(request)
         try:
             phone = send_otp(raw_phone, ip=client_ip)
         except PhoneValidationError as e:
@@ -150,18 +150,39 @@ class EmailLoginView(View):
 
         from apps.accounts.models import CustomUser
 
-        user = None
+        # Resolve the account first so the email and username of one user
+        # share a single backoff bucket; unknown logins get their own bucket
+        # (same response either way, so this does not reveal which exist).
+        lookup = (
+            CustomUser.objects.filter(email__iexact=login_val)
+            if '@' in login_val
+            else CustomUser.objects.filter(username__iexact=login_val)
+        )
+        target = lookup.only('pk', 'username').first() if login_val else None
+        throttle_key = login_throttle.account_key(
+            f'user:{target.pk}' if target else f'login:{login_val}'
+        )
         try:
-            if '@' in login_val:
-                u = CustomUser.objects.get(email__iexact=login_val)
-                user = authenticate(request, username=u.username, password=password)
-            else:
-                user = authenticate(request, username=login_val, password=password)
-        except CustomUser.DoesNotExist:
-            pass
+            login_throttle.check(throttle_key)
+        except login_throttle.LoginThrottled as e:
+            resp = HttpResponse(
+                "Juda ko'p noto'g'ri urinish. Iltimos, biroz kuting yoki SMS orqali kiring.",
+                status=429,
+            )
+            resp['Retry-After'] = str(e.retry_after)
+            return resp
+
+        user = None
+        if '@' not in login_val:
+            user = authenticate(request, username=login_val, password=password)
+        elif target is not None:
+            user = authenticate(request, username=target.username, password=password)
 
         if user is None:
+            login_throttle.register_failure(throttle_key)
             return HttpResponse("Email/foydalanuvchi nomi yoki parol noto'g'ri", status=400)
+
+        login_throttle.reset(throttle_key)
 
         if not user.is_active:
             return HttpResponse('Akkaunt bloklangan', status=403)
