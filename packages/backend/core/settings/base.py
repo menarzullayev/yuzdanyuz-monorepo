@@ -113,6 +113,14 @@ LOGIN_FAILURE_FREE_ATTEMPTS = int(os.getenv('LOGIN_FAILURE_FREE_ATTEMPTS', '5'))
 LOGIN_LOCK_LADDER_SECONDS = (60, 300, 900)
 LOGIN_FAILURE_WINDOW_SECONDS = int(os.getenv('LOGIN_FAILURE_WINDOW_SECONDS', '3600'))
 
+# ── Device sessions (apps/accounts/services/token_service.py) ──
+AUTH_MAX_DEVICES = int(os.getenv('AUTH_MAX_DEVICES', '3'))  # orgs with single_device_policy: 1
+AUTH_REMEMBER_DAYS = int(os.getenv('AUTH_REMEMBER_DAYS', '30'))  # "remember me" sliding session
+AUTH_SESSION_HOURS = int(os.getenv('AUTH_SESSION_HOURS', '24'))  # without "remember me"
+AUTH_REFRESH_COOKIE_PATH = os.getenv('AUTH_REFRESH_COOKIE_PATH', '/api/auth/')
+# Key for encrypting 2FA secrets at rest; falls back to SECRET_KEY when empty.
+TOTP_ENCRYPTION_KEY = os.getenv('TOTP_ENCRYPTION_KEY', '')
+
 # ── Celery ────────────────────────────────────────────────────
 # Worker: `celery -A core worker -l info`
 # Beat:   `celery -A core beat -l info -S django_celery_beat.schedulers:DatabaseScheduler`
