@@ -200,6 +200,19 @@ ingress:
           pathType: Prefix
           service: channels
 
+# ── Client IP: trusted reverse proxies (core/utils/client_ip.py) ──────────────
+# Rendered into TRUSTED_PROXY_CIDRS. Django only believes CF-Connecting-IP /
+# X-Forwarded-For when the connecting peer is in this list; empty = trust nothing,
+# so every request looks like it comes from the nginx pod and all clients share
+# one rate-limit / login-throttle bucket.
+trustedProxy:
+  # The cluster's pod CIDR (covers ingress-nginx and the release's nginx pods).
+  clusterCidrs: []
+  # Anything else in front, e.g. Cloudflare ranges.
+  extraCidrs: []
+  # true = refuse to render while clusterCidrs is empty (set in values-prod).
+  required: false
+
 # ── Common environment (ConfigMap) ───────────────────────────────────────────
 env:
   DJANGO_SETTINGS_MODULE: core.settings.prod

@@ -96,12 +96,13 @@ jobs:
     name: Helm lint
     runs-on: ubuntu-latest
     env:
-      # values-prod enables backups and leaves the destination to the operator, so the
-      # chart refuses to render without these; CI supplies placeholders.
-      BACKUP_SET: >-
+      # values-prod leaves the backup destination and the cluster pod CIDR to the
+      # operator, so the chart refuses to render without them; CI supplies placeholders.
+      PROD_REQUIRED_SET: >-
         --set backup.destination=dest:ci-placeholder/postgres
         --set backup.rcloneSecret=yuzdanyuz-backup-rclone
         --set backup.gpgPublicKey=ci-placeholder
+        --set trustedProxy.clusterCidrs={10.42.0.0/16}
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
@@ -111,12 +112,12 @@ jobs:
         run: |
           helm lint charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $BACKUP_SET
+            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET
       - name: Render template (smoke test)
         run: |
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $BACKUP_SET > /tmp/rendered.yaml
+            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET > /tmp/rendered.yaml
           wc -l /tmp/rendered.yaml
           # Sanity — at least 200 lines means the chart actually rendered something
           test "$(wc -l < /tmp/rendered.yaml)" -gt 200
@@ -128,7 +129,7 @@ jobs:
           pip install pyyaml==6.0.3
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $BACKUP_SET \
+            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET \
             --set keda.enabled=true > /tmp/rendered-keda.yaml
           python scripts/check-celery-queues.py --manifests /tmp/rendered.yaml /tmp/rendered-keda.yaml
       - name: Every pod can pull the private GHCR images
@@ -136,7 +137,7 @@ jobs:
           # values-prod sets global.imagePullSecrets; turn on every optional pod too.
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $BACKUP_SET \
+            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET \
             --set backup.enabled=true --set keda.enabled=true > /tmp/rendered-all.yaml
           bash scripts/test-check-helm-pull-secrets.sh
           python scripts/check-helm-pull-secrets.py /tmp/rendered.yaml /tmp/rendered-all.yaml
@@ -162,6 +163,11 @@ jobs:
           }
           expect_fail "web.command is set" --set 'web.command={web}'
           expect_fail "celeryWorker.command is set" --set 'celeryWorker.command={worker}'
-          expect_fail "backup.destination is empty" --values charts/yuzdanyuz/values-prod.yaml
+          expect_fail "backup.destination is empty" --values charts/yuzdanyuz/values-prod.yaml \
+            --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
           expect_fail "backup.gpgPublicKey is empty" --values charts/yuzdanyuz/values-prod.yaml \
-            --set backup.destination=dest:x --set backup.rcloneSecret=s
+            --set backup.destination=dest:x --set backup.rcloneSecret=s --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
+          expect_fail "trustedProxy.clusterCidrs is empty" --values charts/yuzdanyuz/values-prod.yaml \
+            --set backup.destination=dest:x --set backup.rcloneSecret=s --set backup.gpgPublicKey=k
+          # the rendered prod ConfigMap carries the pod CIDR and the Cloudflare ranges
+          grep -q 'TRUSTED_PROXY_CIDRS: "10.42.0.0/16,173.245.48.0/20,' /tmp/rendered.yaml

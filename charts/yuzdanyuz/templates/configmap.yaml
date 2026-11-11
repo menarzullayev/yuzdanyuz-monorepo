@@ -8,6 +8,13 @@ data:
   {{ $key }}: {{ $value | quote }}
 {{- end }}
   ALLOWED_HOSTS: {{ include "yuzdanyuz.allowedHosts" . | quote }}
+  {{- $proxies := concat .Values.trustedProxy.clusterCidrs .Values.trustedProxy.extraCidrs }}
+  {{- if and .Values.trustedProxy.required (not .Values.trustedProxy.clusterCidrs) }}
+  {{- fail "trustedProxy.required=true but trustedProxy.clusterCidrs is empty: set the cluster pod CIDR (see values-prod.yaml), otherwise every client shares the nginx pod's IP for rate limiting." }}
+  {{- end }}
+  {{- if $proxies }}
+  TRUSTED_PROXY_CIDRS: {{ $proxies | join "," | quote }}
+  {{- end }}
   DB_HOST: {{ .Values.externalServices.postgres.host | quote }}
   DB_PORT: {{ .Values.externalServices.postgres.port | quote }}
   DB_NAME: {{ .Values.externalServices.postgres.name | quote }}
