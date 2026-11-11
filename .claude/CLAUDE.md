@@ -125,8 +125,8 @@ apps/
 
 ### Before Adding Dependency
 1. ✅ Check Django/Python version compatibility (e.g., `django-celery-beat` < 2.8 doesn't support Django 5.2)
-2. ✅ Add to correct file: `base.txt` (always), `dev.txt` (testing), `prod.txt` (deployment-only)
-3. ✅ If imported in `conftest.py` — must be in `dev.txt` (CI fails otherwise)
+2. ✅ Add to correct file: `common.txt` (always), `development.txt` (testing), `production.txt` (deployment-only)
+3. ✅ If imported in `conftest.py` — must be in `development.txt` (CI fails otherwise)
 
 ### Before Pushing
 1. ✅ Pre-push hook runs automatically: lint + Django check + pytest unit/integration/security

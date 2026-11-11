@@ -2,10 +2,11 @@
 #
 # The Dependabot graph job for this folder keeps a .txt only when its name looks
 # like a manifest (requirements.txt, *-requirements.txt, ...) or when a kept file
-# pulls it in with -r. base.txt, dev.txt and prod.txt match neither, so without
-# this file the job submitted no dependencies and Python alerts never closed.
-# scripts/check-dependabot-pip.py guards this.
+# pulls it in with -r. common.txt, development.txt and production.txt match
+# neither on purpose: they reach the graph through this file only, so each
+# package is reported once, not once per file. scripts/check-dependabot-pip.py
+# guards this.
 #
 # Keep the -r lines bare: Dependabot reads the path up to the last ".txt".
--r prod.txt
--r dev.txt
+-r production.txt
+-r development.txt

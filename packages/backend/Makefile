@@ -80,7 +80,7 @@ collectstatic:
 	$(MANAGE) collectstatic --no-input
 
 install:
-	$(VENV)/pip install -r requirements/base.txt
+	$(VENV)/pip install -r requirements/common.txt
 
 install-dev:
-	$(VENV)/pip install -r requirements/dev.txt
+	$(VENV)/pip install -r requirements/development.txt
