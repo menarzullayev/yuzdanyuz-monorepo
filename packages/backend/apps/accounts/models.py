@@ -1,6 +1,7 @@
 import datetime
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
@@ -292,3 +293,58 @@ class OTPCode(models.Model):
             code=code,
             expires_at=timezone.now() + datetime.timedelta(seconds=OTP_TTL_SECONDS),
         )
+
+
+# ─── Device sessions ──────────────────────────────────────────────────────────
+
+
+class DeviceSession(models.Model):
+    """One signed-in browser/app of a user (the unit behind a refresh token).
+
+    A device is identified by a random id kept in an HttpOnly cookie, never by
+    IP or User-Agent. The refresh token is ``<session id>.<secret>``; only the
+    secret's SHA-256 is stored, and the previous hash is kept for a short
+    grace window so two tabs refreshing at once do not log each other out.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='device_sessions'
+    )
+    device_id = models.CharField(max_length=64)
+    refresh_hash = models.CharField(max_length=64)
+    prev_refresh_hash = models.CharField(max_length=64, blank=True)
+    rotated_at = models.DateTimeField(null=True, blank=True)
+    remember = models.BooleanField(default=False)
+
+    user_agent = models.CharField(max_length=300, blank=True)
+    device_label = models.CharField(max_length=120, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    country = models.CharField(max_length=2, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now)
+    last_used_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=20, blank=True)
+
+    class Meta:
+        verbose_name = 'Qurilma sessiyasi'
+        verbose_name_plural = 'Qurilma sessiyalari'
+        ordering = ['-last_used_at']
+        indexes = [models.Index(fields=['user', 'revoked_at'], name='accounts_ds_user_rev_idx')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'device_id'],
+                condition=models.Q(revoked_at__isnull=True),
+                name='uniq_active_session_per_device',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} / {self.device_label or self.device_id[:8]}'
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > timezone.now()

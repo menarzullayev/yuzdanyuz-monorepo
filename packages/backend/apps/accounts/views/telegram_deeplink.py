@@ -25,17 +25,9 @@ from apps.accounts.services.bot_sender import (
     send_message,
     send_success_message,
 )
-from apps.accounts.services.token_service import (
-    create_token_pair,
-    make_fingerprint,
-    set_auth_cookies,
-)
+from apps.accounts.services.token_service import attach_session, issue_login
 
 log = logging.getLogger(__name__)
-
-
-def _is_secure(request) -> bool:
-    return request.is_secure() or not settings.DEBUG
 
 
 # ── 1. Sessiya yaratish ───────────────────────────────────────
@@ -106,8 +98,7 @@ class TGDeeplinkCompleteView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        fingerprint = make_fingerprint(request)
-        access, refresh = create_token_pair(user, fingerprint)
+        issued = issue_login(request, user, remember=True)
 
         response = JsonResponse(
             {
@@ -119,7 +110,7 @@ class TGDeeplinkCompleteView(View):
                 }
             }
         )
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         dl.expire_session(token)
         return response
 

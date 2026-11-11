@@ -7,7 +7,6 @@ POST /api/auth/otp/verify/  — kodni tekshiradi, JWT cookie qaytaradi
 
 import json
 
-from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -20,16 +19,8 @@ from apps.accounts.services.otp_service import (
     verify_otp,
 )
 from apps.accounts.services.phone_utils import PhoneValidationError
-from apps.accounts.services.token_service import (
-    create_token_pair,
-    make_fingerprint,
-    set_auth_cookies,
-)
+from apps.accounts.services.token_service import attach_session, issue_login
 from core.utils.client_ip import get_client_ip
-
-
-def _is_secure(request) -> bool:
-    return request.is_secure() or not settings.DEBUG
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -99,8 +90,7 @@ class OTPVerifyView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        fingerprint = make_fingerprint(request)
-        access, refresh = create_token_pair(user, fingerprint)
+        issued = issue_login(request, user, remember=True)
 
         response = JsonResponse(
             {
@@ -113,5 +103,5 @@ class OTPVerifyView(View):
                 }
             }
         )
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response

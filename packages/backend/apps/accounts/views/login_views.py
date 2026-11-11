@@ -10,17 +10,9 @@ from django.views import View
 
 from apps.accounts.services.otp_service import OTPError, OTPRateLimitError, send_otp, verify_otp
 from apps.accounts.services.phone_utils import PhoneValidationError
-from apps.accounts.services.token_service import (
-    create_token_pair,
-    make_fingerprint,
-    set_auth_cookies,
-)
+from apps.accounts.services.token_service import attach_session, issue_login
 from core.utils import login_throttle
 from core.utils.client_ip import get_client_ip
-
-
-def _is_secure(request):
-    return request.is_secure() or not settings.DEBUG
 
 
 class LoginView(View):
@@ -84,14 +76,12 @@ class OTPVerifyHTMXView(View):
                 },
             )
 
-        fingerprint = make_fingerprint(request)
-        org = user.primary_organization
-        access, refresh = create_token_pair(user, fingerprint, org=org)
+        issued = issue_login(request, user, remember=True)
 
         # HTMX redirect
         response = HttpResponse(status=204)
         response['HX-Redirect'] = '/'
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response
 
 
@@ -196,13 +186,11 @@ class EmailLoginView(View):
                     'Email tasdiqlanmagan. Tekshirish havolasini emailda tekshiring.', status=403
                 )
 
-        fingerprint = make_fingerprint(request)
-        org = user.primary_organization
-        access, refresh = create_token_pair(user, fingerprint, org=org)
+        issued = issue_login(request, user, remember=True)
 
         response = HttpResponse(status=204)
         response['HX-Redirect'] = '/'
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response
 
 
@@ -278,13 +266,11 @@ class RegisterView(View):
                 user.save()
 
             # Token yaratish
-            fingerprint = make_fingerprint(request)
-            org = user.primary_organization
-            access, refresh = create_token_pair(user, fingerprint, org=org)
+            issued = issue_login(request, user, remember=True)
 
             response = HttpResponse(status=204)
             response['HX-Redirect'] = '/'
-            set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+            attach_session(response, issued, request)
             return response
 
         except Exception as e:

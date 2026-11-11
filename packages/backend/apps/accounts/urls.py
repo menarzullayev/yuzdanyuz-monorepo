@@ -21,6 +21,11 @@ from apps.accounts.views.login_views import (
     RegisterView,
 )
 from apps.accounts.views.otp import OTPSendView, OTPVerifyView
+from apps.accounts.views.sessions import (
+    SessionDetailView,
+    SessionListView,
+    SessionRevokeOthersView,
+)
 from apps.accounts.views.telegram_deeplink import (
     BotWebhookView,
     TGDeeplinkCompleteView,
@@ -58,6 +63,16 @@ urlpatterns = [
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
     # Current user — frontend bootstrap on app load / post-login
     path('api/auth/me/', MeView.as_view(), name='me'),
+    # Active devices
+    path('api/auth/sessions/', SessionListView.as_view(), name='sessions'),
+    path(
+        'api/auth/sessions/revoke-others/',
+        SessionRevokeOthersView.as_view(),
+        name='sessions_revoke_others',
+    ),
+    path(
+        'api/auth/sessions/<uuid:session_id>/', SessionDetailView.as_view(), name='session_detail'
+    ),
     # ISSUE-103: GDPR Article 17 erasure
     path('api/auth/gdpr/erasure/', GDPRErasureView.as_view(), name='gdpr_erasure'),
     # Telegram Bot webhook

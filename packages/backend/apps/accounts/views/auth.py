@@ -15,9 +15,7 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.accounts.services.telegram_auth import (
     TelegramAuthError,
@@ -25,17 +23,14 @@ from apps.accounts.services.telegram_auth import (
     verify_init_data,
 )
 from apps.accounts.services.token_service import (
+    attach_session,
     clear_auth_cookies,
-    create_token_pair,
-    make_fingerprint,
-    revoke_token,
+    issue_login,
+    revoke_session,
     rotate_refresh_token,
-    set_auth_cookies,
+    session_from_refresh,
 )
-
-
-def _is_secure(request) -> bool:
-    return request.is_secure() or not settings.DEBUG
+from apps.accounts.views.base import AuthAPIView
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -67,9 +62,7 @@ class TelegramAuthView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Account blocked'}, status=403)
 
-        fingerprint = make_fingerprint(request)
-        org = user.primary_organization
-        access, refresh = create_token_pair(user, fingerprint, org=org)
+        issued = issue_login(request, user, remember=True)
 
         response = JsonResponse(
             {
@@ -81,7 +74,7 @@ class TelegramAuthView(View):
                 }
             }
         )
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response
 
 
@@ -99,37 +92,18 @@ class TokenRefreshView(View):
         if not old_refresh:
             return JsonResponse({'error': "refresh_token cookie yo'q"}, status=401)
 
-        access_token = request.COOKIES.get('access_token')
-        fingerprint = make_fingerprint(request)
-
-        # user_id ni eskirgan access token dan olish (imzo tekshirilmaydi, faqat payload)
-        import jwt as pyjwt
-
-        user_id = None
-        if access_token:
-            try:
-                payload = pyjwt.decode(
-                    access_token,
-                    settings.SECRET_KEY,
-                    algorithms=['HS256'],
-                    options={'verify_exp': False},
-                )
-                user_id = payload.get('sub', '')
-            except pyjwt.PyJWTError:
-                pass
-
-        if not user_id:
-            return JsonResponse({'error': "Token o'qib bo'lmadi"}, status=401)
-
-        result = rotate_refresh_token(old_refresh, user_id, fingerprint)
-        if result is None:
-            return JsonResponse(
+        # The refresh token alone identifies the session; the access cookie is
+        # normally already gone by the time we get here.
+        issued = rotate_refresh_token(old_refresh, request)
+        if issued is None:
+            response = JsonResponse(
                 {'error': "Refresh token noto'g'ri yoki muddati o'tgan"}, status=401
             )
+            clear_auth_cookies(response)
+            return response
 
-        new_access, new_refresh = result
         response = JsonResponse({'ok': True})
-        set_auth_cookies(response, new_access, new_refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response
 
 
@@ -141,31 +115,41 @@ class LogoutView(View):
     """
 
     def post(self, request):
-        access_token = request.COOKIES.get('access_token')
-        fingerprint = make_fingerprint(request)
+        session = None
+        refresh = request.COOKIES.get('refresh_token')
+        if refresh:
+            session = session_from_refresh(refresh)
+        if session is None:
+            # Fall back to the session id inside a (possibly expired) access token.
+            token = request.COOKIES.get('access_token')
+            if token:
+                import jwt as pyjwt
 
-        if access_token:
-            import jwt as pyjwt
+                try:
+                    payload = pyjwt.decode(
+                        token,
+                        settings.SECRET_KEY,
+                        algorithms=['HS256'],
+                        options={'verify_exp': False},
+                    )
+                except pyjwt.PyJWTError:
+                    payload = {}
+                sid = payload.get('sid')
+                if sid:
+                    from apps.accounts.models import DeviceSession
 
-            try:
-                payload = pyjwt.decode(
-                    access_token,
-                    settings.SECRET_KEY,
-                    algorithms=['HS256'],
-                    options={'verify_exp': False},
-                )
-                user_id = payload.get('sub', '')
-                if user_id:
-                    revoke_token(user_id, fingerprint)
-            except pyjwt.PyJWTError:
-                pass
+                    session = DeviceSession.objects.filter(
+                        pk=sid, user_id=payload.get('sub'), revoked_at__isnull=True
+                    ).first()
+        if session is not None:
+            revoke_session(session, 'logout')
 
         response = JsonResponse({'ok': True})
         clear_auth_cookies(response)
         return response
 
 
-class MeView(APIView):
+class MeView(AuthAPIView):
     """
     GET /api/auth/me/
 
@@ -177,8 +161,6 @@ class MeView(APIView):
     and populates request.user. SessionAuthentication (DRF default) then passes
     through. 401 when anonymous, 200 with payload when authenticated.
     """
-
-    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user

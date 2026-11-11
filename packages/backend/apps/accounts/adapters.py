@@ -16,10 +16,7 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
 from django.http import HttpRequest
 
-from apps.accounts.services.token_service import (
-    create_token_pair,
-    make_fingerprint,
-)
+from apps.accounts.services.token_service import issue_login
 from core.utils.client_ip import get_client_ip
 
 
@@ -35,12 +32,14 @@ class AccountAdapter(DefaultAccountAdapter):
 
     def login(self, request: HttpRequest, user) -> None:
         super().login(request, user)
-        fingerprint = make_fingerprint(request)
-        access, refresh = create_token_pair(user, fingerprint)
-        # request.jwt_tokens — response'ga cookie yozish uchun signal
-        # (response bu yerda mavjud emas; signal orqali uzatiladi)
-        request._jwt_access = access
-        request._jwt_refresh = refresh
+        issued = issue_login(request, user, remember=True)
+        # The response does not exist yet; JWTCookieWriterMiddleware copies
+        # these onto it (and DeviceLogoutMiddleware sets the device cookie).
+        request._jwt_access = issued.access
+        request._jwt_refresh = issued.refresh
+        # The OAuth callback must not leave a Django-session login behind: that
+        # would keep working after the device session is revoked.
+        request.session.flush()
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
