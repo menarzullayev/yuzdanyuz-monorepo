@@ -10,8 +10,10 @@ import json
 import os
 import subprocess
 import tempfile
+from datetime import UTC, datetime
 
 import pytest
+from prometheus_client import REGISTRY
 
 from core import claude_cli
 
@@ -161,6 +163,65 @@ class TestClaudeCLIRun:
         with pytest.raises(claude_cli.ClaudeCLIError, match='timeout'):
             claude_cli.run('salom', system='SYS', model='m', timeout=5)
         assert created and not os.path.exists(created[0])
+
+    @pytest.mark.parametrize(
+        ('reply', 'error'),
+        [
+            ('Claude AI usage limit reached|1794500000', claude_cli.ClaudeRateLimitError),
+            ("You've hit your limit · resets 5pm", claude_cli.ClaudeRateLimitError),
+            ('API Error: 529 Overloaded', claude_cli.ClaudeRateLimitError),
+            ('Not logged in · Please run /login', claude_cli.ClaudeAuthError),
+            ('OAuth token has expired', claude_cli.ClaudeAuthError),
+            ('Prompt is too long', claude_cli.ClaudeCLIError),
+        ],
+    )
+    def test_error_results_are_classified(self, fake_cli, reply, error):
+        fake_cli['stdout'] = _result_line(is_error=True, result=reply) + '\n'
+
+        with pytest.raises(claude_cli.ClaudeCLIError) as caught:
+            claude_cli.run('salom', system='', model='m')
+
+        assert type(caught.value) is error
+        assert reply[:20] in str(caught.value)
+
+    def test_usage_limit_reset_time_is_parsed(self, fake_cli):
+        fake_cli['stdout'] = (
+            _result_line(is_error=True, result='Claude AI usage limit reached|1794500000') + '\n'
+        )
+
+        with pytest.raises(claude_cli.ClaudeRateLimitError) as caught:
+            claude_cli.run('salom', system='', model='m')
+
+        assert caught.value.resets_at == datetime.fromtimestamp(1794500000, tz=UTC)
+
+    def test_stderr_without_result_is_classified_too(self, fake_cli):
+        fake_cli['stdout'] = 'not json\n'
+        fake_cli['stderr'] = '429 Too Many Requests'
+
+        with pytest.raises(claude_cli.ClaudeRateLimitError):
+            claude_cli.run('salom', system='', model='m')
+
+    def test_timeout_is_its_own_kind(self, fake_cli):
+        fake_cli['raise'] = subprocess.TimeoutExpired('claude', 5)
+
+        with pytest.raises(claude_cli.ClaudeTimeoutError):
+            claude_cli.run('salom', system='', model='m', timeout=5)
+
+    def test_every_call_is_counted_by_outcome(self, fake_cli):
+        def count(outcome):
+            return REGISTRY.get_sample_value('yz_ai_cli_calls_total', {'outcome': outcome}) or 0.0
+
+        ok_before, auth_before = count('ok'), count('auth')
+        duration_before = REGISTRY.get_sample_value('yz_ai_cli_seconds_count') or 0.0
+
+        claude_cli.run('salom', system='', model='m')
+        fake_cli['stdout'] = _result_line(is_error=True, result='Not logged in') + '\n'
+        with pytest.raises(claude_cli.ClaudeAuthError):
+            claude_cli.run('salom', system='', model='m')
+
+        assert count('ok') == ok_before + 1
+        assert count('auth') == auth_before + 1
+        assert REGISTRY.get_sample_value('yz_ai_cli_seconds_count') == duration_before + 2
 
     def test_missing_executable_raises(self, settings, monkeypatch):
         settings.CLAUDE_CLI_PATH = ''

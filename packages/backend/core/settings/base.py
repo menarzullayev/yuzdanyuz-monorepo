@@ -400,3 +400,6 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
 CLAUDE_CLI_PATH = os.getenv('CLAUDE_CLI_PATH', '')  # empty -> `claude` on PATH
 CLAUDE_CLI_TIMEOUT = int(os.getenv('CLAUDE_CLI_TIMEOUT', '300'))
+# YYYY-MM-DD: `claude setup-token` date + 1 year. Not secret. Drives the system check
+# (apps/intelligence/checks.py) and the daily intelligence.check_ai_token_expiry task.
+CLAUDE_CODE_OAUTH_TOKEN_EXPIRES = os.getenv('CLAUDE_CODE_OAUTH_TOKEN_EXPIRES', '')

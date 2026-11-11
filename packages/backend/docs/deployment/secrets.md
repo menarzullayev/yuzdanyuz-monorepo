@@ -34,6 +34,13 @@ kubectl -n yuzdanyuz-prod create secret generic yuzdanyuz-secrets \
   --from-literal=CLAUDE_CODE_OAUTH_TOKEN='<token from: claude setup-token>'
 ```
 
+`CLAUDE_CODE_OAUTH_TOKEN` is valid for one year. Its expiry date is not secret:
+set `env.CLAUDE_CODE_OAUTH_TOKEN_EXPIRES` (YYYY-MM-DD) in the Helm values. The
+system check (`intelligence.W001`–`W004`) and the daily
+`intelligence.check_ai_token_expiry` task warn 30 days ahead; from 14 days the task
+logs ERROR, which reaches Sentry. Renew: run `claude setup-token`, replace the secret
+key and the date, then restart the workers.
+
 Yoki `.env` faylidan to'g'ridan-to'g'ri (qulay, lekin file diskka tushadi):
 
 ```bash
