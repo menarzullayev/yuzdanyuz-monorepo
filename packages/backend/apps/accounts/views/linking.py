@@ -13,43 +13,43 @@ User = get_user_model()
 
 @method_decorator(login_required, name='dispatch')
 class LinkPhoneView(View):
-    """Phone raqamni akkauntga bog'lash"""
+    """Phone raqamni akkauntga bog'lash.
+
+    Disabled: there is no phone verification step (no SMS OTP by design), so a
+    client-supplied number cannot be trusted. A phone is attached only through
+    the Telegram deep-link flow, where Telegram attests the number.
+    """
 
     def post(self, request):
-        phone = request.POST.get('phone', '').strip()
-        if not phone:
-            return JsonResponse({'error': 'Phone majburiy'}, status=400)
-
-        from apps.accounts.services.phone_utils import PhoneValidationError, normalize_phone
-
-        try:
-            normalized = normalize_phone(phone)
-        except PhoneValidationError as e:
-            return JsonResponse({'error': str(e)}, status=400)
-
-        # Boshqa foydalanuvchi allaqachon bu raqamdan foydalanayotganmi?
-        if User.objects.filter(phone_number=normalized).exclude(pk=request.user.pk).exists():
-            return JsonResponse({'error': "Bu raqam boshqa akkauntga bog'langan"}, status=400)
-
-        request.user.phone_number = normalized
-        request.user.save(update_fields=['phone_number'])
-
-        return JsonResponse({'success': True, 'phone': normalized})
+        return JsonResponse(
+            {
+                'error': "Telefon raqam faqat Telegram orqali tasdiqlanib bog'lanadi",
+                'code': 'phone_link_requires_telegram',
+            },
+            status=410,
+        )
 
 
 @method_decorator(login_required, name='dispatch')
 class LinkTelegramView(View):
-    """Telegram ID ni akkauntga bog'lash"""
+    """Telegram ID ni akkauntga bog'lash.
+
+    The Telegram id is taken only from Mini App ``init_data`` signed with the
+    bot token; a bare ``telegram_id`` from the client proves nothing.
+    """
 
     def post(self, request):
-        telegram_id = request.POST.get('telegram_id', '').strip()
-        if not telegram_id:
-            return JsonResponse({'error': 'Telegram ID majburiy'}, status=400)
+        init_data = request.POST.get('init_data', '').strip()
+        if not init_data:
+            return JsonResponse({'error': 'init_data majburiy'}, status=400)
+
+        from apps.accounts.services.telegram_auth import TelegramAuthError, verify_init_data
 
         try:
-            telegram_id = int(telegram_id)
-        except ValueError:
-            return JsonResponse({'error': "Telegram ID raqam bo'lishi kerak"}, status=400)
+            tg_user = verify_init_data(init_data)
+            telegram_id = int(tg_user['id'])
+        except (TelegramAuthError, KeyError, TypeError, ValueError):
+            return JsonResponse({'error': "Telegram ma'lumotlari tasdiqlanmadi"}, status=400)
 
         # Boshqa foydalanuvchi allaqachon bu Telegram ID dan foydalanayotganmi?
         if User.objects.filter(telegram_id=telegram_id).exclude(pk=request.user.pk).exists():
