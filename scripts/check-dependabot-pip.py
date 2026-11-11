@@ -30,7 +30,10 @@ MANIFEST_TXT = [
     re.compile(r'(?:[-._]|^|/)depend(?:s)?(?:[-_/][^\s.]*)?\.txt$', re.IGNORECASE),
 ]
 # A line that pins or names a package, or includes another requirements file.
-REQUIREMENT_LINE = re.compile(r'^(-r|-c|--requirement|--constraint)\s|^[A-Za-z0-9][A-Za-z0-9._\-\[\],]*\s*(==|>=|<=|~=|!=|<|>|$)')
+REQUIREMENT_LINE = re.compile(
+    r'^(-r|-c|--requirement|--constraint)\s'
+    r'|^[A-Za-z0-9][A-Za-z0-9._\-\[\],]*\s*(==|>=|<=|~=|!=|<|>|$)'
+)
 
 
 def looks_like_manifest(name: str) -> bool:
