@@ -49,6 +49,27 @@ repos:
       - id: ruff-format
         files: ^packages/backend/.*\.py$
 
+  # ── Dependabot: the pip graph job must keep the requirements files ──
+  # Otherwise it submits empty snapshots and Python alerts never close.
+  - repo: local
+    hooks:
+      - id: dependabot-pip-manifests
+        name: Dependabot pip graph sees the requirements files
+        entry: python scripts/check-dependabot-pip.py
+        language: python
+        language_version: python3
+        additional_dependencies: [pyyaml==6.0.3]
+        pass_filenames: false
+        files: ^(\.github/dependabot\.yml|packages/backend/requirements/.*\.txt|scripts/check-dependabot-pip\.py)$
+      - id: dependabot-pip-manifests-test
+        name: Dependabot pip check catches a dropped requirements file
+        entry: bash scripts/test-check-dependabot-pip.sh
+        language: python
+        language_version: python3
+        additional_dependencies: [pyyaml==6.0.3]
+        pass_filenames: false
+        files: ^(\.github/dependabot\.yml|scripts/(test-)?check-dependabot-pip\.(py|sh))$
+
   # ──────────────────────────────────────────────────────────────────────
   # pre-push stage — push'dan oldin (chuqur tekshiruv)
   # ──────────────────────────────────────────────────────────────────────
