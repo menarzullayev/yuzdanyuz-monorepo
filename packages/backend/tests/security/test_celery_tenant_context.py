@@ -62,6 +62,8 @@ EXPECTED_TASKS = {
     'check_ai_token_expiry': 'stateless',  # reads a setting only, no DB
     # apps/analytics/tasks.py
     'generate_export': 'tenant',  # report.organization
+    # org list read unscoped, then each org computed inside its own tenant_context
+    'refresh_question_quality': 'unscoped',
 }
 
 

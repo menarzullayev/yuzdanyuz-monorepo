@@ -109,3 +109,43 @@ def generate_export(self, report_id: str) -> dict:
         report.completed_at = timezone.now()
         report.save(update_fields=['status', 'error', 'completed_at'])
         return {'status': 'failed', 'error': str(e)[:200]}
+
+
+@shared_task(name='analytics.refresh_question_quality')
+def refresh_question_quality(org_id: str | None = None) -> dict:
+    """
+    Recompute QuestionQualityStat per organization (daily beat on the `batch` queue).
+
+    Cross-tenant scan: the org list is read unscoped, every org is then computed inside its
+    own tenant_context (+ RLS session variable) so no query ever mixes tenants.
+    Idempotent: re-running upserts the same rows.
+    """
+    from django.db import connection
+
+    from apps.organizations.models import Organization
+    from core.tenant import tenant_context, unscoped_context
+
+    from .question_quality import refresh_for_org
+
+    with unscoped_context():
+        orgs = list(Organization.objects.all())
+    if org_id:
+        orgs = [o for o in orgs if str(o.id) == str(org_id)]
+
+    results = []
+    for org in orgs:
+        with tenant_context(org):
+            with connection.cursor() as cur:
+                cur.execute("SELECT set_config('app.current_org_id', %s, false)", [str(org.id)])
+            try:
+                results.append(refresh_for_org(org))
+            except Exception:
+                logger.exception('refresh_question_quality failed for org %s', org.id)
+            finally:
+                with connection.cursor() as cur:
+                    cur.execute('RESET app.current_org_id')
+    return {
+        'orgs': len(results),
+        'versions': sum(r['versions'] for r in results),
+        'flagged': sum(r['flagged'] for r in results),
+    }
