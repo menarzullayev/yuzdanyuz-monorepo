@@ -116,6 +116,60 @@ class ReportExport(TenantTimestampMixin):
         return f'{self.user} {self.report_type} ({self.status})'
 
 
+class QuestionQualityStat(TenantTimestampMixin):
+    """
+    Savol sifati statistikasi — bitta QuestionVersion uchun bitta tashkilot doirasida.
+
+    Celery task (`analytics.refresh_question_quality`) kuniga bir marta qayta hisoblaydi;
+    hisoblash logikasi `apps.analytics.question_quality` modulida (skip ta'rifi shu yerda
+    hujjatlangan). Jadval kesh vazifasini bajaradi — API shu jadvaldan o'qiydi.
+    """
+
+    class Flag(models.TextChoices):
+        ALL_WRONG = 'ALL_WRONG', _('Hamma xato — javob kalitini tekshiring')
+        ALL_RIGHT = 'ALL_RIGHT', _("Hamma to'g'ri — juda oson")
+        OFTEN_SKIPPED = (
+            'OFTEN_SKIPPED',
+            _("Ko'p o'tkazib yuboriladi — matn tushunarsiz bo'lishi mumkin"),
+        )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    question_version = models.ForeignKey(
+        'catalog.QuestionVersion',
+        on_delete=models.CASCADE,
+        related_name='quality_stats',
+    )
+
+    attempts = models.PositiveIntegerField(default=0)
+    correct_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    # Fractions in [0, 1] for sorting/filtering; flags themselves use integer math.
+    correct_rate = models.FloatField(default=0.0)
+    skip_rate = models.FloatField(default=0.0)
+
+    # List of Flag values; empty list = nothing detected (or too few attempts).
+    flags = models.JSONField(default=list, blank=True)
+    is_preliminary = models.BooleanField(default=True, db_index=True)
+    computed_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = _('Question Quality Stat')
+        verbose_name_plural = _('Question Quality Stats')
+        ordering = ['-attempts']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organization', 'question_version'],
+                name='uniq_qquality_org_version',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['organization', 'is_preliminary']),
+        ]
+
+    def __str__(self):
+        return f'{self.question_version_id} {self.attempts} attempts {self.flags}'
+
+
 # ISSUE-308: Dead-letter queue model — import via dlq module so that
 # Celery task_failure signal handler is registered when apps load.
 from apps.analytics.dlq import FailedTask  # noqa: E402, F401

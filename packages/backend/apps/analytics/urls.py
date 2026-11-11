@@ -12,6 +12,7 @@ urlpatterns = [
     path('weekly/', views.WeeklyGrowthView.as_view(), name='weekly'),
     path('distribution/', views.ScoreDistributionView.as_view(), name='distribution'),
     path('weak-students/', views.WeakStudentsView.as_view(), name='weak-students'),
+    path('question-quality/', views.QuestionQualityView.as_view(), name='question-quality'),
     path('export/', views.ReportExportCreateView.as_view(), name='export-create'),
     path('export/<uuid:report_id>/', views.ReportExportDetailView.as_view(), name='export-detail'),
 ]
