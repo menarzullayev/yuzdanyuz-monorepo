@@ -100,6 +100,21 @@ SITE_ID = 1
 
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 
+# ── Client IP / brute-force protection ────────────────────────
+# Comma-separated CIDRs of our own reverse proxies (ingress/nginx, and
+# Cloudflare ranges if they can reach the origin). CF-Connecting-IP and
+# X-Forwarded-For are only believed when REMOTE_ADDR is in this list; empty
+# means trust nothing and use REMOTE_ADDR. See core/utils/client_ip.py.
+TRUSTED_PROXY_CIDRS = [
+    c.strip() for c in os.getenv('TRUSTED_PROXY_CIDRS', '').split(',') if c.strip()
+]
+
+# Per-account password-login backoff (core/utils/login_throttle.py).
+LOGIN_FAILURE_FREE_ATTEMPTS = int(os.getenv('LOGIN_FAILURE_FREE_ATTEMPTS', '5'))
+LOGIN_BACKOFF_BASE_SECONDS = int(os.getenv('LOGIN_BACKOFF_BASE_SECONDS', '30'))
+LOGIN_BACKOFF_MAX_SECONDS = int(os.getenv('LOGIN_BACKOFF_MAX_SECONDS', '900'))
+LOGIN_FAILURE_WINDOW_SECONDS = int(os.getenv('LOGIN_FAILURE_WINDOW_SECONDS', '3600'))
+
 # ── Celery ────────────────────────────────────────────────────
 # Worker: `celery -A core worker -l info`
 # Beat:   `celery -A core beat -l info -S django_celery_beat.schedulers:DatabaseScheduler`
