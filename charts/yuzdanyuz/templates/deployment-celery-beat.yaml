@@ -30,7 +30,7 @@ spec:
         - name: beat
           image: {{ include "yuzdanyuz.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: {{ .Values.celeryBeat.command }}
+          args: {{- toYaml .Values.celeryBeat.args | nindent 12 }}
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
           resources: {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}

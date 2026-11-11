@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1.7
+# Logical PostgreSQL backup for the Helm CronJob (charts/yuzdanyuz/templates/cronjob-backup.yaml):
+# pg_dump -> integrity check -> GPG encrypt to a public key -> rclone upload.
+# The cluster only ever holds the public key; restoring needs the offline private key
+# (docs/operations/backup-restore.md).
+# pg_dump must be >= the server major version: production runs PostgreSQL 16.
+FROM postgres:16-alpine
+
+RUN apk add --no-cache gnupg rclone
+
+COPY --chmod=0755 docker/backup/backup.sh /usr/local/bin/yuzdanyuz-backup
+
+# Same non-root uid as the rest of the chart (securityContext.runAsUser).
+RUN adduser -D -u 1000 backup
+USER 1000
+WORKDIR /work
+
+ENTRYPOINT ["/usr/local/bin/yuzdanyuz-backup"]

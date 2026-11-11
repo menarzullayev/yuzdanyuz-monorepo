@@ -81,7 +81,8 @@ def manifest_workers(path: Path, default_queues: list[str]) -> list[dict]:
         if d.get('kind') != 'Deployment':
             continue
         for c in d['spec']['template']['spec']['containers']:
-            if c.get('command') != ['worker']:
+            # k8s `args` is the entrypoint mode (a `command` would replace the ENTRYPOINT)
+            if c.get('args') != ['worker']:
                 continue
             env = {e['name']: e.get('value') for e in c.get('env') or []}
             name = d['metadata']['name']

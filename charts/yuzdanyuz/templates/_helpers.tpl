@@ -69,3 +69,59 @@ Render env vars from .Values.env (ConfigMap-style) + secret refs.
 - secretRef:
     name: {{ .Values.secretRef.name }}
 {{- end -}}
+
+{{/*
+Fail rendering when a backend workload sets `command` (it would replace the image
+ENTRYPOINT). Use `args` instead.
+*/}}
+{{- define "yuzdanyuz.assertNoCommand" -}}
+{{- range $k := list "web" "channels" "celeryWorker" "celeryWorkerCritical" "celeryWorkerAI" "celeryWorkerRealtime" "celeryWorkerBatch" "celeryBeat" "migrate" -}}
+{{- if hasKey (index $.Values $k) "command" -}}
+{{- fail (printf "%s.command is set: it replaces the image ENTRYPOINT (tini + /entrypoint.sh). Use %s.args instead." $k $k) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Probe HTTP headers: kubelet otherwise sends Host=<pod IP>.
+*/}}
+{{- define "yuzdanyuz.probeHeaders" -}}
+httpHeaders:
+  - name: Host
+    value: {{ .Values.probes.host | quote }}
+{{- end -}}
+
+{{/*
+POD_IP from the downward API; prod.py adds it to ALLOWED_HOSTS so Prometheus can
+scrape /metrics by pod IP.
+*/}}
+{{- define "yuzdanyuz.podIPEnv" -}}
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+{{- end -}}
+
+{{/*
+ALLOWED_HOSTS: global.domain plus every ingress host.
+*/}}
+{{- define "yuzdanyuz.allowedHosts" -}}
+{{- $hosts := list .Values.global.domain -}}
+{{- range .Values.ingress.hosts -}}
+{{- $hosts = append $hosts .host -}}
+{{- end -}}
+{{- $hosts | uniq | join "," -}}
+{{- end -}}
+
+{{/*
+Backup image reference (docker/Dockerfile.backup).
+*/}}
+{{- define "yuzdanyuz.backupImage" -}}
+{{- $registry := .Values.global.imageRegistry | default "" -}}
+{{- $tag := .Values.backup.image.tag | default .Values.image.tag -}}
+{{- if $registry -}}
+{{- printf "%s/%s:%s" $registry .Values.backup.image.repository $tag -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.backup.image.repository $tag -}}
+{{- end -}}
+{{- end -}}

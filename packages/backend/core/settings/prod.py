@@ -26,6 +26,11 @@ if _extra_hosts:
     ALLOWED_HOSTS = list(
         set(ALLOWED_HOSTS) | {h.strip() for h in _extra_hosts.split(',') if h.strip()}
     )
+# Kubernetes: kubelet probes and Prometheus reach the pod by its IP, which is not a
+# public hostname. Trust exactly this pod's IP (downward API POD_IP), never '*'.
+_pod_ip = os.getenv('POD_IP', '').strip()
+if _pod_ip:
+    ALLOWED_HOSTS = list(set(ALLOWED_HOSTS) | {_pod_ip})
 
 # CSRF — production and frontend origins come from CSRF_TRUSTED_ORIGINS (comma-separated).
 CSRF_TRUSTED_ORIGINS = []
@@ -46,6 +51,10 @@ CORS_ALLOWED_ORIGINS = (
 # HTTPS xavfsizlik headerlari
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = True
+# Probes and the Prometheus scrape talk plain HTTP inside the cluster and never carry
+# X-Forwarded-Proto; redirecting them to https would fail every probe. search() is
+# used, so a FORCE_SCRIPT_NAME prefix still matches.
+SECURE_REDIRECT_EXEMPT = [r'(^|/)health/(ready/)?$', r'(^|/)metrics$']
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000

@@ -33,12 +33,14 @@ spec:
         - name: channels
           image: {{ include "yuzdanyuz.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: {{ .Values.channels.command }}
+          args: {{- toYaml .Values.channels.args | nindent 12 }}
           ports:
             - name: http
               containerPort: 8000
               protocol: TCP
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          env:
+            {{- include "yuzdanyuz.podIPEnv" . | nindent 12 }}
           # ASGI workers must support websocket — use TCP probe instead of HTTP
           # to avoid noisy 404s on /health/ from daphne (URLConf still resolves it)
           livenessProbe:
@@ -50,6 +52,7 @@ spec:
             httpGet:
               path: /health/
               port: http
+              {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 10
             periodSeconds: 10
           resources: {{- toYaml .Values.channels.resources | nindent 12 }}

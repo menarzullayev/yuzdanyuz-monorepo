@@ -51,3 +51,48 @@ ingress:
 backup:
   enabled: true
   schedule: "0 3 * * *"
+  retentionDays: 30
+  # REQUIRED before the first prod deploy (rendering fails while empty) — open
+  # question for the owner: where the encrypted dumps live (S3 bucket / SFTP host /
+  # other rclone remote). Supply at deploy time, e.g.
+  #   --set backup.destination=dest:yuzdanyuz-backups/postgres
+  #   --set backup.rcloneSecret=yuzdanyuz-backup-rclone
+  #   --set-file backup.gpgPublicKey=backup-public.asc
+  # Runbook: docs/operations/backup-restore.md
+  destination: ""
+  rcloneSecret: ""
+  gpgPublicKey: ""
+
+# Client IP (audit P0, core/utils/client_ip.py). REQUIRED before the first prod
+# deploy: the cluster's pod CIDR, e.g. `kubectl cluster-info dump | grep -m1
+# cluster-cidr` or the CNI config (k3s default 10.42.0.0/16, kubeadm/Calico often
+# 192.168.0.0/16). Rendering fails while it is empty. Supply at deploy time:
+#   --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
+trustedProxy:
+  required: true
+  clusterCidrs: []
+  # Cloudflare edge ranges (https://www.cloudflare.com/ips-v4 and /ips-v6,
+  # fetched 2026-11-12). Re-check when Cloudflare announces changes.
+  extraCidrs:
+    - 173.245.48.0/20
+    - 103.21.244.0/22
+    - 103.22.200.0/22
+    - 103.31.4.0/22
+    - 141.101.64.0/18
+    - 108.162.192.0/18
+    - 190.93.240.0/20
+    - 188.114.96.0/20
+    - 197.234.240.0/22
+    - 198.41.128.0/17
+    - 162.158.0.0/15
+    - 104.16.0.0/13
+    - 104.24.0.0/14
+    - 172.64.0.0/13
+    - 131.0.72.0/22
+    - 2400:cb00::/32
+    - 2606:4700::/32
+    - 2803:f800::/32
+    - 2405:b500::/32
+    - 2405:8100::/32
+    - 2a06:98c0::/29
+    - 2c0f:f248::/32
