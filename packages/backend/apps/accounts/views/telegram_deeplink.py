@@ -8,6 +8,7 @@ Endpoints:
   POST /api/bot/webhook/        — Telegram bot webhook
 """
 
+import hmac
 import json
 import logging
 
@@ -137,8 +138,10 @@ class BotWebhookView(View):
     """
 
     def post(self, request):
-        secret = getattr(settings, 'TELEGRAM_WEBHOOK_SECRET', '')
-        if secret and request.headers.get('X-Telegram-Bot-Api-Secret-Token') != secret:
+        # Fail closed: without a configured secret anyone could forge updates.
+        secret = getattr(settings, 'TELEGRAM_WEBHOOK_SECRET', '') or ''
+        received = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
+        if not secret or not hmac.compare_digest(received.encode(), secret.encode()):
             return JsonResponse({'error': 'Forbidden'}, status=403)
 
         try:

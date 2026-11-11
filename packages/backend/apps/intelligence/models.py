@@ -20,7 +20,7 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.mixins import SoftDeleteMixin
+from core.mixins import SoftDeleteMixin, TenantTimestampMixin
 
 
 # ── 1. SkillTag ──────────────────────────────────────────────────────────────
@@ -247,3 +247,78 @@ class OpenEndedSubmission(SoftDeleteMixin, models.Model):
 
     def __str__(self):
         return f'{self.user} {self.submission_type} ({self.status})'
+
+
+# ── 5. MistakeCard ───────────────────────────────────────────────────────────
+class MistakeCard(TenantTimestampMixin):
+    """
+    Spaced-repetition card for a question the student answered wrongly.
+
+    One card per (user, question). `stage` is the review the card is waiting
+    for: 1 -> 1 day, 2 -> 3 days, 3 -> 7 days, 4 -> 21 days. A correct review
+    at stage 4 sets `mastered_at`. `due_at` is always the start of a day in
+    Asia/Tashkent (stored in UTC); it is left untouched once mastered.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='mistake_cards',
+    )
+    # The Question, not the QuestionVersion: a card survives question edits.
+    question = models.ForeignKey(
+        'catalog.Question',
+        on_delete=models.CASCADE,
+        related_name='mistake_cards',
+    )
+
+    stage = models.PositiveSmallIntegerField(default=1)
+    due_at = models.DateTimeField()
+    last_reviewed_at = models.DateTimeField(null=True, blank=True)
+    lapses = models.PositiveIntegerField(default=0)
+    mastered_at = models.DateTimeField(null=True, blank=True)
+
+    # Where the latest mistake came from (the answer, and its attempt or session).
+    source_answer = models.ForeignKey(
+        'exams.UserAnswer',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    source_attempt = models.ForeignKey(
+        'exams.ExamAttempt',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    source_session = models.ForeignKey(
+        'exams.PracticeSession',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    class Meta:
+        verbose_name = _('Mistake Card')
+        verbose_name_plural = _('Mistake Cards')
+        ordering = ['due_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'question'], name='mistakecard_user_question_uniq'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stage__gte=1, stage__lte=4),
+                name='mistakecard_stage_1_4',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'mastered_at', 'due_at']),
+        ]
+
+    def __str__(self):
+        state = 'mastered' if self.mastered_at else f'stage {self.stage}'
+        return f'{self.user} / {self.question_id} ({state})'

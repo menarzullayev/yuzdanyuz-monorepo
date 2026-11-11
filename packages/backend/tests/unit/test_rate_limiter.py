@@ -146,11 +146,24 @@ class TestIdentifier:
         r.user = type('AnonUser', (), {'is_authenticated': False})()
         assert _identifier(r) == 'ip:1.2.3.4'
 
-    def test_anonymous_xff_first_ip(self):
-        # X-Forwarded-For (proxy chain) — first IP is client
+    def test_anonymous_xff_ignored_from_untrusted_peer(self, settings):
+        # The client writes X-Forwarded-For; without a trusted proxy it is noise.
+        settings.TRUSTED_PROXY_CIDRS = []
         r = self.factory.get('/', HTTP_X_FORWARDED_FOR='5.6.7.8, 10.0.0.1', REMOTE_ADDR='10.0.0.1')
         r.user = type('AnonUser', (), {'is_authenticated': False})()
+        assert _identifier(r) == 'ip:10.0.0.1'
+
+    def test_anonymous_xff_rightmost_untrusted_behind_trusted_proxy(self, settings):
+        settings.TRUSTED_PROXY_CIDRS = ['10.0.0.0/8']
+        r = self.factory.get(
+            '/', HTTP_X_FORWARDED_FOR='9.9.9.9, 5.6.7.8, 10.0.0.2', REMOTE_ADDR='10.0.0.1'
+        )
+        r.user = type('AnonUser', (), {'is_authenticated': False})()
         assert _identifier(r) == 'ip:5.6.7.8'
+
+    def test_email_login_and_register_are_login_tier(self):
+        for path in ('/api/auth/email/', '/api/auth/register/', '/api/v1/auth/email/'):
+            assert _select_tier(self.factory.post(path)) is rl.TIER_LOGIN, path
 
     def test_authenticated_uses_user_pk(self):
         # NAT immune — har user alohida bucket

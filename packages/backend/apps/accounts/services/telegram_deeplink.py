@@ -104,8 +104,10 @@ def on_bot_contact(telegram_id: int, phone: str, contact_user_id: int | None) ->
 
     Returns: True — tasdiqlandi, False — sessiya topilmadi yoki fraud
     """
-    if contact_user_id and contact_user_id != telegram_id:
-        log.warning('Fraud urinishi: from=%s contact_user_id=%s', telegram_id, contact_user_id)
+    # A contact card typed in by hand has no user_id, so only a contact whose
+    # user_id is the sender proves the sender owns this phone number.
+    if contact_user_id is None or contact_user_id != telegram_id:
+        log.warning('Contact rejected: from=%s contact_user_id=%s', telegram_id, contact_user_id)
         return False
 
     # Ushbu telegram_id uchun 'waiting' sessiyani topamiz
@@ -128,6 +130,8 @@ def on_bot_contact(telegram_id: int, phone: str, contact_user_id: int | None) ->
 
     # User topish yoki yaratish
     user_pk = _find_or_create_user(telegram_id, normalized_phone)
+    if user_pk is None:
+        return False
 
     session.update({'status': 'verified', 'phone': normalized_phone, 'user_pk': user_pk})
     _save(token, session)
@@ -162,8 +166,12 @@ def _register_waiting(token: str, telegram_id: int) -> None:
     r.set(f'tg_waiting:{telegram_id}', token, ex=SESSION_TTL)
 
 
-def _find_or_create_user(telegram_id: int, phone: str) -> str:
-    """CustomUser topadi yoki yaratadi. user.pk qaytaradi (string)."""
+def _find_or_create_user(telegram_id: int, phone: str) -> str | None:
+    """CustomUser topadi yoki yaratadi. user.pk qaytaradi (string).
+
+    None — the phone belongs to an account already bound to a different
+    Telegram id (e.g. a recycled number); that account is never re-bound here.
+    """
     from apps.accounts.models import CustomUser
 
     # Avval telegram_id bo'yicha
@@ -180,6 +188,9 @@ def _find_or_create_user(telegram_id: int, phone: str) -> str:
     if phone:
         try:
             user = CustomUser.objects.get(phone_number=phone)
+            if user.telegram_id is not None:
+                log.warning('Phone already bound to another Telegram account: from=%s', telegram_id)
+                return None
             user.telegram_id = telegram_id
             user.save(update_fields=['telegram_id'])
             return str(user.pk)

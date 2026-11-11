@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AIFeedback, OpenEndedSubmission, SkillTag, UserSkillProfile
+from .models import AIFeedback, MistakeCard, OpenEndedSubmission, SkillTag, UserSkillProfile
 
 
 @admin.register(SkillTag)
@@ -35,3 +35,13 @@ class OpenEndedSubmissionAdmin(admin.ModelAdmin):
     list_filter = ('submission_type', 'status')
     raw_id_fields = ('user', 'question_version', 'human_reviewer')
     readonly_fields = ('ai_feedback', 'submitted_at', 'ai_completed_at', 'human_completed_at')
+
+
+@admin.register(MistakeCard)
+class MistakeCardAdmin(admin.ModelAdmin):
+    list_display = ('user', 'question', 'stage', 'due_at', 'lapses', 'mastered_at')
+    list_filter = ('stage',)
+    raw_id_fields = ('user', 'question', 'source_answer', 'source_attempt', 'source_session')
+
+    def get_queryset(self, request):
+        return MistakeCard.global_objects.all()

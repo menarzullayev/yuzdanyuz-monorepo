@@ -182,6 +182,7 @@ auth-jwt           — JWT + device fingerprinting flow
 | `DB_PORT` | `<db-port>` | non-standard port |
 | `REDIS_URL` | `redis://...:6379/1` | with password |
 | `ENABLE_RLS` | `true` | RLS enforcement |
+| `TRUSTED_PROXY_CIDRS` | empty | proxy CIDRs whose `X-Forwarded-For`/`CF-Connecting-IP` is believed; prod = ingress pod CIDR + Cloudflare ranges (see `packages/backend/docs/deployment/cloudflare.md`) |
 
 `.env` is gitignored. Use `.env.example` as template.
 
