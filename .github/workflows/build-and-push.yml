@@ -8,6 +8,8 @@ on:
     paths:
       - 'docker/**'
       - 'packages/backend/**'
+      - 'charts/**'
+      - 'scripts/check-celery-queues.py'
       - '.github/workflows/build-and-push.yml'
   workflow_dispatch:
 
@@ -106,3 +108,14 @@ jobs:
           wc -l /tmp/rendered.yaml
           # Sanity — at least 200 lines means the chart actually rendered something
           test "$(wc -l < /tmp/rendered.yaml)" -gt 200
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Every routed Celery queue has a worker; AI stays capped
+        run: |
+          pip install pyyaml==6.0.3
+          helm template yuzdanyuz charts/yuzdanyuz \
+            --values charts/yuzdanyuz/values.yaml \
+            --values charts/yuzdanyuz/values-prod.yaml \
+            --set keda.enabled=true > /tmp/rendered-keda.yaml
+          python scripts/check-celery-queues.py --manifests /tmp/rendered.yaml /tmp/rendered-keda.yaml

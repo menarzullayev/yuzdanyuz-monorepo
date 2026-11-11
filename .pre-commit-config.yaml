@@ -68,6 +68,27 @@ repos:
         pass_filenames: false
         files: ^scripts/(test-)?check-dependabot-pip\.(py|sh)$
 
+  # ── Celery: every routed queue has a worker; AI calls stay capped ───
+  # The Helm side is checked in CI (build-and-push.yml) on `helm template` output.
+  - repo: local
+    hooks:
+      - id: celery-queue-workers
+        name: Every routed Celery queue has a worker; AI stays capped
+        entry: python scripts/check-celery-queues.py
+        language: python
+        language_version: python3
+        additional_dependencies: [pyyaml==6.0.3]
+        pass_filenames: false
+        files: ^(docker-compose\.yml|docker/entrypoint\.sh|packages/backend/core/celery\.py|scripts/check-celery-queues\.py)$
+      - id: celery-queue-workers-test
+        name: Celery queue check catches an orphan queue and an uncapped AI worker
+        entry: bash scripts/test-check-celery-queues.sh
+        language: python
+        language_version: python3
+        additional_dependencies: [pyyaml==6.0.3]
+        pass_filenames: false
+        files: ^scripts/(test-)?check-celery-queues\.(py|sh)$
+
   # ──────────────────────────────────────────────────────────────────────
   # pre-push stage — push'dan oldin (chuqur tekshiruv)
   # ──────────────────────────────────────────────────────────────────────

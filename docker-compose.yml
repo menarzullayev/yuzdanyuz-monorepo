@@ -9,7 +9,7 @@ x-backend-base: &backend-base
   image: ghcr.io/menarzullayev/yuzdanyuz-backend:dev
   env_file:
     - ./packages/backend/.env
-  environment:
+  environment: &backend-env
     DJANGO_SETTINGS_MODULE: core.settings.dev
     DB_HOST: postgres
     DB_PORT: 5432
@@ -111,9 +111,23 @@ services:
     ports:
       - "127.0.0.1:8014:8000"
 
+  # Every queue routed in packages/backend/core/celery.py needs a consumer here.
+  # AI tasks get their own worker so `claude -p` calls (one shared Claude
+  # subscription) never run more than CELERY_CONCURRENCY at a time.
   celery-worker:
     <<: *backend-base
     command: ["worker"]
+    environment:
+      <<: *backend-env
+      CELERY_QUEUES: default,celery,critical,realtime,batch
+
+  celery-ai:
+    <<: *backend-base
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      CELERY_QUEUES: ai
+      CELERY_CONCURRENCY: "2"
 
   celery-beat:
     <<: *backend-base
