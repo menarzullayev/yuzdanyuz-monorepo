@@ -37,7 +37,13 @@ from rest_framework.views import APIView
 
 from core.tenant import unscoped_context
 
-from . import affiliate_service, payment_providers, subscription_service, wallet_service
+from . import (
+    affiliate_service,
+    billing_service,
+    payment_providers,
+    subscription_service,
+    wallet_service,
+)
 from .models import (
     OrganizationSubscription,
     PaymentIntent,
@@ -202,13 +208,14 @@ def _process_webhook(provider_name: str, request) -> Response:
             return Response({'detail': 'Already processed'}, status=200)
 
         if parsed.get('status') == 'succeeded':
-            wallet = wallet_service.get_or_create_wallet(intent.user)
-            wallet_service.top_up(
-                wallet,
-                intent.coins_to_credit,
-                payment_intent=intent,
-                description=f'Top-up via {provider_name}',
-            )
+            if intent.coins_to_credit > 0:  # tariff / key purchases credit no coins
+                wallet = wallet_service.get_or_create_wallet(intent.user)
+                wallet_service.top_up(
+                    wallet,
+                    intent.coins_to_credit,
+                    payment_intent=intent,
+                    description=f'Top-up via {provider_name}',
+                )
             intent.status = PaymentIntent.Status.SUCCEEDED
             intent.save(update_fields=['status', 'updated_at'])
 
@@ -216,7 +223,10 @@ def _process_webhook(provider_name: str, request) -> Response:
             # Webhook anonymous chaqiriladi — tenant context yo'q. TenantManager
             # `qs.none()` qaytaradi, shu sababli `unscoped_context()` + explicit
             # FK filter (last_payment_intent unique) bilan o'qiymiz.
-            if intent.target_subscription_plan and intent.target_organization:
+            if (intent.metadata or {}).get('billing_kind'):
+                # B2C tariff / exam pass / B2B keys: activated only now that it is paid.
+                billing_service.fulfil_paid_intent(intent)
+            elif intent.target_subscription_plan and intent.target_organization:
                 try:
                     with unscoped_context():
                         sub = OrganizationSubscription.objects.get(last_payment_intent=intent)
@@ -255,7 +265,7 @@ class ClickWebhookView(APIView):
 
 class SubscriptionPlansView(APIView):
     def get(self, request):
-        plans = SubscriptionPlan.objects.filter(is_active=True)
+        plans = SubscriptionPlan.objects.filter(is_active=True, audience='organization')
         return Response(
             {
                 'plans': [
@@ -309,7 +319,9 @@ class SubscribeView(APIView):
 
         plan_slug = request.data.get('plan_slug')
         provider_name = request.data.get('payment_provider', 'payme')
-        plan = get_object_or_404(SubscriptionPlan, slug=plan_slug, is_active=True)
+        plan = get_object_or_404(
+            SubscriptionPlan, slug=plan_slug, is_active=True, audience='organization'
+        )
 
         # Per-seat: hozircha active_user_count = membership active count
         from apps.organizations.models import Membership

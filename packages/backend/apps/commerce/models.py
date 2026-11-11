@@ -13,19 +13,29 @@ Models:
   - OrganizationSubscription   — org-level active subscription
   - ReferralCode               — user'ning referral code
   - Referral                   — invitation tracking
+
+Monetisation (B2C tariffs, promo codes, B2B exam keys):
+  - ExamType                   — sellable exam kind (dtm, ...); can be switched off
+  - UserSubscription           — B2C student tariff / one-time exam pass (user-scoped)
+  - ExamAccessUse              — ledger of consumed access (free / weekly / key / pass)
+  - PromoCode, PromoRedemption — discounts, counted only when the payment is paid
+  - ExamKeyBatch, ExamKey      — B2B exam keys (tenant-scoped, RLS)
 """
 
 import secrets
+import string
 import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.functions import Upper
 from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
 from core.managers import GlobalManager, TenantManager
-from core.mixins import AuditUserMixin, SoftDeleteMixin
+from core.mixins import AuditUserMixin, SoftDeleteMixin, TenantTimestampMixin
 
 # ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
 
@@ -261,6 +271,32 @@ class PaymentIntent(SoftDeleteMixin, models.Model):
         self.save(update_fields=['status', 'updated_at'])
 
 
+# ── 2b. ExamType ─────────────────────────────────────────────────────────────
+
+
+class ExamType(models.Model):
+    """Sellable exam kind. `MockExam.exam_type` stores the `code` as a plain slug.
+
+    Global (platform-level). `is_enabled=False` hides the type from the catalog and
+    makes it non-purchasable / non-startable.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.SlugField(max_length=32, unique=True)
+    name = models.CharField(max_length=120)
+    is_enabled = models.BooleanField(default=True, db_index=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Exam Type')
+        verbose_name_plural = _('Exam Types')
+        ordering = ['sort_order', 'code']
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
+
+
 # ── 3. SubscriptionPlan + OrganizationSubscription ───────────────────────────
 
 
@@ -277,6 +313,18 @@ class SubscriptionPlan(models.Model):
         MONTHLY = 'monthly', _('Oylik')
         YEARLY = 'yearly', _('Yillik')
         LIFETIME = 'lifetime', _('Butun umr')
+        ONE_TIME = 'one_time', _('Bir martalik')
+
+    class Audience(models.TextChoices):
+        ORGANIZATION = 'organization', _('Tashkilot (B2B)')
+        STUDENT = 'student', _('Talaba (B2C)')
+
+    class AccessMode(models.TextChoices):
+        # Student (B2C) products only; blank for organization plans.
+        EXAM_KEY = 'exam_key', _('Bir martalik imtihon kaliti (1 urinish)')
+        STUDENT = 'student', _('Talaba: tanlangan turlar cheksiz, qolganlari haftalik limit')
+        ALL_TYPES = 'all_types', _('Barcha turlar cheksiz')
+        SINGLE_TYPE = 'single_type', _('Bitta imtihon turi cheksiz')
 
     class PricingModel(models.TextChoices):
         FLAT = 'flat', _('Belgilangan summa (org)')
@@ -291,6 +339,33 @@ class SubscriptionPlan(models.Model):
     pricing_model = models.CharField(max_length=10, choices=PricingModel.choices)
 
     price_uzs = models.DecimalField(max_digits=12, decimal_places=2)
+
+    # B2C extension. Existing rows are organization plans (default) and unaffected.
+    audience = models.CharField(
+        max_length=12, choices=Audience.choices, default=Audience.ORGANIZATION, db_index=True
+    )
+    access_mode = models.CharField(max_length=12, choices=AccessMode.choices, blank=True)
+    exam_type = models.ForeignKey(
+        'ExamType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='plans',
+        help_text=_('single_type / exam_key rejimida: shu imtihon turi'),
+    )
+    unlimited_exam_types = models.ManyToManyField(
+        'ExamType',
+        blank=True,
+        related_name='+',
+        help_text=_('student rejimida cheksiz turlar (masalan DTM)'),
+    )
+    weekly_limit = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=_("student rejimida: cheksiz bo'lmagan turlar uchun haftalik urinishlar"),
+    )
+    attempts_included = models.PositiveSmallIntegerField(
+        default=1, help_text=_('exam_key rejimida: nechta urinish beradi')
+    )
 
     max_users = models.PositiveIntegerField(
         null=True, blank=True, help_text=_('Cheksiz uchun null')
@@ -312,9 +387,43 @@ class SubscriptionPlan(models.Model):
         verbose_name = _('Subscription Plan')
         verbose_name_plural = _('Subscription Plans')
         ordering = ['sort_order', 'price_uzs']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(audience='organization') | ~models.Q(access_mode=''),
+                name='plan_student_requires_access_mode',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.name} ({self.billing_period}, {self.pricing_model})'
+
+    def clean(self):
+        super().clean()
+        if self.audience == self.Audience.ORGANIZATION:
+            if self.access_mode:
+                raise ValidationError({'access_mode': "Tashkilot rejasida access_mode bo'lmaydi."})
+            return
+        mode = self.access_mode
+        if not mode:
+            raise ValidationError({'access_mode': 'Talaba rejasi uchun access_mode shart.'})
+        if self.price_uzs is not None and self.price_uzs < 0:
+            raise ValidationError({'price_uzs': "Narx manfiy bo'lmaydi."})
+        if (
+            mode in (self.AccessMode.SINGLE_TYPE, self.AccessMode.EXAM_KEY)
+            and not self.exam_type_id
+        ):
+            raise ValidationError({'exam_type': f'{mode} rejimida exam_type shart.'})
+        if mode in (self.AccessMode.STUDENT, self.AccessMode.ALL_TYPES) and self.exam_type_id:
+            raise ValidationError({'exam_type': f"{mode} rejimida exam_type bo'lmaydi."})
+        expected = (
+            self.BillingPeriod.ONE_TIME
+            if mode == self.AccessMode.EXAM_KEY
+            else self.BillingPeriod.MONTHLY
+        )
+        if self.billing_period != expected:
+            raise ValidationError({'billing_period': f"{mode} uchun {expected} bo'lishi kerak."})
+        if self.pricing_model != self.PricingModel.FLAT:
+            raise ValidationError({'pricing_model': "Talaba rejasi faqat flat bo'ladi."})
 
     def calculate_charge(self, *, active_user_count: int = 0) -> Decimal:
         """Plan turidan kelib chiqib joriy charge'ni hisoblash."""
@@ -517,3 +626,268 @@ class Referral(models.Model):
 
     def __str__(self):
         return f'{self.inviter} → {self.invited}'
+
+
+# ── 5. B2C access: UserSubscription + usage ledger ───────────────────────────
+
+
+class UserSubscription(models.Model):
+    """B2C tariff owned by one user (created only after the payment is paid).
+
+    Tenant scope: user-scoped like `Wallet` (B2C users may have no organization),
+    so no organization FK and no RLS. One row per purchased period; buying the same
+    plan again while it is current extends the existing row.
+    `attempts_remaining` is used by `exam_key` plans (one-time pass), NULL otherwise.
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = 'active', _('Faol')
+        CANCELLED = 'cancelled', _('Bekor qilingan')
+        EXPIRED = 'expired', _('Muddati tugagan')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='user_subscriptions'
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.PROTECT, related_name='user_subscriptions'
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.ACTIVE, db_index=True
+    )
+    started_at = models.DateTimeField()
+    # NULL for exam_key passes (no time limit, limited by attempts_remaining)
+    current_period_ends_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    attempts_remaining = models.PositiveSmallIntegerField(null=True, blank=True)
+    last_payment_intent = models.ForeignKey(
+        PaymentIntent, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('User Subscription')
+        verbose_name_plural = _('User Subscriptions')
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'status'])]
+
+    def __str__(self):
+        return f'{self.user} → {self.plan.name} ({self.status})'
+
+
+class ExamAccessUse(models.Model):
+    """Ledger: one row per exam start that consumed (or used) some access source.
+
+    Free attempts used = rows with source=free; weekly usage = rows with
+    source=subscription_weekly since Monday 00:00 (Asia/Tashkent).
+    """
+
+    class Source(models.TextChoices):
+        FREE = 'free', _('Bepul urinish')
+        SUBSCRIPTION_UNLIMITED = 'subscription_unlimited', _('Obuna (cheksiz)')
+        SUBSCRIPTION_WEEKLY = 'subscription_weekly', _('Obuna (haftalik limit)')
+        ORG_KEY = 'org_key', _('Tashkilot kaliti')
+        EXAM_PASS = 'exam_pass', _('Bir martalik kalit')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='exam_access_uses'
+    )
+    exam_type = models.ForeignKey(ExamType, on_delete=models.PROTECT, related_name='+')
+    source = models.CharField(max_length=24, choices=Source.choices)
+    subscription = models.ForeignKey(
+        UserSubscription, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    exam_key = models.ForeignKey(
+        'ExamKey', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    reference = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = _('Exam Access Use')
+        verbose_name_plural = _('Exam Access Uses')
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'source', '-created_at'], name='eau_user_src_idx')]
+
+    def __str__(self):
+        return f'{self.user} {self.source} {self.exam_type_id}'
+
+
+# ── 6. Promo codes ───────────────────────────────────────────────────────────
+
+
+class PromoCode(models.Model):
+    """Case-insensitive unique code. Redemption is recorded only when paid."""
+
+    class DiscountType(models.TextChoices):
+        PERCENT = 'percent', _('Foiz')
+        FIXED = 'fixed', _("Qat'iy summa (so'm)")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=32)
+    discount_type = models.CharField(max_length=8, choices=DiscountType.choices)
+    value = models.DecimalField(max_digits=12, decimal_places=2)
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text=_('Cheksiz uchun null'))
+    starts_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    allowed_plans = models.ManyToManyField(
+        SubscriptionPlan,
+        blank=True,
+        related_name='promo_codes',
+        help_text=_("Bo'sh bo'lsa — barcha rejalar"),
+    )
+    allowed_exam_types = models.ManyToManyField(
+        ExamType,
+        blank=True,
+        related_name='promo_codes',
+        help_text=_("Bo'sh bo'lsa — barcha turlar"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Promo Code')
+        verbose_name_plural = _('Promo Codes')
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(Upper('code'), name='promo_code_ci_unique'),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(discount_type='percent', value__gt=0, value__lte=100)
+                    | models.Q(discount_type='fixed', value__gt=0)
+                ),
+                name='promo_value_valid',
+            ),
+        ]
+
+    def __str__(self):
+        return self.code
+
+    def save(self, *args, **kwargs):
+        self.code = (self.code or '').strip().upper()
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or '').strip().upper()
+        if self.value is not None:
+            if self.value <= 0:
+                raise ValidationError({'value': "Chegirma 0 dan katta bo'lishi kerak."})
+            if self.discount_type == self.DiscountType.PERCENT and self.value > 100:
+                raise ValidationError({'value': 'Foiz 100 dan oshmasligi kerak.'})
+        if self.starts_at and self.expires_at and self.expires_at <= self.starts_at:
+            raise ValidationError({'expires_at': "expires_at starts_at dan keyin bo'lishi kerak."})
+
+
+class PromoRedemption(models.Model):
+    """A paid use of a promo code. (promo, user) unique = one use per user."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    promo = models.ForeignKey(PromoCode, on_delete=models.PROTECT, related_name='redemptions')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='promo_redemptions'
+    )
+    payment_intent = models.OneToOneField(
+        PaymentIntent, on_delete=models.PROTECT, related_name='promo_redemption'
+    )
+    discount_uzs = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Promo Redemption')
+        verbose_name_plural = _('Promo Redemptions')
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['promo', 'user'], name='promo_one_use_per_user')
+        ]
+
+    def __str__(self):
+        return f'{self.promo} ← {self.user}'
+
+
+# ── 7. B2B exam keys (tenant-scoped, RLS in migration 0008) ──────────────────
+
+# unambiguous characters: no 0/O/1/I
+_KEY_ALPHABET = string.ascii_uppercase.translate({ord(c): None for c in 'IO'}) + '23456789'
+
+
+def gen_exam_key_code() -> str:
+    return ''.join(secrets.choice(_KEY_ALPHABET) for _ in range(12))
+
+
+class ExamKeyBatch(TenantTimestampMixin):
+    """A purchase or platform grant of N keys of one exam type to an organization."""
+
+    class Source(models.TextChoices):
+        PURCHASE = 'purchase', _('Sotib olingan')
+        PLATFORM_GRANT = 'platform_grant', _('Platforma bergan')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exam_type = models.ForeignKey(ExamType, on_delete=models.PROTECT, related_name='+')
+    quantity = models.PositiveIntegerField()
+    source = models.CharField(max_length=16, choices=Source.choices)
+    payment_intent = models.OneToOneField(
+        PaymentIntent, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = _('Exam Key Batch')
+        verbose_name_plural = _('Exam Key Batches')
+        ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gt=0), name='keybatch_qty_positive')
+        ]
+
+    def __str__(self):
+        return f'{self.organization_id} {self.exam_type_id} x{self.quantity}'
+
+
+class ExamKey(TenantTimestampMixin):
+    """One key = one exam attempt of `exam_type`.
+
+    available -> assigned (to a member) -> consumed (exam started); available/assigned
+    -> revoked. Consumption is a conditional UPDATE, so a key can never be used twice.
+    """
+
+    class Status(models.TextChoices):
+        AVAILABLE = 'available', _('Taqsimlanmagan')
+        ASSIGNED = 'assigned', _('Taqsimlangan')
+        CONSUMED = 'consumed', _('Ishlatilgan')
+        REVOKED = 'revoked', _('Bekor qilingan')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(ExamKeyBatch, on_delete=models.CASCADE, related_name='keys')
+    exam_type = models.ForeignKey(ExamType, on_delete=models.PROTECT, related_name='+')
+    code = models.CharField(max_length=16, unique=True, default=gen_exam_key_code)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.AVAILABLE, db_index=True
+    )
+    group_label = models.CharField(max_length=64, blank=True, db_index=True)
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    consumed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consumed_reference = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        verbose_name = _('Exam Key')
+        verbose_name_plural = _('Exam Keys')
+        ordering = ['created_at', 'id']
+        indexes = [
+            models.Index(
+                fields=['organization', 'exam_type', 'status'], name='examkey_org_type_st'
+            ),
+            models.Index(fields=['assigned_to', 'status'], name='examkey_assignee_st'),
+        ]
+
+    def __str__(self):
+        return f'{self.code} ({self.status})'

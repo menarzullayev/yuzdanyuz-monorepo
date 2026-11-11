@@ -389,6 +389,14 @@ ENABLE_REAL_PAYMENTS = os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'tr
 PAYME_SECRET_KEY = os.getenv('PAYME_SECRET_KEY') or os.getenv('PAYME_MERCHANT_KEY', '')
 CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '')
 
+# Monetisation (apps.commerce): exam access paywall.
+# Off by default so the exam flow is unchanged until the frontend sells tariffs.
+BILLING_ENFORCE_EXAM_ACCESS = os.getenv('BILLING_ENFORCE_EXAM_ACCESS', 'false').lower() == 'true'
+# Free exam attempts every user gets before payment is required.
+BILLING_FREE_ATTEMPTS = int(os.getenv('BILLING_FREE_ATTEMPTS', '3'))
+# Weekly limits reset on Monday 00:00 in this timezone.
+BILLING_WEEK_TZ = os.getenv('BILLING_WEEK_TZ', 'Asia/Tashkent')
+
 # ISSUE-505: django-flags — runtime feature gating (per-user, per-org, percentage rollout).
 # Default conditions env var bilan boshqariladi. Admin'da `/admin/flags/` orqali override.
 #
