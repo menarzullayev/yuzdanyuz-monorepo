@@ -31,8 +31,7 @@ kubectl -n yuzdanyuz-prod create secret generic yuzdanyuz-secrets \
   --from-literal=CLICK_MERCHANT_ID='<click merchant id>' \
   --from-literal=CLICK_SECRET_KEY='<click secret>' \
   --from-literal=ANTHROPIC_API_KEY='<anthropic api key>' \
-  --from-literal=CLAUDE_CODE_OAUTH_TOKEN='<token from: claude setup-token>' \
-  --from-literal=MEILISEARCH_API_KEY='<meilisearch master key>'
+  --from-literal=CLAUDE_CODE_OAUTH_TOKEN='<token from: claude setup-token>'
 ```
 
 Yoki `.env` faylidan to'g'ridan-to'g'ri (qulay, lekin file diskka tushadi):

@@ -758,6 +758,7 @@ Return error to user
   - PG ICONTAINS fallback (QuestionVersion.content JSONB) ✅
   - Quarantined exclusion ✅
   - Production toggle: `MEILISEARCH_URL` + `MEILISEARCH_ENABLED` 🔵
+  - 2026-11-11: hech qachon ishlatilmagan toggle va `meilisearch` paketi olib tashlandi; qidiruv PostgreSQL'da
 - [x] **Omni-Channel Notifications** (Celery sequential fan-out):
   - `Notification` model (channel/priority/status/metadata) ✅
   - In-app har doim queue qilinadi ✅

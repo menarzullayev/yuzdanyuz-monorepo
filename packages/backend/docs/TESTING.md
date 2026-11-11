@@ -43,7 +43,7 @@ tests/
 │   └── test_exam_taking.py        # Full exam experience
 │
 └── performance/
-    ├── test_question_search.py    # Meilisearch performance
+    ├── test_question_search.py    # search performance     
     └── test_leaderboard_query.py  # Redis ZSET performance
 ```
 

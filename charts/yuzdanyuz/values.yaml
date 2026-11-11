@@ -183,8 +183,6 @@ env:
   SENTRY_TRACES_SAMPLE_RATE: "0.1"
   # ClickHouse — stub mode toggle
   CLICKHOUSE_ENABLED: "false"
-  # Meilisearch — stub mode toggle
-  MEILISEARCH_ENABLED: "false"
   # Payments — stub mode (PR #35 default)
   ENABLE_REAL_PAYMENTS: "false"
 
@@ -218,7 +216,6 @@ secretRef:
     - CLICK_SECRET_KEY
     - ANTHROPIC_API_KEY
     - CLAUDE_CODE_OAUTH_TOKEN   # `claude setup-token`; used when LLM_BACKEND=claude_cli (default)
-    - MEILISEARCH_API_KEY
 
 # ── DB / Redis hostnames (assume managed services or separate Helm release) ──
 externalServices:
@@ -249,7 +246,7 @@ containerSecurityContext:
 # ── Network Policy ───────────────────────────────────────────────────────────
 networkPolicy:
   enabled: true
-  # Egress allowed to: postgres, redis, meilisearch, otel-collector, sentry.io,
+  # Egress allowed to: postgres, redis, otel-collector, sentry.io,
   # api.anthropic.com, api.telegram.org, payments providers, SMTP gateway.
 
 # ── ServiceMonitor (Prometheus Operator) ─────────────────────────────────────
