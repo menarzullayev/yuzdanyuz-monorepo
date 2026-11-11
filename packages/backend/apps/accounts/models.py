@@ -492,3 +492,185 @@ class PasswordResetRequest(models.Model):
 
     def __str__(self):
         return f'{self.username_entered} ({self.status})'
+
+
+# ─── Onboarding: reference data (tables with admin, filled in later) ──────────
+
+
+class ExamGoal(models.Model):
+    """An exam a user can prepare for (DTM, national certificate, IELTS, ...)."""
+
+    code = models.SlugField(max_length=40, unique=True)
+    name_uz = models.CharField(max_length=100)
+    name_ru = models.CharField(max_length=100, blank=True)
+    name_en = models.CharField(max_length=100, blank=True)
+    # Goals that need a DTM direction or a subject pair at onboarding.
+    requires_direction = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'Imtihon maqsadi'
+        verbose_name_plural = 'Imtihon maqsadlari'
+        ordering = ['sort_order', 'code']
+
+    def __str__(self):
+        return self.name_uz
+
+
+class DTMDirection(models.Model):
+    """A DTM study direction with its two profile subjects."""
+
+    code = models.CharField(max_length=40, unique=True)
+    name_uz = models.CharField(max_length=200)
+    name_ru = models.CharField(max_length=200, blank=True)
+    name_en = models.CharField(max_length=200, blank=True)
+    subject_1 = models.CharField(max_length=60)
+    subject_2 = models.CharField(max_length=60)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = 'DTM yo\u02bbnalishi'
+        verbose_name_plural = 'DTM yo\u02bbnalishlari'
+        ordering = ['name_uz']
+
+    def __str__(self):
+        return self.name_uz
+
+
+class DirectionPassingScore(models.Model):
+    direction = models.ForeignKey(DTMDirection, on_delete=models.CASCADE, related_name='scores')
+    year = models.PositiveSmallIntegerField()
+    grant_score = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    contract_score = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    source_url = models.URLField(blank=True)
+
+    class Meta:
+        verbose_name = 'O\u02bbtish bali'
+        verbose_name_plural = 'O\u02bbtish ballari'
+        ordering = ['direction', '-year']
+        constraints = [
+            models.UniqueConstraint(fields=['direction', 'year'], name='uniq_direction_year')
+        ]
+
+    def __str__(self):
+        return f'{self.direction_id} / {self.year}'
+
+
+class ExamCalendarEvent(models.Model):
+    exam_goal = models.ForeignKey(ExamGoal, on_delete=models.CASCADE, related_name='events')
+    title = models.CharField(max_length=200)
+    date = models.DateField()
+    registration_deadline = models.DateField(null=True, blank=True)
+    region = models.ForeignKey(Region, null=True, blank=True, on_delete=models.SET_NULL)
+    notes = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = 'Imtihon kalendari'
+        verbose_name_plural = 'Imtihon kalendari'
+        ordering = ['date']
+
+    def __str__(self):
+        return f'{self.title} ({self.date})'
+
+
+# ─── Onboarding: user answers ─────────────────────────────────────────────────
+
+
+class TestLanguage(models.TextChoices):
+    UZ = 'uz', "O'zbek"
+    RU = 'ru', 'Русский'
+    KAA = 'kaa', 'Qoraqalpoq'
+
+
+class OnboardingProfile(models.Model):
+    """What we ask a user before showing their first RESULT (not at signup)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='onboarding'
+    )
+    goals = models.ManyToManyField(ExamGoal, blank=True, related_name='profiles')
+    primary_goal = models.ForeignKey(
+        ExamGoal, null=True, blank=True, on_delete=models.SET_NULL, related_name='+'
+    )
+    dtm_direction = models.ForeignKey(
+        DTMDirection, null=True, blank=True, on_delete=models.SET_NULL, related_name='+'
+    )
+    subject_1 = models.CharField(max_length=60, blank=True)
+    subject_2 = models.CharField(max_length=60, blank=True)
+    test_language = models.CharField(max_length=3, choices=TestLanguage.choices, blank=True)
+    target_grade = models.CharField(max_length=3, blank=True)
+    exam_date = models.DateField(null=True, blank=True)
+    graduation_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    birth_date = models.DateField(null=True, blank=True)
+    parent_telegram = models.CharField(max_length=40, blank=True)
+    # First-touch attribution captured automatically (UTM / bot start param) ...
+    acquisition = models.JSONField(default=dict, blank=True)
+    # ... and the optional "how did you hear about us" answer.
+    acquisition_answer = models.CharField(max_length=20, blank=True)
+    acquisition_note = models.CharField(max_length=200, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Onboarding profili'
+        verbose_name_plural = 'Onboarding profillari'
+
+    def __str__(self):
+        return f'onboarding {self.user_id}'
+
+
+class ExamCertificate(models.Model):
+    """A certificate the user already holds (type, level, date)."""
+
+    class CertType(models.TextChoices):
+        MILLIY = 'milliy_sertifikat', 'Milliy sertifikat'
+        IELTS = 'ielts', 'IELTS'
+        CEFR = 'cefr', 'CEFR'
+        TOEFL = 'toefl', 'TOEFL'
+        SAT = 'sat', 'SAT'
+        OTHER = 'other', 'Boshqa'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='certificates'
+    )
+    cert_type = models.CharField(max_length=20, choices=CertType.choices)
+    subject = models.CharField(max_length=60, blank=True)
+    level = models.CharField(max_length=20)
+    date = models.DateField()
+
+    class Meta:
+        verbose_name = 'Sertifikat'
+        verbose_name_plural = 'Sertifikatlar'
+        ordering = ['-date']
+
+    def __str__(self):
+        return f'{self.cert_type} {self.level}'
+
+
+class OrgResultsConsent(models.Model):
+    """The user's explicit consent that an organization sees their results.
+
+    Deliberately NOT a tenant model (like Membership): it is written while the
+    user has no tenant context yet (joining by invite code). Organizations read
+    it only through their own Membership rows.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='org_consents'
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE, related_name='results_consents'
+    )
+    consented_at = models.DateTimeField(default=timezone.now)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Natijalarni ko\u02bbrish roziligi'
+        verbose_name_plural = 'Natijalarni ko\u02bbrish rozilig\u2018i'
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'organization'], name='uniq_org_consent')
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} -> {self.organization_id}'

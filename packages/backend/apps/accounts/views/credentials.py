@@ -20,7 +20,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 
 from apps.accounts.models import CustomUser
-from apps.accounts.services import two_factor
+from apps.accounts.services import onboarding, two_factor
 from apps.accounts.services import usernames as un
 from apps.accounts.services.password_policy import password_errors
 from apps.accounts.services.security_notifications import notify, notify_account_locked
@@ -167,6 +167,7 @@ class RegisterView(PublicAPIView):
             # Lost a race for the username/email; never echo database text.
             return _taken_error(username)
 
+        onboarding.capture_acquisition(user, data.get('acquisition'))
         return finish_login(request, user, remember=flag_field(data, 'remember', True), status=201)
 
 

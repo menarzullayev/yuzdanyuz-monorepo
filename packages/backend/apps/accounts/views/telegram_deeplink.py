@@ -45,8 +45,12 @@ class TGDeeplinkInitView(View):
     """
 
     def post(self, request):
-        session = dl.create_session()
-        return JsonResponse(session)
+        try:
+            body = json.loads(request.body or b'{}')
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            body = {}
+        acquisition = body.get('acquisition') if isinstance(body, dict) else None
+        return JsonResponse(dl.create_session(acquisition=acquisition))
 
 
 # ── 2. Holat tekshirish (polling) ─────────────────────────────

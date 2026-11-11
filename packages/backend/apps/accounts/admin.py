@@ -5,7 +5,13 @@ from django.utils import timezone
 from .models import (
     CustomUser,
     DeviceSession,
+    DirectionPassingScore,
     District,
+    DTMDirection,
+    ExamCalendarEvent,
+    ExamGoal,
+    OnboardingProfile,
+    OrgResultsConsent,
     PasswordResetRequest,
     Region,
 )
@@ -133,3 +139,45 @@ class DeviceSessionAdmin(admin.ModelAdmin):
     list_filter = ['revoked_at', 'remember']
     search_fields = ['user__username', 'device_label']
     readonly_fields = [f.name for f in DeviceSession._meta.fields]
+
+
+@admin.register(ExamGoal)
+class ExamGoalAdmin(admin.ModelAdmin):
+    list_display = ['code', 'name_uz', 'requires_direction', 'is_active', 'sort_order']
+    list_editable = ['is_active', 'sort_order']
+    search_fields = ['code', 'name_uz']
+
+
+class DirectionPassingScoreInline(admin.TabularInline):
+    model = DirectionPassingScore
+    extra = 0
+
+
+@admin.register(DTMDirection)
+class DTMDirectionAdmin(admin.ModelAdmin):
+    list_display = ['code', 'name_uz', 'subject_1', 'subject_2', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['code', 'name_uz']
+    inlines = [DirectionPassingScoreInline]
+
+
+@admin.register(ExamCalendarEvent)
+class ExamCalendarEventAdmin(admin.ModelAdmin):
+    list_display = ['title', 'exam_goal', 'date', 'registration_deadline', 'region']
+    list_filter = ['exam_goal']
+    date_hierarchy = 'date'
+
+
+@admin.register(OnboardingProfile)
+class OnboardingProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'primary_goal', 'test_language', 'graduation_year', 'completed_at']
+    list_filter = ['test_language', 'primary_goal']
+    search_fields = ['user__username']
+    raw_id_fields = ['user']
+
+
+@admin.register(OrgResultsConsent)
+class OrgResultsConsentAdmin(admin.ModelAdmin):
+    list_display = ['user', 'organization', 'consented_at', 'revoked_at']
+    list_filter = ['organization']
+    raw_id_fields = ['user']

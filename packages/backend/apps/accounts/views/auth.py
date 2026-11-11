@@ -67,6 +67,13 @@ class TelegramAuthView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Account blocked'}, status=403)
 
+        if created:
+            from urllib.parse import parse_qsl, unquote
+
+            from apps.accounts.services.onboarding import capture_acquisition
+
+            start = dict(parse_qsl(unquote(init_data))).get('start_param')
+            capture_acquisition(user, {'start_param': start, **(body.get('acquisition') or {})})
         issued = issue_login(request, user, remember=True)
 
         response = JsonResponse({'user': {**user_payload(user), 'is_new': created}})
@@ -208,4 +215,9 @@ class MeView(AuthAPIView):
     def _payload(user) -> dict:
         body = user_payload(user)
         body['is_profile_complete'] = user.is_profile_complete
+        from apps.accounts.services import onboarding, two_factor
+
+        missing = onboarding.missing_fields(user)
+        body['onboarding'] = {'is_complete': not missing, 'missing': missing}
+        body['two_factor_enabled'] = two_factor.is_enabled(user)
         return body

@@ -16,6 +16,12 @@ from apps.accounts.views.linking import (
     TelegramLinkView,
     UnlinkGoogleView,
 )
+from apps.accounts.views.onboarding import (
+    OnboardingOptionsView,
+    OnboardingView,
+    OrgConsentRevokeView,
+    OrgInviteView,
+)
 from apps.accounts.views.otp import OTPSendView, OTPVerifyView
 from apps.accounts.views.recovery import (
     AdminQueueRequestView,
@@ -99,6 +105,17 @@ urlpatterns = [
     path('api/auth/gdpr/erasure/', GDPRErasureView.as_view(), name='gdpr_erasure'),
     # Telegram Bot webhook
     path('api/bot/webhook/', BotWebhookView.as_view(), name='bot_webhook'),
+    # Onboarding profile
+    path('api/auth/onboarding/', OnboardingView.as_view(), name='onboarding'),
+    path(
+        'api/auth/onboarding/options/', OnboardingOptionsView.as_view(), name='onboarding_options'
+    ),
+    path('api/auth/onboarding/org-invite/', OrgInviteView.as_view(), name='onboarding_org_invite'),
+    path(
+        'api/auth/onboarding/org-consent/<uuid:org_id>/',
+        OrgConsentRevokeView.as_view(),
+        name='onboarding_org_consent',
+    ),
     # Account linking (profile)
     path('api/auth/linked/', LinkedAccountsView.as_view(), name='linked'),
     path(

@@ -50,7 +50,7 @@ def _save(token: str, data: dict) -> None:
 # ── Session boshqaruv ─────────────────────────────────────────
 
 
-def create_session(link_user_pk: str | None = None) -> dict:
+def create_session(link_user_pk: str | None = None, acquisition: dict | None = None) -> dict:
     """
     Yangi deep link sessiya yaratadi.
 
@@ -74,6 +74,7 @@ def create_session(link_user_pk: str | None = None) -> dict:
                 'user_pk': None,
                 'mode': 'link' if link_user_pk else 'login',
                 'link_user_pk': link_user_pk,
+                'acquisition': acquisition if isinstance(acquisition, dict) else None,
             }
         ),
         ex=SESSION_TTL,
@@ -204,6 +205,12 @@ def on_bot_contact(
     user_pk = _find_or_create_user(telegram_id, normalized_phone, first_name, last_name)
     if user_pk is None:
         return False
+
+    if session.get('acquisition'):
+        from apps.accounts.models import CustomUser
+        from apps.accounts.services.onboarding import capture_acquisition
+
+        capture_acquisition(CustomUser.objects.get(pk=user_pk), session['acquisition'])
 
     session.update({'status': 'verified', 'phone': normalized_phone, 'user_pk': user_pk})
     _save(token, session)
