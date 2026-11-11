@@ -118,3 +118,35 @@ curl "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/security/events?limi
 # Top attacked endpoints
 # Cloudflare → Analytics → Security → Top Attacked URLs
 ```
+
+## Client IP — `TRUSTED_PROXY_CIDRS`
+
+Django derives the client address in one place, `core/utils/client_ip.py`
+(`get_client_ip`), used by the rate limiter, OTP limits, device fingerprints
+and allauth. Forwarding headers are believed only when the TCP peer
+(`REMOTE_ADDR`) is inside `TRUSTED_PROXY_CIDRS` (comma-separated, env-driven):
+
+| Value | Behaviour |
+|-------|-----------|
+| empty (default) | nothing trusted; `REMOTE_ADDR` is the client |
+| set | `X-Forwarded-For` is walked from the right, skipping trusted hops; the first untrusted hop is the client. `CF-Connecting-IP` is used only when every hop on record is trusted |
+
+Production (Cloudflare → ingress-nginx → Django) must list **both**:
+
+1. the address range the ingress controller pods connect from (the cluster
+   pod CIDR, or the node CIDR if the ingress runs with `hostNetwork`), and
+2. Cloudflare's published edge ranges: <https://www.cloudflare.com/ips-v4> and
+   <https://www.cloudflare.com/ips-v6>.
+
+```
+TRUSTED_PROXY_CIDRS=<pod-cidr>,173.245.48.0/20,103.21.244.0/22,...,2400:cb00::/32,...
+```
+
+If it is left empty in production, every anonymous request appears to come
+from the ingress pod and shares one rate-limit bucket (login is 5/min), so
+set it in the same release that ships this code. Re-check the Cloudflare
+list when Cloudflare announces range changes.
+
+Per-account password-login backoff (all optional, defaults shown):
+`LOGIN_FAILURE_FREE_ATTEMPTS=5`, `LOGIN_BACKOFF_BASE_SECONDS=30`,
+`LOGIN_BACKOFF_MAX_SECONDS=900`, `LOGIN_FAILURE_WINDOW_SECONDS=3600`.

@@ -26,4 +26,11 @@ urlpatterns = [
         views.OpenEndedQAView.as_view(),
         name='openended-qa',
     ),
+    path('mistakes/due/', views.MistakeDueListView.as_view(), name='mistakes-due'),
+    path('mistakes/summary/', views.MistakeSummaryView.as_view(), name='mistakes-summary'),
+    path(
+        'mistakes/<uuid:card_id>/review/',
+        views.MistakeReviewView.as_view(),
+        name='mistakes-review',
+    ),
 ]

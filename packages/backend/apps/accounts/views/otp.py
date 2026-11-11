@@ -25,6 +25,7 @@ from apps.accounts.services.token_service import (
     make_fingerprint,
     set_auth_cookies,
 )
+from core.utils.client_ip import get_client_ip
 
 
 def _is_secure(request) -> bool:
@@ -49,9 +50,7 @@ class OTPSendView(View):
             return JsonResponse({'error': 'phone required'}, status=400)
 
         # ISSUE-106: IP-tier rate limit uchun client IP
-        client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[
-            0
-        ].strip() or request.META.get('REMOTE_ADDR')
+        client_ip = get_client_ip(request)
         try:
             normalized = send_otp(raw_phone, ip=client_ip)
         except PhoneValidationError as e:
