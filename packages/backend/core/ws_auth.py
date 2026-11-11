@@ -46,10 +46,8 @@ def _verify_token_and_get_user(token: str):
         return None
 
     try:
-        payload = verify_access_token(token)
-        if not payload:
-            return None
-        user_id = payload.get('sub')
+        # verify_access_token returns the user id (the `sub` claim), not the payload.
+        user_id = verify_access_token(token)
         if not user_id:
             return None
         return CustomUser.objects.filter(id=user_id, is_active=True).first()
