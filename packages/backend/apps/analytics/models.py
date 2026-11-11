@@ -170,6 +170,52 @@ class QuestionQualityStat(TenantTimestampMixin):
         return f'{self.question_version_id} {self.attempts} attempts {self.flags}'
 
 
+class Expense(SoftDeleteMixin, models.Model):
+    """
+    Platform expense (finance dashboard). Deliberately NOT tenant-scoped: these are the
+    platform's own costs, written and read by platform staff only (no organization FK, so
+    no RLS policy). Deleting is soft (audit trail) and soft-deleted rows are excluded from
+    every total.
+    """
+
+    class Type(models.TextChoices):
+        SERVER = 'server', _('Server / hosting')
+        AI = 'ai', _('AI services')
+        PAYMENT_FEES = 'payment_fees', _("To'lov komissiyalari")
+        ADVERTISING = 'advertising', _('Reklama')
+        SALARIES = 'salaries', _('Ish haqi')
+        CONTENT = 'content', _('Kontent')
+        OTHER = 'other', _('Boshqa')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    date = models.DateField(db_index=True)
+    amount_uzs = models.DecimalField(max_digits=14, decimal_places=2)
+    type = models.CharField(max_length=16, choices=Type.choices, db_index=True)
+    note = models.CharField(max_length=500, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Expense')
+        verbose_name_plural = _('Expenses')
+        ordering = ['-date', '-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount_uzs__gt=0), name='expense_amount_gt_0'
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.date} {self.type} {self.amount_uzs}'
+
+
 # ISSUE-308: Dead-letter queue model — import via dlq module so that
 # Celery task_failure signal handler is registered when apps load.
 from apps.analytics.dlq import FailedTask  # noqa: E402, F401
