@@ -21,7 +21,7 @@ from core.tenant import tenant_context
 
 User = get_user_model()
 pytestmark = pytest.mark.integration
-SECRET = 'sk-live-ZZZZ9876'
+SECRET = 'fake-provider-key-9876'  # obviously fake, low entropy (gitleaks)
 
 
 @pytest.fixture(autouse=True)

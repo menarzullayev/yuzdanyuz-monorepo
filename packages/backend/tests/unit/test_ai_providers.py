@@ -11,7 +11,7 @@ from core import crypto
 
 pytestmark = pytest.mark.django_db
 
-SECRET = 'sk-live-ABCDEFGH1234'
+SECRET = 'fake-provider-key-1234'  # obviously fake, low entropy (gitleaks)
 
 
 def _config(provider='openai', use_for='all', key=SECRET, **kw):
