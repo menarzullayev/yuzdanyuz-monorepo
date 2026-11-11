@@ -39,10 +39,11 @@ class TestRender:
 
         assert drawn > 1000  # the text repeats across the whole tile
         assert hist[0] > drawn  # mostly transparent between the lines
-        # The bicubic rotation overshoots a little at stroke edges (alpha 69 for a
-        # fill of 60, measured on Pillow 11.2.1 and 13.0.0); an opaque fill would
-        # be far above this bound.
-        assert strongest <= watermark.TEXT_FILL[3] * 1.25
+        # The bicubic rotation overshoots at stroke edges. Peak alpha for a fill of
+        # 60, the same on Pillow 11.2.1 and 13.0.0: 69 with the default font (the
+        # image has no TTF fonts), 80 with LiberationSans, 84 with DejaVuSans
+        # (CI runner). An opaque fill would be far above this bound.
+        assert strongest <= watermark.TEXT_FILL[3] * 1.5
 
     def test_each_user_gets_a_different_image(self):
         a = _open(watermark._render_pillow(DATA))
