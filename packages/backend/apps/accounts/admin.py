@@ -1,7 +1,14 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.utils import timezone
 
-from .models import CustomUser, District, Region
+from .models import (
+    CustomUser,
+    DeviceSession,
+    District,
+    PasswordResetRequest,
+    Region,
+)
 
 
 @admin.register(CustomUser)
@@ -68,3 +75,61 @@ class DistrictAdmin(admin.ModelAdmin):
     list_display = ['code', 'name_uz', 'region']
     list_filter = ['region']
     search_fields = ['name_uz', 'name_ru']
+
+
+@admin.register(PasswordResetRequest)
+class PasswordResetRequestAdmin(admin.ModelAdmin):
+    """Platform-admin queue: pick a request, issue a temporary password, hand it over out of band."""
+
+    list_display = [
+        'username_entered',
+        'user',
+        'status',
+        'contact_note',
+        'created_at',
+        'handled_by',
+    ]
+    list_filter = ['status']
+    search_fields = ['username_entered', 'contact_note']
+    readonly_fields = ['user', 'username_entered', 'created_at', 'handled_by', 'handled_at']
+    actions = ['issue_temporary_password', 'reject_requests']
+
+    @admin.action(
+        description='Vaqtinchalik parol berish (foydalanuvchi keyingi kirishda almashtiradi)'
+    )
+    def issue_temporary_password(self, request, queryset):
+        from apps.accounts.services import recovery
+
+        for req in queryset.filter(status=PasswordResetRequest.Status.PENDING):
+            if req.user is None or req.user.is_superuser:
+                self.message_user(
+                    request,
+                    f'{req.username_entered}: hisob topilmadi yoki ruxsat yoʻq.',
+                    messages.WARNING,
+                )
+                continue
+            password = recovery.set_temporary_password(req.user)
+            req.status = PasswordResetRequest.Status.DONE
+            req.handled_by = request.user
+            req.handled_at = timezone.now()
+            req.save(update_fields=['status', 'handled_by', 'handled_at'])
+            # Shown once to the staff member, who passes it to the person out of band.
+            self.message_user(
+                request, f'{req.user.username}: vaqtinchalik parol {password}', messages.SUCCESS
+            )
+
+    @admin.action(description='Rad etish')
+    def reject_requests(self, request, queryset):
+        queryset.filter(status=PasswordResetRequest.Status.PENDING).update(
+            status=PasswordResetRequest.Status.REJECTED,
+            handled_by=request.user,
+            handled_at=timezone.now(),
+        )
+
+
+@admin.register(DeviceSession)
+class DeviceSessionAdmin(admin.ModelAdmin):
+    list_display = ['user', 'device_label', 'country', 'last_used_at', 'revoked_at']
+    list_filter = ['revoked_at', 'remember']
+    search_fields = ['user__username', 'device_label']
+    readonly_fields = [f.name for f in DeviceSession._meta.fields]

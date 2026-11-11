@@ -426,3 +426,69 @@ class BackupCode(models.Model):
 
     def __str__(self):
         return f'backup code {self.pk} ({"used" if self.used_at else "free"})'
+
+
+# ─── Password recovery ────────────────────────────────────────────────────────
+
+
+class RecoveryToken(models.Model):
+    """One-time password-recovery link token (sent through the Telegram bot).
+
+    Only the SHA-256 of the token is stored; it is valid for 15 minutes and
+    can be used once.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='recovery_tokens'
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Tiklash tokeni'
+        verbose_name_plural = 'Tiklash tokenlari'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'recovery {self.user_id} ({"used" if self.used_at else "open"})'
+
+
+class PasswordResetRequest(models.Model):
+    """Request queue for platform admins when no other recovery channel works."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Kutilmoqda'
+        DONE = 'done', 'Bajarildi'
+        REJECTED = 'rejected', 'Rad etildi'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='password_reset_requests',
+    )
+    username_entered = models.CharField(max_length=150)
+    contact_note = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='handled_reset_requests',
+    )
+    handled_at = models.DateTimeField(null=True, blank=True)
+    admin_note = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = 'Parol tiklash so\u02bbrovi'
+        verbose_name_plural = 'Parol tiklash so\u02bbrovlari'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', 'created_at'], name='accounts_prr_status_idx')]
+
+    def __str__(self):
+        return f'{self.username_entered} ({self.status})'

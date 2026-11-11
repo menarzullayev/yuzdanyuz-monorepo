@@ -173,46 +173,91 @@ class RegisterView(PublicAPIView):
 # ── Login ───────────────────────────────────────────────────
 
 
+def authenticate_login(data):
+    """Check username + password (+ second factor). Returns ``(user, key, early_response)``.
+
+    A non-None ``early_response`` (throttled / wrong credentials / need_code) must be
+    returned to the client as is; otherwise ``user`` is fully authenticated.
+    """
+    name = un.normalize_username(text_field(data, 'username'))
+    password = raw_text_field(data, 'password')
+
+    target = CustomUser.objects.filter(username__iexact=name).first() if name else None
+    key = login_throttle.account_key(f'user:{target.pk}' if target else f'login:{name}')
+    try:
+        login_throttle.check(key)
+    except login_throttle.LoginThrottled as e:
+        return None, key, throttled_response(e)
+
+    user = None
+    if target is not None and target.has_usable_password():
+        if target.check_password(password):
+            user = target
+    else:
+        _burn_password_check(password)
+
+    if user is None or not user.is_active:
+        locked_for = login_throttle.register_failure(key)
+        if locked_for and target is not None:
+            notify_account_locked(target, locked_for)
+        return None, key, api_error('invalid_credentials', MSG_INVALID, 400)
+
+    # Second factor: password alone never signs in an account that has 2FA.
+    if two_factor.is_enabled(user):
+        code = raw_text_field(data, 'code')
+        if not code:
+            return None, key, Response({'need_code': True})
+        if not two_factor.verify_second_factor(user, code):
+            locked_for = login_throttle.register_failure(key)
+            if locked_for:
+                notify_account_locked(user, locked_for)
+            return None, key, api_error('invalid_code', 'Kod notoʻgʻri.', 400)
+
+    return user, key, None
+
+
 class LoginView(PublicAPIView):
     def post(self, request):
-        data = request.data
-        name = un.normalize_username(text_field(data, 'username'))
-        password = raw_text_field(data, 'password')
-        remember = flag_field(data, 'remember', False)
-
-        target = CustomUser.objects.filter(username__iexact=name).first() if name else None
-        key = login_throttle.account_key(f'user:{target.pk}' if target else f'login:{name}')
-        try:
-            login_throttle.check(key)
-        except login_throttle.LoginThrottled as e:
-            return throttled_response(e)
-
-        user = None
-        if target is not None and target.has_usable_password():
-            if target.check_password(password):
-                user = target
-        else:
-            _burn_password_check(password)
-
-        if user is None or not user.is_active:
-            locked_for = login_throttle.register_failure(key)
-            if locked_for and target is not None:
-                notify_account_locked(target, locked_for)
-            return api_error('invalid_credentials', MSG_INVALID, 400)
-
-        # Second factor: password alone never signs in an account that has 2FA.
-        if two_factor.is_enabled(user):
-            code = raw_text_field(data, 'code')
-            if not code:
-                return Response({'need_code': True})
-            if not two_factor.verify_second_factor(user, code):
-                locked_for = login_throttle.register_failure(key)
-                if locked_for:
-                    notify_account_locked(user, locked_for)
-                return api_error('invalid_code', 'Kod notoʻgʻri.', 400)
-
+        user, key, early = authenticate_login(request.data)
+        if early is not None:
+            return early
         login_throttle.reset(key)
-        return finish_login(request, user, remember=remember)
+        if user.must_change_password:
+            # An admin issued a temporary password: no session until it is replaced.
+            return Response({'password_change_required': True})
+        return finish_login(request, user, remember=flag_field(request.data, 'remember', False))
+
+
+class ForcedPasswordChangeView(PublicAPIView):
+    """Replace an admin-issued temporary password; signs the user in on success.
+
+    Body: username, password (the temporary one), new_password, code? (if 2FA), remember?
+    """
+
+    def post(self, request):
+        user, key, early = authenticate_login(request.data)
+        if early is not None:
+            return early
+        if not user.must_change_password:
+            return api_error('not_required', 'Password change is not required.', 409)
+        new = raw_text_field(request.data, 'new_password')
+        errs = password_errors(new, user=user) if new else [('password_required', 'Required.')]
+        if new and user.check_password(new):
+            errs.append(('password_unchanged', 'Choose a different password.'))
+        if errs:
+            return api_error(
+                'validation_error',
+                'Yangi parol talablarga javob bermaydi.',
+                400,
+                field_errors(new_password=errs),
+            )
+        login_throttle.reset(key)
+        user.set_password(new)
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password'])
+        revoke_user_sessions(user, reason='password')
+        notify(user, 'password_changed')
+        return finish_login(request, user, remember=flag_field(request.data, 'remember', False))
 
 
 # ── Username ────────────────────────────────────────────────

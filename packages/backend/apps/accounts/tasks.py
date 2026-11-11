@@ -100,7 +100,8 @@ def check_sms_balance() -> dict:
         return poll_sms_balances()
 
 
-@shared_task(name='accounts.send_security_notice')
+# ignore_result: the arguments can carry a one-time recovery link; keep them out of the result table.
+@shared_task(name='accounts.send_security_notice', ignore_result=True)
 def send_security_notice(telegram_id: int, event: str, ctx: dict | None = None) -> bool:
     """Deliver one security notice through the bot (no DB access)."""
     from apps.accounts.services.bot_sender import send_message

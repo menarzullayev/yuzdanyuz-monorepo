@@ -3,6 +3,7 @@ from django.urls import path
 from apps.accounts.gdpr import GDPRErasureView
 from apps.accounts.views.auth import LogoutView, MeView, TelegramAuthView, TokenRefreshView
 from apps.accounts.views.credentials import (
+    ForcedPasswordChangeView,
     LoginView,
     PasswordChangeView,
     RegisterView,
@@ -16,6 +17,12 @@ from apps.accounts.views.linking import (
     UnlinkAuthMethodView,
 )
 from apps.accounts.views.otp import OTPSendView, OTPVerifyView
+from apps.accounts.views.recovery import (
+    AdminQueueRequestView,
+    OrgAdminResetView,
+    RecoveryConfirmView,
+    TelegramRecoveryView,
+)
 from apps.accounts.views.sessions import (
     SessionDetailView,
     SessionListView,
@@ -44,6 +51,16 @@ urlpatterns = [
     path('api/auth/username/check/', UsernameCheckView.as_view(), name='username_check'),
     path('api/auth/username/', UsernameChangeView.as_view(), name='username_change'),
     path('api/auth/password/change/', PasswordChangeView.as_view(), name='password_change'),
+    path(
+        'api/auth/password/change-required/',
+        ForcedPasswordChangeView.as_view(),
+        name='password_change_required',
+    ),
+    # Password recovery (no email)
+    path('api/auth/recovery/telegram/', TelegramRecoveryView.as_view(), name='recovery_telegram'),
+    path('api/auth/recovery/confirm/', RecoveryConfirmView.as_view(), name='recovery_confirm'),
+    path('api/auth/recovery/request/', AdminQueueRequestView.as_view(), name='recovery_request'),
+    path('api/auth/recovery/org-reset/', OrgAdminResetView.as_view(), name='recovery_org_reset'),
     # Two-factor authentication
     path('api/auth/2fa/', TwoFactorStatusView.as_view(), name='2fa_status'),
     path('api/auth/2fa/setup/', TwoFactorSetupView.as_view(), name='2fa_setup'),

@@ -21,6 +21,11 @@ TEXTS = {
         "<b>{brand}</b>: hisobingiz paroli o'zgartirildi. Bu siz bo'lmasangiz, "
         'darhol parolni tiklang va qurilmalarni tekshiring.'
     ),
+    'recovery_link': (
+        '<b>{brand}</b>: parolni tiklash havolasi (15 daqiqa amal qiladi, bir marta ishlaydi):\n'
+        '{link}\n'
+        "Siz so'ramagan bo'lsangiz, e'tibor bermang."
+    ),
     'two_factor_disabled': (
         "<b>{brand}</b>: hisobingizda ikki bosqichli himoya o'chirildi. "
         "Bu siz bo'lmasangiz, parolni almashtiring."

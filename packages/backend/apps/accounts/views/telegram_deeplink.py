@@ -149,8 +149,14 @@ class BotWebhookView(View):
         if not tg_id:
             return JsonResponse({'ok': True})
 
-        # ── /start tgauth_TOKEN ──────────────────────────────
         text = message.get('text', '')
+
+        # ── /reset: one-time password recovery link for the sender's own account ──
+        if text.split('@', 1)[0].strip() == '/reset':
+            self._send_recovery_link(tg_id)
+            return JsonResponse({'ok': True})
+
+        # ── /start tgauth_TOKEN ──────────────────────────────
         if text.startswith('/start'):
             parts = text.split(maxsplit=1)
             if len(parts) == 2 and parts[1].startswith('tgauth_'):
@@ -179,3 +185,17 @@ class BotWebhookView(View):
             return JsonResponse({'ok': True})
 
         return JsonResponse({'ok': True})
+
+    @staticmethod
+    def _send_recovery_link(tg_id: int) -> None:
+        from apps.accounts.services import recovery
+        from apps.accounts.services.security_notifications import render
+
+        user = CustomUser.objects.filter(telegram_id=tg_id, is_active=True).first()
+        if user is None:
+            send_message(tg_id, "Bu Telegram bilan bog'langan hisob topilmadi.")
+        elif not recovery.allow_request(f'tg:{tg_id}'):
+            send_message(tg_id, "Juda ko'p so'rov. Keyinroq urinib ko'ring.")
+        else:
+            link = recovery.recovery_link(recovery.create_token(user))
+            send_message(tg_id, render('recovery_link', link=link))
