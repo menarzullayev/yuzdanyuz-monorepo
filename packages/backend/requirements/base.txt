@@ -69,4 +69,4 @@ django-simple-history>=3.13.0   # ISSUE-401 SOC2 audit trail
 
 # ── Static Files (gunicorn/daphne — nginx-siz serve qilish) ───────────────────
 # Middleware base.py'da ulanadi → barcha env'larda (test/dev/prod) kerak.
-whitenoise==6.9.0
+whitenoise==6.12.0
