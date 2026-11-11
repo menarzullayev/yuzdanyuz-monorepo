@@ -1,6 +1,9 @@
 version: 2
 
 updates:
+  # Commit messages: `prefix: chore` + `include: scope` gives `chore(deps): ...`
+  # (`chore(deps-dev): ...` for dev dependencies). A prefix that already has a
+  # scope, like `chore(deps)`, came out as `chore(deps)(deps): ...`.
   # Backend Python dependencies (version updates; the fetcher also reads the
   # requirements/ folder). The dependency-graph job is scheduled separately, on
   # the folder that holds the requirements files, whatever this directory says;
@@ -14,7 +17,7 @@ updates:
       timezone: Asia/Tashkent
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(deps)"
+      prefix: "chore"
       include: scope
     labels:
       - dependencies
@@ -49,7 +52,7 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(deps)"
+      prefix: "chore"
       include: scope
     labels:
       - dependencies
@@ -80,6 +83,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: "chore"
+      include: scope
     labels:
       - dependencies
       - ci
