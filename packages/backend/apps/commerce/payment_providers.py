@@ -5,7 +5,7 @@ Production:
   Real Payme va Click SDK + merchant credentials .env'da.
   ENABLE_REAL_PAYMENTS=true bilan toggling.
 
-Stub mode (default, dev/test):
+Stub mode (DEBUG/test only):
   - initiate_charge() fake checkout URL qaytaradi
   - handle_webhook() simulyatsiya: provider_tx_id verify, signature stub
   - Real network call yo'q
@@ -16,6 +16,9 @@ Settings:
   CLICK_SERVICE_ID          — production
   CLICK_SECRET_KEY          — production
   ENABLE_REAL_PAYMENTS      — bool, default False (stub)
+  PAYMENTS_STUB_ALLOWED     — bool, test settings only; stub also allowed under DEBUG
+
+With real mode off outside DEBUG/test, payment endpoints are unavailable (503).
 """
 
 import hashlib
@@ -31,7 +34,27 @@ logger = logging.getLogger(__name__)
 
 
 def _is_real_mode() -> bool:
-    return getattr(settings, 'ENABLE_REAL_PAYMENTS', False)
+    return bool(getattr(settings, 'ENABLE_REAL_PAYMENTS', False))
+
+
+def stub_allowed() -> bool:
+    """Stub provider is only for DEBUG/test settings, never production."""
+    if _is_real_mode():
+        return False
+    return bool(settings.DEBUG or getattr(settings, 'PAYMENTS_STUB_ALLOWED', False))
+
+
+def payments_available() -> bool:
+    return _is_real_mode() or stub_allowed()
+
+
+def _verify_hmac(secret_setting: str, payload: dict, signature: str) -> bool:
+    secret = getattr(settings, secret_setting, '')
+    if not secret or not isinstance(signature, str) or not signature:
+        return False
+    body = str(payload).encode()
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 # ── Provider interface ───────────────────────────────────────────────────────
@@ -74,21 +97,16 @@ class PaymeProvider(BaseProvider):
         intent.status = PaymentIntent.Status.PROCESSING
         intent.save(update_fields=['provider_tx_id', 'status', 'updated_at'])
         return {
-            'checkout_url': f'https://stub-payme.local/pay/{tx_id}',
+            'checkout_url': f'https://stub-payme.local/pay/{intent.id}',
             'provider_tx_id': tx_id,
             'status': 'created',
         }
 
     def verify_webhook_signature(self, payload: dict, signature: str) -> bool:
-        if not _is_real_mode():
-            # Stub: any non-empty signature accepted
-            return bool(signature)
-        secret = getattr(settings, 'PAYME_SECRET_KEY', '')
-        if not secret:
-            return False
-        body = str(payload).encode()
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        if _is_real_mode():
+            return _verify_hmac('PAYME_SECRET_KEY', payload, signature)
+        # Stub: any non-empty signature, but only in DEBUG/test settings.
+        return stub_allowed() and bool(signature)
 
     def parse_webhook(self, payload: dict) -> dict:
         return {
@@ -114,20 +132,15 @@ class ClickProvider(BaseProvider):
         intent.status = PaymentIntent.Status.PROCESSING
         intent.save(update_fields=['provider_tx_id', 'status', 'updated_at'])
         return {
-            'checkout_url': f'https://stub-click.local/pay/{tx_id}',
+            'checkout_url': f'https://stub-click.local/pay/{intent.id}',
             'provider_tx_id': tx_id,
             'status': 'created',
         }
 
     def verify_webhook_signature(self, payload: dict, signature: str) -> bool:
-        if not _is_real_mode():
-            return bool(signature)
-        secret = getattr(settings, 'CLICK_SECRET_KEY', '')
-        if not secret:
-            return False
-        body = str(payload).encode()
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        if _is_real_mode():
+            return _verify_hmac('CLICK_SECRET_KEY', payload, signature)
+        return stub_allowed() and bool(signature)
 
     def parse_webhook(self, payload: dict) -> dict:
         return {

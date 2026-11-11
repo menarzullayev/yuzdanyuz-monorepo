@@ -24,6 +24,7 @@ Auth: IsAuthenticated default. Subscription endpoint'lari org admin only.
 import logging
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
@@ -104,20 +105,27 @@ class TopUpView(APIView):
         if provider_name not in ('payme', 'click'):
             raise ValidationError({'provider': "'payme' yoki 'click'"})
 
+        if not payment_providers.payments_available():
+            return _payments_unavailable()
+
         coins = int(amount_uzs / COIN_TO_UZS_RATE)
-        intent = PaymentIntent.objects.create(
-            user=request.user,
-            provider=provider_name,
-            amount_uzs=amount_uzs,
-            coins_to_credit=coins,
-        )
         provider = payment_providers.get_provider(provider_name)
-        result = provider.initiate_charge(intent)
+        try:
+            with transaction.atomic():
+                intent = PaymentIntent.objects.create(
+                    user=request.user,
+                    provider=provider_name,
+                    amount_uzs=amount_uzs,
+                    coins_to_credit=coins,
+                )
+                result = provider.initiate_charge(intent)
+        except NotImplementedError:
+            return _payments_unavailable()
+        # provider_tx_id stays server-side: it is the webhook's lookup key.
         return Response(
             {
                 'intent_id': str(intent.id),
                 'checkout_url': result['checkout_url'],
-                'provider_tx_id': result['provider_tx_id'],
                 'amount_uzs': str(amount_uzs),
                 'coins_to_credit': coins,
             },
@@ -155,7 +163,16 @@ class SpendView(APIView):
 # ─── Webhooks (Payme/Click) ──────────────────────────────────────────────────
 
 
+def _payments_unavailable() -> Response:
+    return Response(
+        {'detail': 'Payments are not available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+    )
+
+
 def _process_webhook(provider_name: str, request) -> Response:
+    if not payment_providers.payments_available():
+        return _payments_unavailable()
+
     provider = payment_providers.get_provider(provider_name)
     payload = request.data if isinstance(request.data, dict) else {}
     signature = request.headers.get('X-Signature', '')
@@ -168,48 +185,52 @@ def _process_webhook(provider_name: str, request) -> Response:
     if not provider_tx_id:
         return Response({'detail': 'Missing provider_tx_id'}, status=400)
 
-    try:
-        intent = PaymentIntent.objects.get(provider=provider_name, provider_tx_id=provider_tx_id)
-    except PaymentIntent.DoesNotExist:
-        return Response({'detail': 'Intent not found'}, status=404)
-
-    if intent.status == PaymentIntent.Status.SUCCEEDED:
-        # Idempotent — already processed
-        return Response({'detail': 'Already processed'}, status=200)
-
     # ISSUE-104: business metric
     from core.metrics import PAYMENTS_COMPLETED
 
-    if parsed.get('status') == 'succeeded':
-        # Credit user wallet
-        wallet = wallet_service.get_or_create_wallet(intent.user)
-        wallet_service.top_up(
-            wallet,
-            intent.coins_to_credit,
-            payment_intent=intent,
-            description=f'Top-up via {provider_name}',
-        )
-        intent.status = PaymentIntent.Status.SUCCEEDED
-        intent.save(update_fields=['status', 'updated_at'])
+    # Row lock on the intent: a duplicate or concurrent callback waits here and
+    # then sees SUCCEEDED, so the wallet is credited exactly once.
+    with transaction.atomic():
+        try:
+            intent = PaymentIntent.objects.select_for_update().get(
+                provider=provider_name, provider_tx_id=provider_tx_id
+            )
+        except PaymentIntent.DoesNotExist:
+            return Response({'detail': 'Intent not found'}, status=404)
 
-        # Subscription activate (agar bog'langan bo'lsa).
-        # Webhook anonymous chaqiriladi — tenant context yo'q. TenantManager
-        # `qs.none()` qaytaradi, shu sababli `unscoped_context()` + explicit
-        # FK filter (last_payment_intent unique) bilan o'qiymiz.
-        if intent.target_subscription_plan and intent.target_organization:
-            try:
-                with unscoped_context():
-                    sub = OrganizationSubscription.objects.get(last_payment_intent=intent)
-                subscription_service.activate(sub)
-            except OrganizationSubscription.DoesNotExist:
-                pass
-        PAYMENTS_COMPLETED.labels(provider=provider_name, status='succeeded').inc()
-    else:
-        intent.status = PaymentIntent.Status.FAILED
-        intent.error_message = parsed.get('error', '')[:500]
-        intent.save(update_fields=['status', 'error_message', 'updated_at'])
-        PAYMENTS_COMPLETED.labels(provider=provider_name, status='failed').inc()
+        if intent.status == PaymentIntent.Status.SUCCEEDED:
+            return Response({'detail': 'Already processed'}, status=200)
 
+        if parsed.get('status') == 'succeeded':
+            wallet = wallet_service.get_or_create_wallet(intent.user)
+            wallet_service.top_up(
+                wallet,
+                intent.coins_to_credit,
+                payment_intent=intent,
+                description=f'Top-up via {provider_name}',
+            )
+            intent.status = PaymentIntent.Status.SUCCEEDED
+            intent.save(update_fields=['status', 'updated_at'])
+
+            # Subscription activate (agar bog'langan bo'lsa).
+            # Webhook anonymous chaqiriladi — tenant context yo'q. TenantManager
+            # `qs.none()` qaytaradi, shu sababli `unscoped_context()` + explicit
+            # FK filter (last_payment_intent unique) bilan o'qiymiz.
+            if intent.target_subscription_plan and intent.target_organization:
+                try:
+                    with unscoped_context():
+                        sub = OrganizationSubscription.objects.get(last_payment_intent=intent)
+                    subscription_service.activate(sub)
+                except OrganizationSubscription.DoesNotExist:
+                    pass
+            result = 'succeeded'
+        else:
+            intent.status = PaymentIntent.Status.FAILED
+            intent.error_message = (parsed.get('error') or '')[:500]
+            intent.save(update_fields=['status', 'error_message', 'updated_at'])
+            result = 'failed'
+
+    PAYMENTS_COMPLETED.labels(provider=provider_name, status=result).inc()
     return Response({'detail': 'OK', 'intent_status': intent.status})
 
 
@@ -297,16 +318,25 @@ class SubscribeView(APIView):
         amount = plan.calculate_charge(active_user_count=active_users)
         coins = 0  # Subscription emas, top-up emas
 
-        intent = PaymentIntent.objects.create(
-            user=request.user,
-            provider=provider_name,
-            amount_uzs=amount,
-            coins_to_credit=coins,
-            target_subscription_plan=plan,
-            target_organization=org,
-        )
-        provider = payment_providers.get_provider(provider_name)
-        checkout = provider.initiate_charge(intent)
+        if not payment_providers.payments_available():
+            return _payments_unavailable()
+        try:
+            provider = payment_providers.get_provider(provider_name)
+        except ValueError:
+            raise ValidationError({'payment_provider': "'payme' yoki 'click'"}) from None
+        try:
+            with transaction.atomic():
+                intent = PaymentIntent.objects.create(
+                    user=request.user,
+                    provider=provider_name,
+                    amount_uzs=amount,
+                    coins_to_credit=coins,
+                    target_subscription_plan=plan,
+                    target_organization=org,
+                )
+                checkout = provider.initiate_charge(intent)
+        except NotImplementedError:
+            return _payments_unavailable()
 
         sub = subscription_service.subscribe(org, plan, payment_intent=intent)
 

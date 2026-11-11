@@ -383,6 +383,12 @@ LOGGING = {
 # O'chirilsa → faqat regex parser ishlaydi (bepul, lekin murakkab savollarni topa olmaydi).
 ENABLE_AI_PARSER = os.getenv('ENABLE_AI_PARSER', 'true').lower() == 'true'
 
+# Payments: real Payme/Click mode. When off, stub mode is only honoured under DEBUG or
+# PAYMENTS_STUB_ALLOWED (test settings); otherwise payment endpoints return 503.
+ENABLE_REAL_PAYMENTS = os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'true'
+PAYME_SECRET_KEY = os.getenv('PAYME_SECRET_KEY') or os.getenv('PAYME_MERCHANT_KEY', '')
+CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '')
+
 # ISSUE-505: django-flags — runtime feature gating (per-user, per-org, percentage rollout).
 # Default conditions env var bilan boshqariladi. Admin'da `/admin/flags/` orqali override.
 #
@@ -396,10 +402,7 @@ FLAGS = {
         {'condition': 'boolean', 'value': ENABLE_AI_PARSER},
     ],
     'ENABLE_REAL_PAYMENTS': [
-        {
-            'condition': 'boolean',
-            'value': os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'true',
-        },
+        {'condition': 'boolean', 'value': ENABLE_REAL_PAYMENTS},
     ],
     # ISSUE-505 demo: A/B test placeholder (off by default; flip on per-user/percentage in admin)
     'EXPERIMENTAL_NEW_DASHBOARD': [
