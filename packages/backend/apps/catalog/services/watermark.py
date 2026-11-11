@@ -36,6 +36,7 @@ TILE_HEIGHT = 400
 FONT_SIZE = 22
 TEXT_FILL = (128, 128, 128, 60)  # RGBA, alpha=60/255
 ROTATION_DEG = -30  # diagonal
+TEXT_GAP = 60  # px between copies on a row
 
 
 # ── Data class ─────────────────────────────────────────────────
@@ -136,7 +137,10 @@ def _load_font():
             return ImageFont.truetype(path, FONT_SIZE)
         except OSError:
             continue
-    return ImageFont.load_default()
+    # Pillow's built-in font has no Cyrillic and no oʻ/gʻ apostrophe (U+02BB), so
+    # most names render as boxes. The backend image installs fonts-dejavu-core.
+    log.warning('No TrueType font for the watermark; using the built-in font')
+    return ImageFont.load_default(size=FONT_SIZE)
 
 
 def _render_pillow(data: WatermarkData) -> bytes:
@@ -149,9 +153,11 @@ def _render_pillow(data: WatermarkData) -> bytes:
     tile = Image.new('RGBA', (TILE_WIDTH, TILE_HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(tile)
 
-    # Diagonal grid: ~150px qadam bilan takrorlash
+    # Diagonal grid. The column step grows with the text, so a long name or org
+    # name does not run into the next copy on the same row.
+    left, _, right, _ = draw.multiline_textbbox((0, 0), text, font=font, spacing=4)
     step_y = 120
-    step_x = 280
+    step_x = max(280, right - left + TEXT_GAP)
     rows = math.ceil(TILE_HEIGHT / step_y) + 2
     cols = math.ceil(TILE_WIDTH / step_x) + 2
 

@@ -42,6 +42,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # charts/yuzdanyuz/values.yaml. With any other UID the pod user has no passwd
 # entry: HOME becomes "/", Python cannot see /home/app/.local and the claude CLI
 # has nowhere to write ~/.claude. scripts/smoke-backend-image.sh checks this.
+# fonts-dejavu-core: the watermark (apps/catalog/services/watermark.py) needs
+# Cyrillic and the oʻ/gʻ apostrophe; Pillow's built-in font has neither.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libjpeg62-turbo \
@@ -50,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     tini \
+    fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd -r -g 1000 app && useradd -r -u 1000 -g app -d /home/app -m app
 

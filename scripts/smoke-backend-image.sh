@@ -4,9 +4,10 @@
 # with the image's default settings module.
 #
 # Checks that the user has a home directory (the claude CLI writes ~/.claude),
-# that Python finds the installed packages, that the claude CLI starts, and that
-# an AI call with no CLAUDE_CODE_OAUTH_TOKEN fails fast with a login error
-# instead of hanging or crashing the worker.
+# that Python finds the installed packages, that the claude CLI starts, that the
+# watermark gets a TrueType font with Uzbek and Cyrillic glyphs, and that an AI
+# call with no CLAUDE_CODE_OAUTH_TOKEN fails fast with a login error instead of
+# hanging or crashing the worker.
 #
 # Usage: scripts/smoke-backend-image.sh <image>
 set -euo pipefail
@@ -46,8 +47,25 @@ import django
 
 django.setup()
 
+from apps.catalog.services import watermark
 from apps.intelligence import tasks
 from core import claude_cli
+
+font = watermark._load_font()
+path = getattr(font, "path", None)
+assert isinstance(path, str) and path.endswith(".ttf"), f"FAIL: watermark font is not a TrueType file: {path!r}"
+
+
+def glyph(ch):
+    mask = font.getmask(ch)
+    return mask.size, bytes(mask)
+
+
+# A glyph the font lacks renders as the same box as a private-use character.
+uzbek_and_cyrillic = "ʻʼЖўқғҳ"
+missing = [hex(ord(ch)) for ch in uzbek_and_cyrillic if glyph(ch) == glyph("")]
+assert not missing, f"FAIL: watermark font {path} lacks glyphs {missing}"
+print(f"watermark font: {path} ({font.size}px), Uzbek and Cyrillic glyphs present")
 
 try:
     tasks._generate_text("ping")

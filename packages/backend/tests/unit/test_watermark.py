@@ -9,7 +9,7 @@ import io
 import fakeredis
 import pytest
 from django.contrib.auth.models import AnonymousUser
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from apps.catalog.services import watermark
 
@@ -51,6 +51,35 @@ class TestRender:
 
         assert ImageChops.difference(a, b).getbbox() is not None
 
+    def test_long_text_widens_the_grid_so_copies_do_not_overlap(self, monkeypatch):
+        long_text = watermark.WatermarkData(
+            user_id='1042',
+            full_name='Жасур Оʻгʻилов',
+            org_name='Yuzdanyuz — Toshkent shahar Chilonzor tumani filiali',
+        )
+        drawn = []
+        real_multiline_text = ImageDraw.ImageDraw.multiline_text
+
+        def spy(self, xy, text, *args, **kwargs):
+            drawn.append((xy, text, kwargs['font']))
+            return real_multiline_text(self, xy, text, *args, **kwargs)
+
+        monkeypatch.setattr(ImageDraw.ImageDraw, 'multiline_text', spy)
+        watermark._render_pillow(long_text)
+
+        _, text, font = drawn[0]
+        box = ImageDraw.Draw(Image.new('RGBA', (1, 1))).multiline_textbbox(
+            (0, 0), text, font=font, spacing=4
+        )
+        width = box[2] - box[0]
+        rows = {}
+        for (x, y), _, _ in drawn:
+            rows.setdefault(y, []).append(x)
+        gaps = [b - a for xs in rows.values() for a, b in zip(sorted(xs), sorted(xs)[1:])]
+
+        assert width > 280  # long enough to overlap with the old fixed step
+        assert min(gaps) >= width + watermark.TEXT_GAP
+
     def test_render_is_deterministic(self):
         # The cache relies on the same input always producing the same PNG.
         assert watermark._render_pillow(DATA) == watermark._render_pillow(DATA)
@@ -89,7 +118,28 @@ class TestRenderPngCache:
         img = _open(watermark.render_png(DATA))
 
         assert img.size == (watermark.TILE_WIDTH, watermark.TILE_HEIGHT)
-        assert len(warnings) == 2  # read and write both failed, neither raised
+        # Read and write both failed, neither raised.
+        assert sum('Redis' in w for w in warnings) == 2
+
+
+@pytest.mark.unit
+class TestLoadFont:
+    def test_builtin_fallback_keeps_the_font_size_and_warns(self, monkeypatch):
+        real_truetype = ImageFont.truetype
+
+        def no_system_fonts(font, *args, **kwargs):
+            if isinstance(font, str):  # a path; the built-in font is loaded from bytes
+                raise OSError(f'cannot open resource {font}')
+            return real_truetype(font, *args, **kwargs)
+
+        warnings = []
+        monkeypatch.setattr(ImageFont, 'truetype', no_system_fonts)
+        monkeypatch.setattr(watermark.log, 'warning', lambda msg, *a: warnings.append(msg % a))
+
+        font = watermark._load_font()
+
+        assert font.size == watermark.FONT_SIZE
+        assert any('No TrueType font' in w for w in warnings)
 
 
 @pytest.mark.unit
