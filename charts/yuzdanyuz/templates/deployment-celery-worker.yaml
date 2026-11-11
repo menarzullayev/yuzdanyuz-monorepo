@@ -56,6 +56,9 @@ spec:
     spec:
       serviceAccountName: {{ include "yuzdanyuz.fullname" $ }}
       securityContext: {{- toYaml $.Values.securityContext | nindent 8 }}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
       # Allow long-running tasks to drain on rolling deploy
       terminationGracePeriodSeconds: 300
       containers:

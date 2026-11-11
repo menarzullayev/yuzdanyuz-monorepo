@@ -10,6 +10,7 @@ on:
       - 'packages/backend/**'
       - 'charts/**'
       - 'scripts/check-celery-queues.py'
+      - 'scripts/check-helm-pull-secrets.py'
       - '.github/workflows/build-and-push.yml'
   workflow_dispatch:
 
@@ -119,3 +120,12 @@ jobs:
             --values charts/yuzdanyuz/values-prod.yaml \
             --set keda.enabled=true > /tmp/rendered-keda.yaml
           python scripts/check-celery-queues.py --manifests /tmp/rendered.yaml /tmp/rendered-keda.yaml
+      - name: Every pod can pull the private GHCR images
+        run: |
+          # values-prod sets global.imagePullSecrets; turn on every optional pod too.
+          helm template yuzdanyuz charts/yuzdanyuz \
+            --values charts/yuzdanyuz/values.yaml \
+            --values charts/yuzdanyuz/values-prod.yaml \
+            --set backup.enabled=true --set keda.enabled=true > /tmp/rendered-all.yaml
+          bash scripts/test-check-helm-pull-secrets.sh
+          python scripts/check-helm-pull-secrets.py /tmp/rendered.yaml /tmp/rendered-all.yaml

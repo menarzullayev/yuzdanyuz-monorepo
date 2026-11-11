@@ -3,6 +3,9 @@
 global:
   domain: yuzdanyuz.local           # placeholder; overridden per env (e.g. yuzdanyuz.uz)
   imageRegistry: ghcr.io/menarzullayev
+  # The GHCR packages are private (2026-11-11), so every pod needs a pull secret,
+  # e.g. [{name: ghcr-pull}]; see docs/deployment/secrets.md. All pod templates
+  # use it; scripts/check-helm-pull-secrets.py checks that in CI.
   imagePullSecrets: []
 
 image:

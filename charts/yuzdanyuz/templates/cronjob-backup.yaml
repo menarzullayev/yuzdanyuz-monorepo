@@ -20,6 +20,9 @@ spec:
         spec:
           restartPolicy: OnFailure
           securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- with $.Values.global.imagePullSecrets }}
+          imagePullSecrets: {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
             - name: walg
               image: {{ .Values.backup.image }}

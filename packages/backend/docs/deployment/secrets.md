@@ -48,6 +48,23 @@ kubectl -n yuzdanyuz-prod create secret generic yuzdanyuz-secrets \
   --from-env-file=secrets/prod.env
 ```
 
+## GHCR pull secret
+
+The `yuzdanyuz-backend` and `yuzdanyuz-nginx` images on GHCR are private
+(since 2026-11-11: the backend image ships the Claude Code CLI, whose licence
+does not allow public redistribution). Every pod pulls with `ghcr-pull`, which
+`values-prod.yaml` sets as `global.imagePullSecrets`:
+
+```bash
+# A GitHub token with read:packages only (classic PAT or fine-grained).
+kubectl -n yuzdanyuz-prod create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io \
+  --docker-username='<github user>' \
+  --docker-password='<token with read:packages>'
+```
+
+Locally, `docker compose` builds the images; pulling them needs `docker login ghcr.io`.
+
 ## Rotation
 
 ```bash
