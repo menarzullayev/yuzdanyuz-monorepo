@@ -17,7 +17,7 @@ fakeredis==2.40.0              # Redis mock for tests (conftest mock_redis fixtu
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
 ruff==0.15.13                  # Linter + formatter (flake8 + isort o'rniga)
-pre-commit==4.6.0              # Git hooks framework (commit + push validation)
+pre-commit==4.7.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────
 ipython==9.18.1                # Django shell uchun
