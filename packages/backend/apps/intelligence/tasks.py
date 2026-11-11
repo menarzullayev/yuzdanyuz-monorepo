@@ -27,6 +27,7 @@ from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
 
+from apps.catalog.services.ai_providers.base import TransientProviderError
 from core.claude_cli import ClaudeRateLimitError, ClaudeTimeoutError
 
 from .models import AIFeedback, OpenEndedSubmission
@@ -49,7 +50,7 @@ def ai_retry_countdown(exc: Exception) -> int | None:
             return _RATE_LIMIT_WAIT
         wait = (exc.resets_at - timezone.now()).total_seconds() + 60
         return int(min(max(wait, 60), _MAX_WAIT))
-    if isinstance(exc, ClaudeTimeoutError):
+    if isinstance(exc, ClaudeTimeoutError | TransientProviderError):
         return _TIMEOUT_WAIT
     return None
 
@@ -70,19 +71,6 @@ def _report_ai_failure(exc: Exception, what: str, obj_id: str) -> None:
 # ── LLM client wrapper ────────────────────────────────────────────────────────
 
 
-# Models that accept server-side refusal fallback (`fallbacks: "default"`).
-# Exact IDs: a prefix match on 'claude-opus-5' would also catch other models.
-_SERVER_FALLBACK_MODELS = frozenset(
-    {
-        'claude-sonnet-5-5',
-        'claude-opus-5-5',
-        'claude-opus-5',
-        'claude-fable-5-1',
-        'claude-fable-5-2',
-    }
-)
-
-
 def _generate_text(
     prompt: str,
     *,
@@ -90,73 +78,33 @@ def _generate_text(
     model: str | None = None,
     system: str | None = None,
     json_schema: dict | None = None,
+    profile: str | None = None,
 ) -> str:
     """
-    Claude'ga bitta so'rov. Test paytida bu funksiya monkey-patch qilinadi.
+    One LLM request. Tests monkeypatch this function.
 
-    settings.LLM_BACKEND tanlaydi: 'claude_cli' — mahalliy Claude subscription
-    (`claude -p`, core/claude_cli.py); 'anthropic_api' — ANTHROPIC_API_KEY bilan API.
-    Model ikkalasida ham settings.ANTHROPIC_MODEL.
+    profile=None -> the settings backend (LLM_BACKEND: 'claude_cli' = local Claude
+    subscription via core/claude_cli.py, 'anthropic_api' = ANTHROPIC_API_KEY) with
+    settings.ANTHROPIC_MODEL (or `model`). A profile ('default'|'writing'|'speaking')
+    selects the admin-configured AIProviderConfig rows instead (apps/intelligence/llm.py),
+    falling back to the default profile and then to the settings backend.
 
-    `json_schema` is enforced by the CLI backend (the reply is that JSON);
-    the API backend relies on the prompt asking for JSON.
-
-    ISSUE-X04: agar `system` berilsa, ephemeral prompt cache qo'llaniladi —
-    bir xil system bloki qayta ishlatilganida token narxi sezilarli kamayadi.
-
-    Claude Sonnet 5.5 thinks adaptively by default and thinking counts toward
-    `max_tokens`, so the limit leaves room for it; `effort: low` keeps thinking
-    short (and skips it on most of these short generation/scoring requests).
+    `json_schema` is enforced by the CLI backend and requested via JSON mode by the HTTP
+    providers; the Anthropic API backend relies on the prompt asking for JSON.
     """
-    model = model or settings.ANTHROPIC_MODEL
-    if settings.LLM_BACKEND == 'claude_cli':
-        from core import claude_cli
+    from . import llm
 
-        result = claude_cli.run(
+    if profile is not None:
+        return llm.generate(
             prompt,
+            profile=profile,
             system=system or '',
-            model=model,
             json_schema=json_schema,
-            timeout=settings.CLAUDE_CLI_TIMEOUT,
+            max_tokens=max_tokens,
         )
-        if json_schema is not None:
-            return json.dumps(result.structured, ensure_ascii=False)
-        return result.text
-
-    import anthropic
-
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY settings/env'da yo'q")
-
-    client = anthropic.Anthropic(api_key=api_key)
-    kwargs: dict = {
-        'model': model,
-        'max_tokens': max_tokens,
-        'output_config': {'effort': 'low'},
-        'messages': [{'role': 'user', 'content': prompt}],
-    }
-    if system:
-        # ISSUE-X04: cache_control=ephemeral on stable SYSTEM block
-        kwargs['system'] = [
-            {'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}},
-        ]
-    if model in _SERVER_FALLBACK_MODELS:
-        # On a policy decline the API re-runs the request on a fallback model.
-        message = client.beta.messages.create(
-            betas=['server-side-fallback-2026-07-01'], fallbacks='default', **kwargs
-        )
-    else:
-        message = client.messages.create(**kwargs)
-
-    if message.stop_reason == 'refusal':
-        category = getattr(message.stop_details, 'category', None)
-        raise RuntimeError(f'Claude declined the request (refusal, category={category})')
-    # A reply can start with a thinking block, so read text blocks by type.
-    text = ''.join(block.text for block in message.content if block.type == 'text')
-    if message.stop_reason == 'max_tokens':
-        raise RuntimeError(f'Claude reply truncated at max_tokens={max_tokens}')
-    return text
+    return llm.settings_provider(model).complete(
+        prompt, system=system or '', json_schema=json_schema, max_tokens=max_tokens
+    )
 
 
 # ── Stable SYSTEM prompts (cacheable via Anthropic ephemeral cache) ───────────
@@ -251,7 +199,7 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
     try:
         prompt = _build_tutor_prompt(fb.summary)
         with AI_TUTOR_LATENCY.labels(task_type='tutor').time():
-            text = _generate_text(prompt, system=TUTOR_SYSTEM_PROMPT)
+            text = _generate_text(prompt, system=TUTOR_SYSTEM_PROMPT, profile='default')
 
         fb.content = text
         fb.status = AIFeedback.Status.READY
@@ -282,6 +230,26 @@ def compute_summary_hash(summary: dict) -> str:
 
 # ── 2. Open-Ended Evaluation ─────────────────────────────────────────────────
 
+WRITING_CRITERIA = ('grammar', 'content', 'structure', 'relevance')
+# Speaking is scored from the transcript only, so pronunciation cannot be assessed.
+SPEAKING_CRITERIA = ('fluency', 'lexical_resource', 'grammar')
+SPEAKING_NOT_ASSESSED = ('pronunciation',)
+
+SPEAKING_RUBRIC_SYSTEM_PROMPT = (
+    "Sen o'quvchining og'zaki javobini TRANSKRIPT asosida baholaydigan ekspertsan. "
+    'Mezonlar (har biri 0-100): fluency (ravonlik va izchillik), '
+    "lexical_resource (lug'at boyligi va aniqligi), grammar (grammatik to'g'rilik). "
+    "Talaffuz (pronunciation) BAHOLANMAYDI: sen audio'ni eshitmaysan, faqat matnni ko'rasan. "
+    "Faqat valid JSON qaytar — hech qanday markdown yoki prefiks qo'shma."
+)
+
+SPEAKING_RUBRIC_SCHEMA = {
+    'type': 'object',
+    'properties': {**dict.fromkeys(SPEAKING_CRITERIA, _SCORE), 'rationale': {'type': 'string'}},
+    'required': [*SPEAKING_CRITERIA, 'rationale'],
+    'additionalProperties': False,
+}
+
 
 def _build_essay_rubric_prompt(question_text: str, answer_text: str) -> str:
     """Essay/audio answer'ni rubric bo'yicha baholash uchun prompt."""
@@ -303,13 +271,66 @@ JSON FORMATI (faqat shu, boshqa matn yozma):
 {{"grammar": <int>, "content": <int>, "structure": <int>, "relevance": <int>, "rationale": "<2-3 jumla O'zbek tilida tushuntirish>"}}"""
 
 
+def _build_speaking_rubric_prompt(question_text: str, transcript: str) -> str:
+    return f"""SAVOL:
+{question_text}
+
+O'QUVCHI JAVOBI (audio'dan olingan transkript):
+{transcript}
+
+Quyidagi 3 mezon bo'yicha 0-100 oralig'ida ball qo'y. Talaffuzni baholama (audio yo'q).
+- fluency: ravonlik, izchillik, to'xtamlar va takrorlar (transkriptdan ko'rinishicha)
+- lexical_resource: lug'at boyligi va so'z tanlash aniqligi
+- grammar: grammatik to'g'rilik va murakkablik
+
+JSON FORMATI (faqat shu, boshqa matn yozma):
+{{"fluency": <int>, "lexical_resource": <int>, "grammar": <int>, "rationale": "<2-3 jumla O'zbek tilida tushuntirish>"}}"""
+
+
+def _parse_scores(text: str) -> dict:
+    cleaned = text.strip()
+    if cleaned.startswith('```'):
+        cleaned = cleaned.strip('`')
+        if cleaned.startswith('json'):
+            cleaned = cleaned[4:]
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f'LLM JSON parse failed: {e}') from None
+    if not isinstance(data, dict):
+        raise RuntimeError('LLM JSON parse failed: not an object')
+    return data
+
+
+def _extract_breakdown(scores: dict, criteria: tuple[str, ...]) -> dict[str, int]:
+    """Every criterion must be present and numeric; values are clamped to 0..100."""
+    breakdown = {}
+    for key in criteria:
+        value = scores.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise RuntimeError(f'LLM omitted or malformed criterion {key!r}')
+        breakdown[key] = max(0, min(100, round(value)))
+    return breakdown
+
+
+def _read_audio(sub: OpenEndedSubmission) -> tuple[bytes, str]:
+    if not sub.audio_file:
+        raise RuntimeError("Audio fayl ham, transkript ham yo'q")
+    with sub.audio_file.open('rb') as f:
+        return f.read(), sub.audio_file.name.rsplit('/', 1)[-1]
+
+
 @shared_task(name='intelligence.evaluate_openended_submission', bind=True)
 def evaluate_openended_submission(self, submission_id: str) -> dict:
     """
     OpenEndedSubmission'ni AI bilan baholash. Lifecycle:
-      PENDING → AI_REVIEWED (default) yoki FAILED
-    Human QA navbatdagi qadamda (admin tomonidan).
+      PENDING → AI_REVIEWED (default), AWAITING_HUMAN (speaking, no STT provider) yoki FAILED
+    The AI score is an estimate; the final score is set by a teacher (grading queue).
+    Essay -> 'writing' profile; audio -> transcript via the speaking profile's STT, then
+    'speaking' profile scores fluency, lexical resource and grammar (not pronunciation).
     """
+    from core.metrics import AI_TUTOR_CALLS
+
     try:
         sub = OpenEndedSubmission.objects.select_related('question_version').get(pk=submission_id)
     except OpenEndedSubmission.DoesNotExist:
@@ -319,36 +340,52 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
     if sub.status != OpenEndedSubmission.Status.PENDING:
         return {'status': 'skipped', 'reason': sub.status}
 
+    is_audio = sub.submission_type == OpenEndedSubmission.Type.AUDIO
     try:
         question_text = sub.question_version.content.get('text', '') or ''
         answer_text = sub.content or ''
 
-        if sub.submission_type == OpenEndedSubmission.Type.AUDIO and not answer_text:
-            # Production: Whisper API transcribe. Hozircha placeholder.
-            raise RuntimeError('Audio transcription hali implement qilinmagan (Whisper SDK kerak)')
+        if is_audio and not answer_text:
+            from . import stt
 
-        prompt = _build_essay_rubric_prompt(question_text, answer_text)
-        text = _generate_text(
-            prompt, system=ESSAY_RUBRIC_SYSTEM_PROMPT, json_schema=ESSAY_RUBRIC_SCHEMA
-        )
+            stt_config = stt.resolve_stt('speaking')
+            if stt_config is None:
+                sub.status = OpenEndedSubmission.Status.AWAITING_HUMAN
+                sub.ai_feedback = {
+                    'skipped': 'no_stt_provider',
+                    'message': 'No speech-to-text provider is configured; awaiting a human grader.',
+                }
+                sub.save(update_fields=['status', 'ai_feedback'])
+                AI_TUTOR_CALLS.labels(task_type='openended', status='skipped').inc()
+                return {'status': 'awaiting_human', 'reason': 'no_stt_provider'}
+            audio, filename = _read_audio(sub)
+            answer_text = stt.transcribe(stt_config, audio, filename)
+            sub.content = answer_text
+            sub.save(update_fields=['content'])
 
-        # JSON parse
-        try:
-            scores = json.loads(text.strip().strip('`').replace('json\n', '', 1))
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f'LLM JSON parse failed: {e}') from None
+        if is_audio:
+            criteria, profile = SPEAKING_CRITERIA, 'speaking'
+            prompt = _build_speaking_rubric_prompt(question_text, answer_text)
+            system, schema = SPEAKING_RUBRIC_SYSTEM_PROMPT, SPEAKING_RUBRIC_SCHEMA
+        else:
+            criteria, profile = WRITING_CRITERIA, 'writing'
+            prompt = _build_essay_rubric_prompt(question_text, answer_text)
+            system, schema = ESSAY_RUBRIC_SYSTEM_PROMPT, ESSAY_RUBRIC_SCHEMA
 
-        # Aggregate score (oddiy avg — kelajakda weighted bo'lishi mumkin)
-        breakdown = {
-            k: int(scores.get(k, 0)) for k in ['grammar', 'content', 'structure', 'relevance']
-        }
-        avg_score = sum(breakdown.values()) / 4
+        text = _generate_text(prompt, system=system, json_schema=schema, profile=profile)
+        scores = _parse_scores(text)
+        breakdown = _extract_breakdown(scores, criteria)
+        avg_score = sum(breakdown.values()) / len(criteria)
 
         sub.ai_score = round(avg_score, 2)
         sub.ai_feedback = {**breakdown, 'rationale': scores.get('rationale', '')}
+        if is_audio:
+            sub.ai_feedback['based_on'] = 'transcript'
+            sub.ai_feedback['not_assessed'] = list(SPEAKING_NOT_ASSESSED)
         sub.status = OpenEndedSubmission.Status.AI_REVIEWED
         sub.ai_completed_at = timezone.now()
         sub.save(update_fields=['ai_score', 'ai_feedback', 'status', 'ai_completed_at'])
+        AI_TUTOR_CALLS.labels(task_type='openended', status='ok').inc()
         return {
             'status': 'ai_reviewed',
             'submission_id': str(sub.id),
@@ -358,12 +395,14 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
         countdown = ai_retry_countdown(e)
         if countdown is not None and self.request.retries < AI_RETRY_MAX:
             logger.warning('Open-ended %s deferred %ss: %s', submission_id, countdown, e)
+            AI_TUTOR_CALLS.labels(task_type='openended', status='deferred').inc()
             raise self.retry(exc=e, countdown=countdown, max_retries=AI_RETRY_MAX) from e
         _report_ai_failure(e, 'Open-ended evaluation', submission_id)
         sub.status = OpenEndedSubmission.Status.FAILED
         sub.ai_feedback = {'error': str(e)[:500]}
         sub.ai_completed_at = timezone.now()
         sub.save(update_fields=['status', 'ai_feedback', 'ai_completed_at'])
+        AI_TUTOR_CALLS.labels(task_type='openended', status='failed').inc()
         return {'status': 'failed', 'error': str(e)[:200]}
 
 
