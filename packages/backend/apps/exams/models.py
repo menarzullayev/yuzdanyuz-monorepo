@@ -601,3 +601,13 @@ class QuestionDispute(TenantTimestampMixin):
         self._validate_transition(self.Status.REJECTED)
         self.status = self.Status.REJECTED
         self.save(update_fields=['status', 'updated_at'])
+
+
+# Sittings (Rasch scoring + certificates) live in a separate module for readability.
+from .sitting_models import (  # noqa: E402,F401
+    Certificate,
+    ExamSitting,
+    GradeScale,
+    SittingItem,
+    SittingResult,
+)
