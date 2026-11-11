@@ -11,12 +11,15 @@ Endpoints:
 import json
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 
+from apps.accounts.models import CustomUser, PreferredLang
 from apps.accounts.services.telegram_auth import (
     TelegramAuthError,
     find_or_create_user,
@@ -30,7 +33,9 @@ from apps.accounts.services.token_service import (
     rotate_refresh_token,
     session_from_refresh,
 )
-from apps.accounts.views.base import AuthAPIView
+from apps.accounts.views.base import AuthAPIView, api_error, field_errors
+from apps.accounts.views.credentials import text_field
+from apps.accounts.views.payloads import user_payload
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -151,47 +156,65 @@ class LogoutView(View):
 
 class MeView(AuthAPIView):
     """
-    GET /api/auth/me/
+    GET   /api/auth/me/   current user (frontend bootstrap on app load / after login)
+    PATCH /api/auth/me/   first_name, last_name, email (optional, unverified), preferred_lang
 
-    Returns the authenticated user's profile + primary organization.
-    Frontend invokes this immediately after login (or on app boot) to bootstrap
-    the user shell (display name, role, org switcher, locale).
-
-    Authentication: JWTAuthMiddleware reads the `access_token` HttpOnly cookie
-    and populates request.user. SessionAuthentication (DRF default) then passes
-    through. 401 when anonymous, 200 with payload when authenticated.
+    401 when anonymous or when the device session was revoked.
     """
 
     def get(self, request):
+        return Response(self._payload(request.user))
+
+    def patch(self, request):
         user = request.user
-        org = user.primary_organization
-        return Response(
-            {
-                'id': str(user.pk),
-                'email': user.email or None,
-                'phone_number': user.phone_number or None,
-                'display_name': user.display_name,
-                'first_name': user.first_name or None,
-                'last_name': user.last_name or None,
-                'avatar': user.avatar.url if user.avatar else None,
-                'preferred_lang': user.preferred_lang,
-                'user_type': user.user_type,
-                'is_profile_complete': user.is_profile_complete,
-                'telegram': {
-                    'id': user.telegram_id,
-                    'username': user.telegram_username,
-                    'photo_url': user.telegram_photo_url,
-                }
-                if user.telegram_id
-                else None,
-                'primary_organization': {
-                    'id': str(org.id),
-                    'name': org.name,
-                    'slug': getattr(org, 'slug', None),
-                }
-                if org
-                else None,
-                'is_staff': user.is_staff,
-                'is_superuser': user.is_superuser,
-            }
-        )
+        data = request.data
+        errors: dict[str, list[tuple[str, str]]] = {}
+        update = []
+
+        for key in ('first_name', 'last_name'):
+            if key in data:
+                val = text_field(data, key)
+                if not 2 <= len(val) <= 60:
+                    errors[key] = [(f'{key}_length', 'Must be between 2 and 60 characters.')]
+                else:
+                    setattr(user, key, val)
+                    update.append(key)
+
+        if 'email' in data:
+            email = text_field(data, 'email').lower()
+            if not email:
+                user.email = None
+                update.append('email')
+            else:
+                try:
+                    validate_email(email)
+                except DjangoValidationError:
+                    errors['email'] = [('email_invalid', 'Enter a valid email.')]
+                else:
+                    if CustomUser.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
+                        errors['email'] = [('email_taken', 'This email is already in use.')]
+                    else:
+                        user.email = email
+                        update.append('email')
+
+        if 'preferred_lang' in data:
+            lang = text_field(data, 'preferred_lang')
+            if lang not in PreferredLang.values:
+                errors['preferred_lang'] = [('invalid_choice', 'Unsupported language.')]
+            else:
+                user.preferred_lang = lang
+                update.append('preferred_lang')
+
+        if errors:
+            return api_error(
+                'validation_error', 'Maʼlumotlar notoʻgʻri.', 400, field_errors(**errors)
+            )
+        if update:
+            user.save(update_fields=update)
+        return Response(self._payload(user))
+
+    @staticmethod
+    def _payload(user) -> dict:
+        body = user_payload(user)
+        body['is_profile_complete'] = user.is_profile_complete
+        return body

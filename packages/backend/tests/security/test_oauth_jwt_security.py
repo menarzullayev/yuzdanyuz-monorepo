@@ -246,7 +246,7 @@ class TestPhoneNumberSecurity:
         from apps.accounts.models import OTPCode
 
         code = OTPCode.objects.get(phone=phone_number)
-        assert code.code is not None
+        assert code.code_hash and code.code_hash != '123456'
 
     def test_otp_attempt_limit(self, db, phone_number, mock_redis):
         """After 3 attempts (OTP_MAX_ATTEMPTS), OTP code is disabled."""
@@ -255,7 +255,7 @@ class TestPhoneNumberSecurity:
 
         code = OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
             attempts=3,  # Already at OTP_MAX_ATTEMPTS limit
         )

@@ -24,7 +24,7 @@ def ping_view(request):
 def home_view(request):
     if request.user.is_authenticated:
         return render(request, 'index.html')
-    return redirect('accounts:login')
+    return redirect(f'{settings.FRONTEND_BASE_URL}/login')
 
 
 urlpatterns = [

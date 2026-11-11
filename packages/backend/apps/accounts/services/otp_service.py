@@ -115,8 +115,8 @@ def send_otp(raw_phone: str, *, ip: str | None = None) -> str:
     _check_send_rate(phone)
     _check_ip_rate(ip)
 
-    otp = OTPCode.create_for_phone(phone)
-    text = _otp_text(otp.code)
+    otp, code = OTPCode.create_for_phone(phone)
+    text = _otp_text(code)
 
     backend = get_sms_backend()
     sent = backend.send(phone, text)
@@ -161,7 +161,7 @@ def verify_otp(raw_phone: str, code: str) -> CustomUser:
     if otp.is_exhausted:
         raise OTPError("Juda ko'p noto'g'ri urinish. Qayta SMS so'rang.")
 
-    if otp.code != code.strip():
+    if not otp.matches(code.strip()):
         otp.attempts += 1
         otp.save(update_fields=['attempts'])
         remaining = 3 - otp.attempts
@@ -183,7 +183,7 @@ def verify_otp(raw_phone: str, code: str) -> CustomUser:
 
 
 def _otp_text(code: str) -> str:
-    brand = getattr(settings, 'PROJECT_BRAND_NAME', 'Milliy Sertifikat')
+    brand = settings.PROJECT_BRAND_NAME
     return f'{brand}: tasdiqlash kodingiz {code}. Hech kimga bermang.'
 
 

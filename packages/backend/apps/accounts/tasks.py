@@ -98,3 +98,12 @@ def check_sms_balance() -> dict:
         if not acquired:
             return {'status': 'skipped_lock_busy'}
         return poll_sms_balances()
+
+
+@shared_task(name='accounts.send_security_notice')
+def send_security_notice(telegram_id: int, event: str, ctx: dict | None = None) -> bool:
+    """Deliver one security notice through the bot (no DB access)."""
+    from apps.accounts.services.bot_sender import send_message
+    from apps.accounts.services.security_notifications import render
+
+    return send_message(telegram_id, render(event, **(ctx or {})))

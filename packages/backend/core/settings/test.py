@@ -82,6 +82,9 @@ TELEGRAM_BOT_TOKEN = 'test-bot-token-1234567890'
 TELEGRAM_BOT_USERNAME = 'test_bot'
 TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret'
 
+# SMS OTP flag is off by default; the OTP code paths are exercised with it on.
+ENABLE_SMS_OTP = True
+
 # SMS Backend
 SMS_BACKEND = 'console'  # Log to console in tests
 PLAYMOBILE_LOGIN = 'test-login'

@@ -48,7 +48,7 @@ def send_contact_request(telegram_id: int) -> bool:
     if not token:
         return False
 
-    brand = getattr(settings, 'PROJECT_BRAND_NAME', 'Milliy Sertifikat')
+    brand = settings.PROJECT_BRAND_NAME
     try:
         resp = requests.post(
             TELEGRAM_API.format(token=token),
@@ -82,7 +82,7 @@ def send_success_message(telegram_id: int) -> bool:
     token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
     if not token:
         return False
-    brand = getattr(settings, 'PROJECT_BRAND_NAME', 'Milliy Sertifikat')
+    brand = settings.PROJECT_BRAND_NAME
     try:
         resp = requests.post(
             TELEGRAM_API.format(token=token),

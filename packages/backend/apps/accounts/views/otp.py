@@ -7,6 +7,7 @@ POST /api/auth/otp/verify/  — kodni tekshiradi, JWT cookie qaytaradi
 
 import json
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -23,6 +24,10 @@ from apps.accounts.services.token_service import attach_session, issue_login
 from core.utils.client_ip import get_client_ip
 
 
+def _disabled_response():
+    return JsonResponse({'error': 'sms_otp_disabled'}, status=404)
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class OTPSendView(View):
     """
@@ -31,6 +36,8 @@ class OTPSendView(View):
     """
 
     def post(self, request):
+        if not settings.ENABLE_SMS_OTP:
+            return _disabled_response()
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -69,6 +76,8 @@ class OTPVerifyView(View):
     """
 
     def post(self, request):
+        if not settings.ENABLE_SMS_OTP:
+            return _disabled_response()
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):

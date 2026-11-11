@@ -1,9 +1,13 @@
 import datetime
+import hashlib
+import hmac
+import secrets
 from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
@@ -147,6 +151,16 @@ class CustomUser(AbstractUser):
         help_text='Maksimal 189',
     )
 
+    # ── Auth state ────────────────────────────────────────────────────────────
+    # Telegram/Google signups get a generated username and one free change.
+    username_is_auto = models.BooleanField(default=False)
+    username_changed_at = models.DateTimeField(null=True, blank=True)
+    # Set when an admin issued a temporary password; login is refused until it is replaced.
+    must_change_password = models.BooleanField(default=False)
+    # Text consent (no checkbox): terms version shown at signup + when.
+    terms_version = models.CharField(max_length=20, blank=True)
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+
     # ── Django AbstractUser REQUIRED_FIELDS ni tozalaymiz ────────────────────
     # Multi-auth da email majburiy emas.
     REQUIRED_FIELDS = []
@@ -160,6 +174,9 @@ class CustomUser(AbstractUser):
         verbose_name = 'Foydalanuvchi'
         verbose_name_plural = 'Foydalanuvchilar'
         ordering = ['-date_joined']
+        constraints = [
+            models.UniqueConstraint(Lower('username'), name='uniq_user_username_ci'),
+        ]
 
     def __str__(self):
         return self.display_name
@@ -260,7 +277,8 @@ class OTPCode(models.Model):
     """
 
     phone = models.CharField(max_length=20, db_index=True)
-    code = models.CharField(max_length=6)
+    # HMAC of the code (never the code itself); see hash_code().
+    code_hash = models.CharField(max_length=64)
     is_verified = models.BooleanField(default=False)
     attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -283,16 +301,24 @@ class OTPCode(models.Model):
     def is_exhausted(self) -> bool:
         return self.attempts >= OTP_MAX_ATTEMPTS
 
-    @classmethod
-    def create_for_phone(cls, phone: str) -> 'OTPCode':
-        import random
+    @staticmethod
+    def hash_code(phone: str, code: str) -> str:
+        key = settings.SECRET_KEY.encode()
+        return hmac.new(key, f'otp:{phone}:{code}'.encode(), hashlib.sha256).hexdigest()
 
-        code = f'{random.randint(0, 999999):06d}'
-        return cls.objects.create(
+    def matches(self, code: str) -> bool:
+        return hmac.compare_digest(self.code_hash, self.hash_code(self.phone, code))
+
+    @classmethod
+    def create_for_phone(cls, phone: str) -> tuple['OTPCode', str]:
+        """Create a new OTP; returns ``(row, plaintext_code)``. Only the hash is stored."""
+        code = f'{secrets.randbelow(10**6):06d}'
+        otp = cls.objects.create(
             phone=phone,
-            code=code,
+            code_hash=cls.hash_code(phone, code),
             expires_at=timezone.now() + datetime.timedelta(seconds=OTP_TTL_SECONDS),
         )
+        return otp, code
 
 
 # ─── Device sessions ──────────────────────────────────────────────────────────

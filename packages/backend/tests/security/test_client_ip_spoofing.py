@@ -13,7 +13,7 @@ These go through the full middleware stack with the Django test client:
 import pytest
 from django.test import Client
 
-LOGIN_URL = '/api/auth/email/'
+LOGIN_URL = '/api/auth/login/'
 REGISTER_URL = '/api/auth/register/'
 
 UNTRUSTED_PEER = '203.0.113.7'
@@ -46,7 +46,7 @@ class TestSpoofedForwardedHeaders:
         for i in range(20):
             resp = client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=UNTRUSTED_PEER,
                 HTTP_X_FORWARDED_FOR=_fake_ip(i),
             )
@@ -60,7 +60,7 @@ class TestSpoofedForwardedHeaders:
         statuses = [
             client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=UNTRUSTED_PEER,
                 HTTP_CF_CONNECTING_IP=_fake_ip(i),
             ).status_code
@@ -75,7 +75,7 @@ class TestSpoofedForwardedHeaders:
         statuses = [
             client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=TRUSTED_PROXY_PEER,
                 HTTP_X_FORWARDED_FOR=f'{_fake_ip(i)}, {UNTRUSTED_PEER}',
             ).status_code
@@ -88,7 +88,7 @@ class TestSpoofedForwardedHeaders:
         statuses = [
             client.post(
                 REGISTER_URL,
-                {'reg_method': 'username', 'username': 'x', 'password': 'short'},
+                {'username': 'x', 'password': 'short'},
                 REMOTE_ADDR=UNTRUSTED_PEER,
                 HTTP_X_FORWARDED_FOR=_fake_ip(i),
             ).status_code
@@ -100,8 +100,8 @@ class TestSpoofedForwardedHeaders:
         settings.TRUSTED_PROXY_CIDRS = []
         statuses = [
             client.post(
-                '/accounts/password/reset/',
-                {'email': f'x{i}@example.com'},
+                '/api/auth/recovery/telegram/',
+                {'username': f'x{i}user'},
                 REMOTE_ADDR=UNTRUSTED_PEER,
                 HTTP_X_FORWARDED_FOR=_fake_ip(i),
             ).status_code
@@ -118,7 +118,7 @@ class TestTrustedProxy:
         statuses = [
             client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=TRUSTED_PROXY_PEER,
                 HTTP_CF_CONNECTING_IP=_fake_ip(i),
             ).status_code
@@ -131,7 +131,7 @@ class TestTrustedProxy:
         statuses = [
             client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=TRUSTED_PROXY_PEER,
                 HTTP_CF_CONNECTING_IP='192.0.2.44',
                 HTTP_X_FORWARDED_FOR='173.245.48.1',
@@ -146,7 +146,7 @@ class TestTrustedProxy:
         statuses = [
             client.post(
                 LOGIN_URL,
-                {'login': f'nobody{i}', 'password': 'wrong-password-1'},
+                {'username': f'nobody{i}', 'password': 'wrong-password-1'},
                 REMOTE_ADDR=TRUSTED_PROXY_PEER,
                 HTTP_CF_CONNECTING_IP=_fake_ip(i),
                 HTTP_X_FORWARDED_FOR=f'{_fake_ip(i + 100)}, {UNTRUSTED_PEER}',
@@ -163,7 +163,7 @@ class TestPerAccountThrottle:
         # never trips, so only a per-account limit can stop this.
         return client.post(
             LOGIN_URL,
-            {'login': login, 'password': password},
+            {'username': login, 'password': password},
             REMOTE_ADDR=f'192.0.2.{i + 1}',
         )
 
@@ -182,14 +182,6 @@ class TestPerAccountThrottle:
         resp = self._attempt(client, 50, password='Correct-horse-9')
         assert resp.status_code == 429
         assert int(resp['Retry-After']) > 0
-
-    def test_email_alias_shares_the_account_bucket(self, client, settings, victim):
-        settings.TRUSTED_PROXY_CIDRS = []
-        for i in range(10):
-            login = 'victim_user' if i % 2 else 'victim@example.com'
-            self._attempt(client, i, login=login)
-        assert self._attempt(client, 60).status_code == 429
-        assert self._attempt(client, 61, login='VICTIM@example.com').status_code == 429
 
     def test_other_accounts_unaffected(self, client, settings, victim):
         settings.TRUSTED_PROXY_CIDRS = []
@@ -213,11 +205,11 @@ class TestPerAccountThrottle:
         resp = self._attempt(client, 251, password='Correct-horse-9')
         assert resp.status_code == 429
         retry_after = int(resp['Retry-After'])
-        assert 0 < retry_after <= settings.LOGIN_BACKOFF_MAX_SECONDS
+        assert 0 < retry_after <= max(settings.LOGIN_LOCK_LADDER_SECONDS)
 
         now[0] += retry_after + 1
         resp = self._attempt(client, 252, password='Correct-horse-9')
-        assert resp.status_code == 204, resp.content
+        assert resp.status_code == 200, resp.content
 
         # A successful login clears the counter.
         assert self._attempt(client, 253).status_code == 400
