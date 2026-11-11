@@ -17,9 +17,10 @@ from dataclasses import dataclass, field
 
 # Dropped from the child's environment, except _ENV_KEEP. CLAUDECODE is what a parent
 # Claude Code session sets; it has no underscore, so it needs its own entry.
+# CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) is how a container logs in.
 _ENV_PREFIXES = ('ANTHROPIC_', 'CLAUDE_')
 _ENV_DROP = {'CLAUDECODE'}
-_ENV_KEEP = {'CLAUDE_CONFIG_DIR'}
+_ENV_KEEP = {'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN'}
 
 
 class ClaudeCLIError(RuntimeError):
