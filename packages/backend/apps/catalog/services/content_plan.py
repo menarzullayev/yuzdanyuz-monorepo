@@ -6,7 +6,8 @@ from apps.catalog.models import ContentTarget, Question, QuestionVersion, Subjec
 
 DEFAULT_TARGET_QUESTIONS = 300
 DEFAULT_TARGET_VARIANTS = 10
-CONTENT_LANGUAGES = ('uz', 'ru')
+# ISO 639-3 codes as stored in Question.language (free-form CharField, no choices).
+CONTENT_LANGUAGES = ('uz', 'ru', 'kaa')
 
 READY, LOW, EMPTY = 'ready', 'low', 'empty'
 STATUSES = (READY, LOW, EMPTY)

@@ -99,16 +99,33 @@ class TestCounting:
     def test_per_language_and_missing(self, db, org, subject):
         _bulk(org, subject, 2, lang='uz')
         _q(org, subject, lang='ru')
+        _q(org, subject, lang='kaa')
         with tenant_context(org):
             row = plan.build_plan(org)['results'][0]
-        assert row['approved_by_language'] == {'uz': 2, 'ru': 1}
-        assert row['approved_questions'] == 3
+        assert row['approved_by_language'] == {'uz': 2, 'ru': 1, 'kaa': 1}
+        assert row['approved_questions'] == 4
         assert row['missing_languages'] == []
 
     def test_missing_language_reported(self, db, org, subject):
         _q(org, subject, lang='uz')
         with tenant_context(org):
-            assert plan.build_plan(org)['results'][0]['missing_languages'] == ['ru']
+            assert plan.build_plan(org)['results'][0]['missing_languages'] == ['ru', 'kaa']
+
+    def test_uz_ru_only_lists_karakalpak_missing(self, db, org, subject):
+        _q(org, subject, lang='uz')
+        _q(org, subject, lang='ru')
+        with tenant_context(org):
+            assert plan.build_plan(org)['results'][0]['missing_languages'] == ['kaa']
+
+    def test_unknown_code_does_not_satisfy_karakalpak(self, db, org, subject):
+        # 'qq' / 'kk' are not the Karakalpak code ('kaa'); they must not clear it.
+        _q(org, subject, lang='uz')
+        _q(org, subject, lang='ru')
+        _q(org, subject, lang='qq')
+        _q(org, subject, lang='kk')
+        with tenant_context(org):
+            assert plan.build_plan(org)['results'][0]['missing_languages'] == ['kaa']
+        assert plan.CONTENT_LANGUAGES == ('uz', 'ru', 'kaa')
 
     def test_inactive_and_quarantined_do_not_count(self, db, org, subject):
         _q(org, subject, active=False)
