@@ -7,7 +7,7 @@ data:
 {{- range $key, $value := .Values.env }}
   {{ $key }}: {{ $value | quote }}
 {{- end }}
-  ALLOWED_HOSTS: {{ .Values.global.domain }}
+  ALLOWED_HOSTS: {{ include "yuzdanyuz.allowedHosts" . | quote }}
   DB_HOST: {{ .Values.externalServices.postgres.host | quote }}
   DB_PORT: {{ .Values.externalServices.postgres.port | quote }}
   DB_NAME: {{ .Values.externalServices.postgres.name | quote }}

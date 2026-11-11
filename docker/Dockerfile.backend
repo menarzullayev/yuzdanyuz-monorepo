@@ -84,7 +84,17 @@ ENV OTEL_ENABLED=false \
     OTEL_METRICS_EXPORTER=otlp \
     OTEL_LOGS_EXPORTER=none
 
+# /app itself is root-owned: without these app-owned dirs the migrate Job's
+# collectstatic fails with PermissionError and a fresh compose `staticdata` /
+# `mediadata` volume comes up root-owned.
+RUN install -d -o app -g app /app/staticfiles /app/media
+
 USER app
+
+# Static files are part of the release: collect them into the image so every web pod
+# serves them (WhiteNoise) and nginx can fall back to it. No database is touched.
+RUN SECRET_KEY=collectstatic-build-only DJANGO_SETTINGS_MODULE=core.settings.dev \
+    python manage.py collectstatic --noinput -v 0
 
 EXPOSE 8000
 

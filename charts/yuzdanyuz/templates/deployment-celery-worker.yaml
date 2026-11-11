@@ -65,7 +65,7 @@ spec:
         - name: worker
           image: {{ include "yuzdanyuz.image" $ }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          command: {{ $.Values.celeryWorker.command }}
+          args: {{- toYaml $.Values.celeryWorker.args | nindent 12 }}
           envFrom: {{- include "yuzdanyuz.envFrom" $ | nindent 12 }}
           env:
             {{- range $key, $value := $w.cfg.env }}
