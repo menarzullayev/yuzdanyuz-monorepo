@@ -88,6 +88,14 @@ repos:
         additional_dependencies: [pyyaml==6.0.3]
         pass_filenames: false
         files: ^scripts/(test-)?check-celery-queues\.(py|sh)$
+      - id: helm-pull-secrets-test
+        name: Helm pull-secret check catches a pod without imagePullSecrets
+        entry: bash scripts/test-check-helm-pull-secrets.sh
+        language: python
+        language_version: python3
+        additional_dependencies: [pyyaml==6.0.3]
+        pass_filenames: false
+        files: ^scripts/(test-)?check-helm-pull-secrets\.(py|sh)$
 
   # ──────────────────────────────────────────────────────────────────────
   # pre-push stage — push'dan oldin (chuqur tekshiruv)

@@ -1,6 +1,10 @@
 # prod overlay — full HA + autoscaling + backup + observability.
 global:
   domain: yuzdanyuz.uz
+  # GHCR images are private: create this docker-registry secret first
+  # (docs/deployment/secrets.md, "GHCR pull secret").
+  imagePullSecrets:
+    - name: ghcr-pull
 
 web:
   replicas: 4
