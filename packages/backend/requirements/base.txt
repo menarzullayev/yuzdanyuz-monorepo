@@ -1,6 +1,6 @@
 # ── Core Framework ────────────────────────────────────────────────────────────
 Django==5.2.19
-asgiref==3.11.1
+asgiref==3.13.0
 sqlparse==0.6.1
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ psycopg2-binary==2.9.13        # Task 1: PostgreSQL driver (dev/prod uchun binar
 python-dotenv==1.2.4           # Task 1: .env fayl o'qish
 
 # ── Async Workers ─────────────────────────────────────────────────────────────
-celery==5.4.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
+celery==5.7.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
 django-celery-beat==2.9.0      # Task 9: Cron jobs (streak, league reset) — Django 5.2 support
 django-celery-results==2.6.0   # Task 6: Worker natijalarini DB da saqlash — Django 5.2 support
 
@@ -48,11 +48,11 @@ python-docx==1.2.0             # Task 3: Word (.docx) bulk import parser
 pypdf==7.0.0                   # Task 3: PDF bulk import parser (text-based PDFs)
 
 # ── Search ────────────────────────────────────────────────────────────────────
-meilisearch==0.32.0            # Task 9: Typo-tolerant instant search
+meilisearch==0.43.0            # Task 9: Typo-tolerant instant search
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
 anthropic==2.6.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
-httpx2==2.16.0                 # anthropic 2.x HTTP layer; aliased over httpx in core/__init__.py
+httpx2==2.16.0                 # anthropic 2.x HTTP layer (Sentry instruments it natively)
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
@@ -69,4 +69,9 @@ django-simple-history>=3.13.0   # ISSUE-401 SOC2 audit trail
 
 # ── Static Files (gunicorn/daphne — nginx-siz serve qilish) ───────────────────
 # Middleware base.py'da ulanadi → barcha env'larda (test/dev/prod) kerak.
-whitenoise==6.9.0
+whitenoise==6.12.0
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+# Here rather than prod.txt so tests and CI exercise the Sentry integration;
+# init_sentry() does nothing without SENTRY_DSN.
+sentry-sdk[django]==2.74.0     # Task 10: Error tracking + performance tracing
