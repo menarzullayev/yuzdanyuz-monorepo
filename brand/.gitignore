@@ -1,0 +1,16 @@
+# Raw AI-generated rasters (1.4–2 MB each, 42 MB in total) stay out of git: the palette-snapped
+# SVGs in mascot/vector/ are the production assets, and these sources live on the design machine
+# and in the ChatGPT conversation they came from (see mascot/PROMPTS.md, mascot/poses/POSES.md).
+mascot/directions/*.png
+mascot/model-sheet/*.png
+mascot/poses/*.png
+
+# Regenerable from the rasters with mascot/vector/trace*.jsx + palette_snap.py
+*.ai
+*-preview.png
+mascot/vector/*.svg
+!mascot/vector/*-brand.svg
+mascot/vector/poses/*.svg
+!mascot/vector/poses/*-brand.svg
+mascot/vector/*.html
+__pycache__/
