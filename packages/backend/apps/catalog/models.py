@@ -213,6 +213,30 @@ class QuestionBank(TenantTimestampMixin):
         return self.name
 
 
+class ContentTarget(TenantTimestampMixin):
+    """
+    Kontent rejasi: fan bo'yicha maqsad (nechta tasdiqlangan savol / variant).
+    Qator bo'lmasa services.content_plan dagi DEFAULT_* qiymatlar ishlatiladi.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='content_targets')
+    target_questions = models.PositiveIntegerField(default=300)
+    target_variants = models.PositiveIntegerField(default=10)
+
+    class Meta:
+        verbose_name = _('Kontent maqsadi')
+        verbose_name_plural = _('Kontent maqsadlari')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organization', 'subject'], name='uniq_contenttarget_org_subject'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.subject_id}: {self.target_questions}q/{self.target_variants}v'
+
+
 # ─── AI Provider Configuration ──────────────────────────────────────────────
 
 
