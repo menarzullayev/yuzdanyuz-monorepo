@@ -1,9 +1,13 @@
 version: 2
 
 updates:
-  # Backend Python dependencies
+  # Backend Python dependencies.
+  # The directory must be the parent of requirements/: the graph job keeps a .txt
+  # only when its name relative to this directory looks like a manifest, so
+  # requirements/base.txt is kept and plain base.txt is dropped (which froze the
+  # pip dependency graph). scripts/check-dependabot-pip.py guards this.
   - package-ecosystem: pip
-    directory: /packages/backend/requirements
+    directory: /packages/backend
     schedule:
       interval: weekly
       day: monday
