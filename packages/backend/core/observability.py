@@ -37,7 +37,8 @@ def init_sentry() -> bool:
         release=os.getenv('SENTRY_RELEASE') or os.getenv('GIT_COMMIT_SHA', 'unknown'),
         traces_sample_rate=float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0.1')),
         profiles_sample_rate=float(os.getenv('SENTRY_PROFILES_SAMPLE_RATE', '0.0')),
-        send_default_pii=False,
+        # No PII: with neither `data_collection` nor the deprecated `send_default_pii`
+        # set, sentry-sdk behaves as send_default_pii=False.
         integrations=[
             DjangoIntegration(),
             CeleryIntegration(),
