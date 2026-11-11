@@ -6,4 +6,4 @@ class IntelligenceConfig(AppConfig):
     name = 'apps.intelligence'
 
     def ready(self):
-        from . import checks  # noqa: F401  (registers the Claude token expiry check)
+        from . import checks, signals  # noqa: F401  (token expiry check, mistake notebook hook)
