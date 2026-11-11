@@ -1,12 +1,42 @@
+{{- /*
+ISSUE-301: one Deployment per Celery queue group.
+
+`celeryWorker` is the catch-all; every enabled celeryWorker<Queue> below gets
+its own Deployment (and KEDA ScaledObject). When a dedicated worker is
+disabled, its queues are added to the catch-all, so every queue routed in
+packages/backend/core/celery.py always has a consumer.
+scripts/check-celery-queues.py checks the rendered output.
+*/ -}}
+{{- $dedicated := list
+      (dict "suffix" "critical" "cfg" .Values.celeryWorkerCritical)
+      (dict "suffix" "ai" "cfg" .Values.celeryWorkerAI)
+      (dict "suffix" "realtime" "cfg" .Values.celeryWorkerRealtime)
+      (dict "suffix" "batch" "cfg" .Values.celeryWorkerBatch) -}}
+{{- $catchAllQueues := splitList "," (.Values.celeryWorker.env.CELERY_QUEUES | default "default,celery") -}}
+{{- range $dedicated }}
+{{- if not .cfg.enabled }}
+{{- $catchAllQueues = concat $catchAllQueues (splitList "," .cfg.env.CELERY_QUEUES) -}}
+{{- end }}
+{{- end }}
+{{- $workers := list (dict "suffix" "" "cfg" .Values.celeryWorker "queues" (join "," $catchAllQueues)) -}}
+{{- range $dedicated }}
+{{- if .cfg.enabled }}
+{{- $workers = append $workers (dict "suffix" (printf "-%s" .suffix) "cfg" .cfg "queues" .cfg.env.CELERY_QUEUES) -}}
+{{- end }}
+{{- end }}
+{{- range $i, $w := $workers }}
+{{- if $i }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "yuzdanyuz.fullname" . }}-celery-worker
+  name: {{ include "yuzdanyuz.fullname" $ }}-celery-worker{{ $w.suffix }}
   labels:
-    {{- include "yuzdanyuz.labels" . | nindent 4 }}
-    app.kubernetes.io/component: celery-worker
+    {{- include "yuzdanyuz.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: celery-worker{{ $w.suffix }}
 spec:
-  replicas: {{ .Values.celeryWorker.replicas }}
+  replicas: {{ $w.cfg.replicas }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -14,31 +44,35 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: celery-worker
+      {{- include "yuzdanyuz.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: celery-worker{{ $w.suffix }}
   template:
     metadata:
       labels:
-        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: celery-worker
+        {{- include "yuzdanyuz.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: celery-worker{{ $w.suffix }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
     spec:
-      serviceAccountName: {{ include "yuzdanyuz.fullname" . }}
-      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      serviceAccountName: {{ include "yuzdanyuz.fullname" $ }}
+      securityContext: {{- toYaml $.Values.securityContext | nindent 8 }}
       # Allow long-running tasks to drain on rolling deploy
       terminationGracePeriodSeconds: 300
       containers:
         - name: worker
-          image: {{ include "yuzdanyuz.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: {{ .Values.celeryWorker.command }}
-          envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          image: {{ include "yuzdanyuz.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: {{ $.Values.celeryWorker.command }}
+          envFrom: {{- include "yuzdanyuz.envFrom" $ | nindent 12 }}
           env:
-            {{- range $key, $value := .Values.celeryWorker.env }}
+            {{- range $key, $value := $w.cfg.env }}
+            {{- if ne $key "CELERY_QUEUES" }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- end }}
+            - name: CELERY_QUEUES
+              value: {{ $w.queues | quote }}
           # Liveness via celery inspect (covers stuck event loops)
           livenessProbe:
             exec:
@@ -50,5 +84,6 @@ spec:
             periodSeconds: 60
             timeoutSeconds: 15
             failureThreshold: 3
-          resources: {{- toYaml .Values.celeryWorker.resources | nindent 12 }}
-          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{- toYaml $w.cfg.resources | nindent 12 }}
+          securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+{{- end }}

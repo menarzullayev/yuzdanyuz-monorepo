@@ -54,8 +54,9 @@ channels:
 
 # ── Celery worker ────────────────────────────────────────────────────────────
 # ISSUE-301: per-queue separate deployments (different SLO + resources).
-# Default `celeryWorker` ishlatadi `default,celery` — catch-all.
-# Per-queue worker'lar quyida.
+# `celeryWorker` is the catch-all (`default,celery`). Each enabled worker below
+# gets its own Deployment; a disabled one's queues fall back to the catch-all,
+# so every queue routed in core/celery.py always has a consumer.
 celeryWorker:
   replicas: 2
   command: ["worker"]
@@ -81,7 +82,11 @@ celeryWorkerCritical:
 
 celeryWorkerAI:
   enabled: true
-  replicas: 2  # AI tasks are slow + costly
+  # Every AI call runs `claude -p` on one shared Claude subscription. Parallel
+  # calls = replicas × CELERY_CONCURRENCY (here 1 × 2); KEDA never goes past
+  # maxReplicas. Raise both only with the subscription's limits in mind.
+  replicas: 1
+  maxReplicas: 1
   env:
     CELERY_CONCURRENCY: "2"   # low concurrency, each task ~10-60s
     CELERY_QUEUES: "ai"
