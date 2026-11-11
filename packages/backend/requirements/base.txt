@@ -7,7 +7,7 @@ sqlparse==0.6.1
 psycopg2-binary==2.9.13        # Task 1: PostgreSQL driver (dev/prod uchun binary)
 
 # ── Environment ───────────────────────────────────────────────────────────────
-python-dotenv==1.2.2           # Task 1: .env fayl o'qish
+python-dotenv==1.2.4           # Task 1: .env fayl o'qish
 
 # ── Async Workers ─────────────────────────────────────────────────────────────
 celery==5.4.0                  # Task 6, 7, 9: AI diagnostika, billing, notifications
