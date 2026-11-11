@@ -3,8 +3,10 @@
 # Requires KEDA operator installed in cluster (kubectl apply -f https://github.com/kedacore/keda/releases/...).
 #
 # Per-queue ScaledObject — worker scales up when queue backlog grows,
-# scales to zero when idle (batch only) for cost optimization.
-
+# scales to zero when idle (batch only) for cost optimization. Each one exists
+# only when its worker Deployment does (deployment-celery-worker.yaml).
+{{- if .Values.celeryWorkerBatch.enabled }}
+---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -24,6 +26,8 @@ spec:
         address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
         listName: batch
         listLength: '10'  # 10+ task in queue → scale up
+{{- end }}
+{{- if .Values.celeryWorkerAI.enabled }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -35,7 +39,9 @@ spec:
   scaleTargetRef:
     name: {{ include "yuzdanyuz.fullname" . }}-celery-worker-ai
   minReplicaCount: 1  # AI requests are time-sensitive
-  maxReplicaCount: 10
+  # Parallel `claude -p` calls = replicas × CELERY_CONCURRENCY, and they all share
+  # one Claude subscription's limits, so the ceiling stays low.
+  maxReplicaCount: {{ .Values.celeryWorkerAI.maxReplicas | default 1 }}
   pollingInterval: 15
   cooldownPeriod: 600
   triggers:
@@ -44,6 +50,8 @@ spec:
         address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
         listName: ai
         listLength: '5'
+{{- end }}
+{{- if .Values.celeryWorkerCritical.enabled }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -64,4 +72,5 @@ spec:
         address: {{ .Values.externalServices.redis.host }}:{{ .Values.externalServices.redis.port }}
         listName: critical
         listLength: '3'
+{{- end }}
 {{- end }}

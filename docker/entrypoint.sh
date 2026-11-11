@@ -47,9 +47,10 @@ case "$CMD" in
         run daphne -b 0.0.0.0 -p 8000 core.asgi:application
         ;;
     worker)
-        # -O fair: even task distribution among workers
+        # -O fair: even task distribution among workers. The default covers every
+        # routed queue except `ai`, which runs on its own capped worker.
         run celery -A core worker -l "${CELERY_LOG_LEVEL:-info}" \
-            -Q "${CELERY_QUEUES:-default,celery}" \
+            -Q "${CELERY_QUEUES:-default,celery,critical,realtime,batch}" \
             --concurrency="${CELERY_CONCURRENCY:-4}" \
             -O fair
         ;;
