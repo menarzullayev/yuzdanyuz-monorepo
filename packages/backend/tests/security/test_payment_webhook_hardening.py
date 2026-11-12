@@ -39,7 +39,7 @@ def _intent(user, tx_id, provider=PaymentIntent.Provider.PAYME):
 def _post_payme(client, tx_id, signature='stub-sig', payload=None):
     return client.post(
         reverse('commerce:payme-webhook'),
-        data=payload or {'id': tx_id, 'state': 'succeeded', 'amount': 10000},
+        data=payload or {'id': tx_id, 'state': 'succeeded', 'amount': 1000000},
         content_type='application/json',
         HTTP_X_SIGNATURE=signature,
     )
@@ -107,7 +107,7 @@ class TestProdLikeSettingsRejectStub:
     @override_settings(ENABLE_REAL_PAYMENTS=True, PAYME_SECRET_KEY='real-secret', DEBUG=False)
     def test_real_mode_valid_hmac_credits(self, db, user):
         _intent(user, 'payme-real-2')
-        payload = {'id': 'payme-real-2', 'state': 'succeeded', 'amount': 10000}
+        payload = {'id': 'payme-real-2', 'state': 'succeeded', 'amount': 1000000}
         sig = hmac.new(b'real-secret', str(payload).encode(), hashlib.sha256).hexdigest()
         resp = _post_payme(Client(), 'payme-real-2', signature=sig, payload=payload)
         assert resp.status_code == 200
