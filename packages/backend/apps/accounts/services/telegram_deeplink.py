@@ -50,9 +50,19 @@ def _save(token: str, data: dict) -> None:
 # ── Session boshqaruv ─────────────────────────────────────────
 
 
-def create_session() -> dict:
+def create_session(
+    link_user_pk: str | None = None,
+    acquisition: dict | None = None,
+    nonce_hash: str | None = None,
+    requester: dict | None = None,
+) -> dict:
     """
     Yangi deep link sessiya yaratadi.
+
+    ``link_user_pk`` makes it a *link* session: instead of signing in, the Telegram
+    account that opens the link is attached to that (already signed-in) user after
+    the Telegram owner confirms in the bot.
+
     Returns: {token, deep_link}
     """
     token = uuid.uuid4().hex
@@ -61,10 +71,23 @@ def create_session() -> dict:
 
     _redis().set(
         _key(token),
-        json.dumps({'status': 'pending', 'telegram_id': None, 'phone': None, 'user_pk': None}),
+        json.dumps(
+            {
+                'status': 'pending',
+                'telegram_id': None,
+                'phone': None,
+                'user_pk': None,
+                'mode': 'link' if link_user_pk else 'login',
+                'link_user_pk': link_user_pk,
+                'acquisition': acquisition if isinstance(acquisition, dict) else None,
+                # Login sessions are bound to the browser that started them (nonce cookie).
+                'nonce_hash': nonce_hash,
+                'requester': requester,
+            }
+        ),
         ex=SESSION_TTL,
     )
-    return {'token': token, 'deep_link': deep_link}
+    return {'token': token, 'deep_link': deep_link, 'expires_in': SESSION_TTL}
 
 
 def get_session(token: str) -> dict | None:
@@ -89,13 +112,71 @@ def on_bot_start(token: str, telegram_id: int) -> bool:
     if session is None or session['status'] != 'pending':
         return False
 
+    if session.get('mode') == 'link':
+        # Link sessions need no phone: the Telegram owner confirms in the bot instead.
+        session.update({'status': 'confirming', 'telegram_id': telegram_id})
+        _save(token, session)
+        return True
+
     session.update({'status': 'waiting', 'telegram_id': telegram_id})
     _save(token, session)
     _register_waiting(token, telegram_id)  # reverse lookup uchun
     return True
 
 
-def on_bot_contact(telegram_id: int, phone: str, contact_user_id: int | None) -> bool:
+def link_target(token: str):
+    """The user a link session would attach Telegram to (None for login sessions)."""
+    from apps.accounts.models import CustomUser
+
+    session = get_session(token)
+    if session is None or session.get('mode') != 'link' or not session.get('link_user_pk'):
+        return None
+    return CustomUser.objects.filter(pk=session['link_user_pk'], is_active=True).first()
+
+
+def on_link_confirm(token: str, from_id: int, profile: dict | None = None) -> str:
+    """The Telegram owner pressed "confirm" in the bot.
+
+    Returns 'linked', 'conflict' (Telegram already belongs to another account, or this
+    account already has a Telegram) or 'invalid' (expired / not this chat's session).
+    """
+    session = get_session(token)
+    if (
+        session is None
+        or session.get('mode') != 'link'
+        or session.get('status') != 'confirming'
+        or session.get('telegram_id') != from_id
+    ):
+        return 'invalid'
+    user = link_target(token)
+    if user is None:
+        return 'invalid'
+    from apps.accounts.services.linking import TelegramLinkError, link_telegram
+
+    try:
+        link_telegram(user, from_id, profile or {})
+    except TelegramLinkError:
+        session['status'] = 'conflict'
+        _save(token, session)
+        return 'conflict'
+    session['status'] = 'linked'
+    _save(token, session)
+    return 'linked'
+
+
+def on_link_cancel(token: str, from_id: int) -> None:
+    session = get_session(token)
+    if session and session.get('telegram_id') == from_id:
+        expire_session(token)
+
+
+def on_bot_contact(
+    telegram_id: int,
+    phone: str,
+    contact_user_id: int | None,
+    first_name: str = '',
+    last_name: str = '',
+) -> bool:
     """
     Foydalanuvchi telefon raqamini ulashdi.
 
@@ -129,13 +210,44 @@ def on_bot_contact(telegram_id: int, phone: str, contact_user_id: int | None) ->
         normalized_phone = f'+{phone.lstrip("+")}'
 
     # User topish yoki yaratish
-    user_pk = _find_or_create_user(telegram_id, normalized_phone)
+    user_pk = _find_or_create_user(telegram_id, normalized_phone, first_name, last_name)
     if user_pk is None:
         return False
+
+    if session.get('acquisition'):
+        from apps.accounts.models import CustomUser
+        from apps.accounts.services.onboarding import capture_acquisition
+
+        capture_acquisition(CustomUser.objects.get(pk=user_pk), session['acquisition'])
 
     session.update({'status': 'verified', 'phone': normalized_phone, 'user_pk': user_pk})
     _save(token, session)
     return True
+
+
+def hash_nonce(nonce: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((nonce or '').encode()).hexdigest()
+
+
+def nonce_matches(token: str, nonce: str) -> bool:
+    """True when ``nonce`` is the secret handed to the browser that created this session."""
+    import hmac
+
+    session = get_session(token)
+    expected = (session or {}).get('nonce_hash')
+    if not expected or not nonce:
+        return False
+    return hmac.compare_digest(expected, hash_nonce(nonce))
+
+
+def requester_text(token: str) -> str:
+    """Who asked for this sign-in (shown in the bot message so the owner can refuse)."""
+    info = (get_session(token) or {}).get('requester') or {}
+    if not info:
+        return ''
+    return f'{info.get("label", "?")}, IP {info.get("ip", "?")}'
 
 
 def get_verified_user_pk(token: str) -> int | None:
@@ -166,7 +278,9 @@ def _register_waiting(token: str, telegram_id: int) -> None:
     r.set(f'tg_waiting:{telegram_id}', token, ex=SESSION_TTL)
 
 
-def _find_or_create_user(telegram_id: int, phone: str) -> str | None:
+def _find_or_create_user(
+    telegram_id: int, phone: str, first_name: str = '', last_name: str = ''
+) -> str | None:
     """CustomUser topadi yoki yaratadi. user.pk qaytaradi (string).
 
     None — the phone belongs to an account already bound to a different
@@ -197,12 +311,21 @@ def _find_or_create_user(telegram_id: int, phone: str) -> str | None:
         except CustomUser.DoesNotExist:
             pass
 
-    # Yangi foydalanuvchi
-    username = f'tg_{telegram_id}'
-    if CustomUser.objects.filter(username=username).exists():
-        username = f'tg_{telegram_id}_{CustomUser.objects.count()}'
+    # Yangi foydalanuvchi: username is generated from the Telegram name (one free change).
+    from django.utils import timezone
 
-    user = CustomUser(username=username, telegram_id=telegram_id, phone_number=phone or None)
+    from apps.accounts.services.usernames import generate_username
+
+    user = CustomUser(
+        username=generate_username(first_name, last_name),
+        username_is_auto=True,
+        first_name=first_name[:150],
+        last_name=last_name[:150],
+        telegram_id=telegram_id,
+        phone_number=phone or None,
+        terms_version=settings.TERMS_VERSION,
+        terms_accepted_at=timezone.now(),
+    )
     user.set_unusable_password()
     user.save()
     return str(user.pk)

@@ -124,6 +124,21 @@ class MockExamDetailView(generics.RetrieveAPIView):
     queryset = MockExam.objects.all()
 
 
+def _enforce_exam_access(user, mock, attempt) -> None:
+    """Billing hook: a new attempt on a public (platform) mock must be covered by free
+    attempts, a tariff, a B2B key or a pass. Off unless BILLING_ENFORCE_EXAM_ACCESS."""
+    from django.conf import settings
+
+    if not getattr(settings, 'BILLING_ENFORCE_EXAM_ACCESS', False) or not mock.is_public:
+        return
+    from apps.commerce.access_service import consume_access
+    from apps.commerce.billing_views import AccessDenied
+
+    decision = consume_access(user, mock.exam_type, reference=str(attempt.id))
+    if not decision.allowed:
+        raise AccessDenied(decision)
+
+
 # ─── Start attempt ────────────────────────────────────────────────────────────
 
 
@@ -149,11 +164,15 @@ class StartAttemptView(APIView):
         if not (mock.scheduled_at <= now <= mock.closes_at):
             raise ValidationError('Mock ochiq oynada emas.')
 
-        attempt, _created = ExamAttempt.objects.get_or_create(
-            exam=mock,
-            user=request.user,
-            defaults={'organization': mock.organization},
-        )
+        # Atomic: if the paywall denies, the freshly created attempt is rolled back.
+        with transaction.atomic():
+            attempt, created = ExamAttempt.objects.get_or_create(
+                exam=mock,
+                user=request.user,
+                defaults={'organization': mock.organization},
+            )
+            if created:
+                _enforce_exam_access(request.user, mock, attempt)
 
         if attempt.status not in {ExamAttempt.Status.IN_PROGRESS}:
             raise ValidationError(

@@ -3,6 +3,10 @@
 > **Status**: 2026-05-16 — REST + WebSocket cookie auth, SSE migration planned (see [websocket_strategy.md](./websocket_strategy.md))
 >
 > **Audience**: Frontend engineers (web + mobile), DevOps, security reviewers.
+>
+> **2026-11 rewrite**: every sign-in/registration/recovery/profile endpoint is documented in
+> [auth-api.md](./auth-api.md) (the source of truth for the Next.js UI). This file keeps the
+> cookie/CORS/WebSocket background; where the two differ, `auth-api.md` wins.
 
 ---
 
@@ -14,9 +18,10 @@ an **HttpOnly Secure cookie**. Frontend code never touches the token directly.
 | Cookie | Purpose | TTL | HttpOnly | Secure | SameSite |
 |---|---|---|---|---|---|
 | `access_token` | API + WS auth | 15 min | ✅ | ✅ (prod) | `Lax` |
-| `refresh_token` | rotate `access_token` | 14 days | ✅ | ✅ (prod) | `Lax` |
+| `refresh_token` | rotate `access_token` (`<session id>.<secret>`, path `/api/auth/`) | 30 days sliding with "remember me", else browser-session cookie | ✅ | ✅ (prod) | `Lax` |
+| `device_id` | random device id (no IP/UA in it) | 1 year | ✅ | ✅ (prod) | `Lax` |
 
-**Set on**: every successful login (`/api/auth/email/`, `/api/auth/otp/verify/`, `/api/auth/telegram/`, `/api/auth/tg/complete/`, allauth Google/Yandex/Apple OAuth callback) and every refresh (`/api/auth/refresh/`).
+**Set on**: every successful login (`/api/auth/login/`, `/api/auth/register/`, `/api/auth/telegram/`, `/api/auth/tg/complete/`, allauth Google OAuth callback; `/api/auth/otp/verify/` only with `ENABLE_SMS_OTP`) and every refresh (`/api/auth/refresh/`).
 
 **Cleared on**: `/api/auth/logout/`.
 
@@ -25,11 +30,11 @@ an **HttpOnly Secure cookie**. Frontend code never touches the token directly.
 ```jsonc
 {
   "sub": "<user uuid>",          // CustomUser.id
-  "fp":  "<sha256 fingerprint>", // browser+OS+IP — DeviceCheckMiddleware enforces
-  "org": "<org uuid|null>",      // current_org claim — TenantMiddleware reads this
+  "sid": "<device session id>",  // DeviceCheckMiddleware rejects revoked sessions immediately
+  "current_org": "<org uuid>",   // omitted without a primary org — TenantMiddleware reads this
   "exp": 1747400000,             // unix timestamp
   "iat": 1747399100,
-  "typ": "access" | "refresh"
+  "type": "access"
 }
 ```
 
@@ -90,7 +95,7 @@ CommonMiddleware
 CsrfViewMiddleware
 AuthenticationMiddleware
 JWTAuthMiddleware           ← reads access_token cookie → request.user
-DeviceCheckMiddleware       ← fingerprint match — else force-logout
+DeviceCheckMiddleware       ← session revoked? (sid claim) — else treated as anonymous + cookies cleared
 AccountMiddleware           ← allauth
 JWTCookieWriterMiddleware   ← allauth login → JWT cookie bridge
 …

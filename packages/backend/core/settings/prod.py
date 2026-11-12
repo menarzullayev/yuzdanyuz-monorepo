@@ -73,7 +73,6 @@ if _script_name:
     STATIC_URL = f'{_script_name}/static/'
     MEDIA_URL = f'{_script_name}/media/'
     LOGIN_REDIRECT_URL = f'{_script_name}/'
-    LOGIN_URL = f'{_script_name}/accounts/login/'
     LOGOUT_REDIRECT_URL = f'{_script_name}/'
     # Cookie scoping — without this, /yuzdanyuz/ cookies would set path=/
     # and conflict with Yii2 cookies on the same domain.

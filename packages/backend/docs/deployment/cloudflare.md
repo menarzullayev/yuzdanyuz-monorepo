@@ -148,5 +148,6 @@ set it in the same release that ships this code. Re-check the Cloudflare
 list when Cloudflare announces range changes.
 
 Per-account password-login backoff (all optional, defaults shown):
-`LOGIN_FAILURE_FREE_ATTEMPTS=5`, `LOGIN_BACKOFF_BASE_SECONDS=30`,
-`LOGIN_BACKOFF_MAX_SECONDS=900`, `LOGIN_FAILURE_WINDOW_SECONDS=3600`.
+`LOGIN_FAILURE_FREE_ATTEMPTS=5`, `LOGIN_FAILURE_WINDOW_SECONDS=3600`. After the
+free attempts the account is locked for 1 minute, then 5, then 15 (the cap);
+the steps are `LOGIN_LOCK_LADDER_SECONDS` in settings.

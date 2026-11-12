@@ -3,9 +3,9 @@
 The IP tier in ``core.utils.rate_limiter`` stops one source from guessing
 fast; this module stops many sources from guessing one account's password.
 
-After ``LOGIN_FAILURE_FREE_ATTEMPTS`` consecutive failures the account is
-locked for ``LOGIN_BACKOFF_BASE_SECONDS``, doubling with every further
-failure up to ``LOGIN_BACKOFF_MAX_SECONDS``. Attempts made while locked are
+After ``LOGIN_FAILURE_FREE_ATTEMPTS`` (5) consecutive failures the account is
+locked for the first step of ``LOGIN_LOCK_LADDER_SECONDS`` (1 minute), then 5
+minutes, then 15 minutes for every further failure (the last step is the cap). Attempts made while locked are
 refused without being counted, so hammering a locked account does not make
 the lock longer: a victim is never locked out for more than the cap, and
 other sign-in methods (OTP, Telegram) are not affected at all. A successful
@@ -51,14 +51,17 @@ def account_key(identifier: str | int) -> str:
     return hashlib.sha256(norm.encode()).hexdigest()[:32]
 
 
-def _lock_seconds(failures: int) -> int:
-    free = _setting('LOGIN_FAILURE_FREE_ATTEMPTS', 5)
+def _ladder() -> tuple[int, ...]:
+    raw = getattr(settings, 'LOGIN_LOCK_LADDER_SECONDS', (60, 300, 900))
+    return tuple(int(x) for x in raw) or (60,)
+
+
+def _lock_seconds(failures: int, free: int | None = None) -> int:
+    free = _setting('LOGIN_FAILURE_FREE_ATTEMPTS', 5) if free is None else free
     if failures < free:
         return 0
-    base = _setting('LOGIN_BACKOFF_BASE_SECONDS', 30)
-    cap = _setting('LOGIN_BACKOFF_MAX_SECONDS', 900)
-    # Exponent is clamped so a huge counter cannot overflow the float.
-    return min(cap, base * 2 ** min(failures - free, 32))
+    ladder = _ladder()
+    return ladder[min(failures - free, len(ladder) - 1)]
 
 
 def check(key: str) -> None:
@@ -75,8 +78,11 @@ def check(key: str) -> None:
         raise LoginThrottled(retry_after=max(1, math.ceil(remaining)))
 
 
-def register_failure(key: str) -> int:
-    """Record a failed attempt; return the lock length it started (0 if none)."""
+def register_failure(key: str, free: int | None = None) -> int:
+    """Record a failed attempt; return the lock length it started (0 if none).
+
+    ``free`` overrides the number of failures tolerated before the first lock.
+    """
     try:
         r = rl._redis()
         window = _setting('LOGIN_FAILURE_WINDOW_SECONDS', 3600)
@@ -84,7 +90,7 @@ def register_failure(key: str) -> int:
         pipe.incr(f'auth:fail:{key}')
         pipe.expire(f'auth:fail:{key}', window)
         failures, _ = pipe.execute()
-        seconds = _lock_seconds(int(failures))
+        seconds = _lock_seconds(int(failures), free)
         if seconds:
             r.set(f'auth:lock:{key}', str(_now() + seconds), ex=seconds + 5)
             log.warning('Login backoff: account=%s failures=%s lock=%ss', key, failures, seconds)

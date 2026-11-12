@@ -31,7 +31,7 @@ class TestOTPSend:
         send_otp(phone_number)
         code = OTPCode.objects.get(phone=phone_number)
         assert code is not None
-        assert len(code.code) == 6
+        assert len(code.code_hash) == 64  # an HMAC, never the plaintext code
         assert code.is_verified is False
 
     def test_send_otp_rate_limit_3_in_10min(self, db, phone_number, mock_redis):
@@ -112,7 +112,7 @@ class TestOTPVerify:
         # Create OTP code
         code = OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
             is_verified=False,
             attempts=5,
@@ -126,7 +126,7 @@ class TestOTPVerify:
         # Create expired code
         OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
             is_verified=False,
         )
@@ -151,7 +151,7 @@ class TestOTPVerify:
         """Already verified code can't be used again."""
         OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
             is_verified=True,
         )
@@ -188,7 +188,7 @@ class TestOTPExceptionHandling:
         now = datetime.now(UTC)
         OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=now + timedelta(seconds=1),
             is_verified=False,
         )

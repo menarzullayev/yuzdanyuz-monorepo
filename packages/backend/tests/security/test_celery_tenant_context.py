@@ -31,6 +31,7 @@ TASK_FILES = [
     'apps/exams/tasks.py',
     'apps/engagement/tasks.py',
     'apps/engagement/notifications_service.py',
+    'apps/accounts/tasks.py',
 ]
 
 # ── Allow-list ──────────────────────────────────────────────────────────────
@@ -44,6 +45,12 @@ TASK_FILES = [
 #
 # Yangi task qo'shilsa, bu dict'ga entry qo'shing.
 EXPECTED_TASKS = {
+    # apps/accounts/tasks.py
+    'cleanup_expired_sessions': 'stateless',  # django_session is not tenant data
+    'cleanup_used_otp_codes': 'stateless',  # OTPCode has no org FK
+    'cleanup_old_webhook_deliveries': 'unscoped',  # cross-tenant retention sweep
+    'check_sms_balance': 'stateless',  # provider API + gauge, no tenant data
+    'send_security_notice': 'stateless',  # Telegram message only, no DB access
     # apps/engagement/tasks.py
     'archive_leaderboards': 'unscoped',  # global/region/tenant scan
     'check_broken_streaks_task': 'stateless',  # UserStreak user-scoped

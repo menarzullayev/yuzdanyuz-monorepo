@@ -6,8 +6,8 @@ TIER SELECTION (path + method bo'yicha)
 
 LOGIN paths (5/min — brute force protection):
   /accounts/login/, /accounts/password/, /accounts/signup/
-  /api/auth/login/, /api/auth/email/ (password login), /api/auth/register/,
-  /api/auth/otp/, /api/auth/password-reset/
+  /api/auth/login/, /api/auth/register/, /api/auth/otp/, /api/auth/password/,
+  /api/auth/recovery/ (password recovery), /api/auth/2fa/
   /api/v1/auth/* (login, email, register, otp, password)
   Password login additionally has a per-account backoff
   (core.utils.login_throttle) so rotating source IPs does not help.
@@ -73,6 +73,8 @@ LOGIN_PATH_MARKERS = (
     '/api/auth/register',
     '/api/auth/otp',
     '/api/auth/password',
+    '/api/auth/recovery',
+    '/api/auth/2fa',
     '/api/v1/auth/login',
     '/api/v1/auth/email',
     '/api/v1/auth/register',

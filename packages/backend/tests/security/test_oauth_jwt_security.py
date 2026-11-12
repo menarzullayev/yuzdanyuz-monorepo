@@ -246,7 +246,7 @@ class TestPhoneNumberSecurity:
         from apps.accounts.models import OTPCode
 
         code = OTPCode.objects.get(phone=phone_number)
-        assert code.code is not None
+        assert code.code_hash and code.code_hash != '123456'
 
     def test_otp_attempt_limit(self, db, phone_number, mock_redis):
         """After 3 attempts (OTP_MAX_ATTEMPTS), OTP code is disabled."""
@@ -255,7 +255,7 @@ class TestPhoneNumberSecurity:
 
         code = OTPCode.objects.create(
             phone=phone_number,
-            code='123456',
+            code_hash=OTPCode.hash_code(phone_number, '123456'),
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
             attempts=3,  # Already at OTP_MAX_ATTEMPTS limit
         )
@@ -286,23 +286,24 @@ class TestSessionSecurity:
         """Using refresh token should generate new refresh token."""
         from apps.accounts.services.token_service import create_token_pair, rotate_refresh_token
 
-        access, refresh = create_token_pair(user, 'test-fp')
+        access, refresh = create_token_pair(user, 'test-fp-1234567890123')
 
-        new_access, new_refresh = rotate_refresh_token(refresh, str(user.pk), 'test-fp')
+        issued = rotate_refresh_token(refresh)
 
-        assert new_access != access
-        assert new_refresh != refresh
+        assert issued.access != access
+        assert issued.refresh != refresh
 
-    def test_old_refresh_token_invalidated(self, user, mock_redis):
-        """Old refresh token cannot be used twice."""
+    def test_old_refresh_token_not_usable_after_grace(self, user, mock_redis):
+        """A rotated-out refresh token is dead once the grace window has passed."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.accounts.models import DeviceSession
         from apps.accounts.services.token_service import create_token_pair, rotate_refresh_token
 
-        access, refresh = create_token_pair(user, 'test-fp')
+        _, refresh = create_token_pair(user, 'test-fp-1234567890123')
+        assert rotate_refresh_token(refresh) is not None
+        DeviceSession.objects.update(rotated_at=timezone.now() - timedelta(minutes=1))
 
-        # First rotation
-        new_access, new_refresh = rotate_refresh_token(refresh, str(user.pk), 'test-fp')
-        assert new_refresh is not None
-
-        # Second rotation with old token should fail
-        result = rotate_refresh_token(refresh, str(user.pk), 'test-fp')
-        assert result is None
+        assert rotate_refresh_token(refresh) is None
