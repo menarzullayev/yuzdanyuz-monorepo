@@ -22,6 +22,7 @@ import logging
 import uuid
 
 from django.conf import settings
+from django.db import transaction
 
 log = logging.getLogger(__name__)
 
@@ -287,6 +288,7 @@ def _find_or_create_user(
     Telegram id (e.g. a recycled number); that account is never re-bound here.
     """
     from apps.accounts.models import CustomUser
+    from apps.organizations.services import ensure_platform_membership
 
     # Avval telegram_id bo'yicha
     try:
@@ -327,5 +329,7 @@ def _find_or_create_user(
         terms_accepted_at=timezone.now(),
     )
     user.set_unusable_password()
-    user.save()
+    with transaction.atomic():
+        user.save()
+        ensure_platform_membership(user)
     return str(user.pk)

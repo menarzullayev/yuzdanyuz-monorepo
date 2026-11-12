@@ -33,6 +33,7 @@ from apps.accounts.services.token_service import (
 )
 from apps.accounts.views.base import AuthAPIView, PublicAPIView, api_error, field_errors
 from apps.accounts.views.payloads import user_payload
+from apps.organizations.services import ensure_platform_membership
 from core.utils import login_throttle
 from core.utils import rate_limiter as rl
 from core.utils.client_ip import get_client_ip
@@ -167,6 +168,7 @@ class RegisterView(PublicAPIView):
         try:
             with transaction.atomic():
                 user.save()
+                ensure_platform_membership(user)
         except IntegrityError:
             # Lost a race for the username/email; never echo database text.
             return _taken_error(username)
