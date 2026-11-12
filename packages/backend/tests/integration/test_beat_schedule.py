@@ -6,6 +6,7 @@ someone created django-celery-beat rows by hand.
 """
 
 import pytest
+from django.utils.module_loading import autodiscover_modules
 
 from core.celery import app
 
@@ -26,6 +27,13 @@ PERIODIC_TASKS = {
     'ops.cleanup_old_records',
     'ops.run_health_probe',
 }
+
+
+def _load_tasks():
+    # Not app.loader.import_default_modules(): through Celery's Django fixup it calls
+    # django.setup() again, whose dictConfig disables every existing logger and
+    # breaks caplog in later tests on the same worker.
+    autodiscover_modules('tasks')
 
 
 def _scheduled():
@@ -49,7 +57,7 @@ def test_leaderboards_archived_for_every_period():
 
 
 def test_every_scheduled_task_exists_and_has_a_queue():
-    app.loader.import_default_modules()
+    _load_tasks()
     routes = app.conf.task_routes
     for name, entry in _scheduled().items():
         assert entry['task'] in app.tasks, f'{name}: unknown task {entry["task"]}'
@@ -69,7 +77,7 @@ def test_every_scheduled_run_is_single_run(monkeypatch):
     from core import locks
 
     monkeypatch.setattr(locks, '_redis', lambda: _BusyRedis())
-    app.loader.import_default_modules()
+    _load_tasks()
     for name, entry in _scheduled().items():
         task = app.tasks[entry['task']]
         result = task.run(*entry.get('args', ()), **entry.get('kwargs', {}))
