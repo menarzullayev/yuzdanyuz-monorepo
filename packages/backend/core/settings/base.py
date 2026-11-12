@@ -343,6 +343,8 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PROJECT_BRAND_NAME = os.getenv('PROJECT_BRAND_NAME', 'Milliy Sertifikat')
+# Slug of the built-in "platform" organization that holds every B2C user (STUDENT membership).
+PLATFORM_ORG_SLUG = os.getenv('PLATFORM_ORG_SLUG', 'platform')
 
 # Version of the terms/privacy text shown at signup; stored with the consent timestamp.
 TERMS_VERSION = os.getenv('TERMS_VERSION', '2026-11-12')

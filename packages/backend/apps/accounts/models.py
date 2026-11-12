@@ -7,6 +7,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
+from django.db.models import Case, IntegerField, Value, When
 from django.db.models.functions import Lower
 from django.utils import timezone
 from simple_history.models import HistoricalRecords
@@ -215,23 +216,30 @@ class CustomUser(AbstractUser):
             return 'platform_admin'
         if self.is_staff:
             return 'platform_staff'
-        membership = (
-            self.memberships.filter(status='active')
-            .select_related('role')
-            .order_by('-is_primary', '-joined_at')
-            .first()
-        )
-        if membership is None:
+        membership = self.primary_membership
+        if membership is None or membership.organization.org_type == 'platform':
+            # The platform org only carries B2C users; it is not a real organization.
             return 'b2c'
         return membership.role.name
 
     @property
     def primary_membership(self):
-        """Asosiy tashkilot bilan bog'liq membership."""
+        """Asosiy tashkilot bilan bog'liq membership.
+
+        A real organization always wins over the built-in platform org (which every B2C
+        user belongs to); inside the same kind: is_primary first, then the newest join.
+        """
         return (
             self.memberships.filter(status='active')
             .select_related('role', 'organization')
-            .order_by('-is_primary', '-joined_at')
+            .annotate(
+                platform_rank=Case(
+                    When(organization__org_type='platform', then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by('platform_rank', '-is_primary', '-joined_at')
             .first()
         )
 

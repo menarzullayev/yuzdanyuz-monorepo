@@ -18,10 +18,12 @@ from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
 from django.conf import settings
+from django.db import transaction
 from django.http import HttpRequest
 from django.utils import timezone
 
 from apps.accounts.services.token_service import issue_login
+from apps.organizations.services import ensure_platform_membership
 from core.utils.client_ip import get_client_ip
 
 
@@ -96,7 +98,9 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         user.username_is_auto = True
         user.terms_version = settings.TERMS_VERSION
         user.terms_accepted_at = timezone.now()
-        sociallogin.save(request)
+        with transaction.atomic():
+            sociallogin.save(request)
+            ensure_platform_membership(user)
         return user
 
     def get_connect_redirect_url(self, request: HttpRequest, socialaccount) -> str:
