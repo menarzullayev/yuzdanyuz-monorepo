@@ -1,23 +1,25 @@
 """
-Device check middleware.
+Device-session middleware.
 
-Har bir so'rovda:
-  1. Access token cookie dan user_id olinadi
-  2. Refresh token cookie dan joriy fingerprint tekshiriladi
-  3. Redis da bu user_id uchun faol fingerprint hozirgi bilan mos kelmasа —
-     boshqa qurilmadan kirgan deb hisoblanadi → cookie tozalanadi (logout)
+DeviceCheckMiddleware (after JWTAuthMiddleware): when the access token's session
+(``sid`` claim) has been revoked (logout elsewhere, "revoke device", device
+limit, password change), the request is treated as anonymous right away.
 
-Bu "bir akkaunt = bir qurilma" qoidasini enforce qiladi.
-JWTAuthMiddleware dan KEYIN, TenantMiddleware dan OLDIN joylashadi.
+DeviceLogoutMiddleware (response phase): clears the auth cookies after such a
+revocation and sets the ``device_id`` cookie for flows that issued a session
+without building their own response (allauth's OAuth callback).
 """
 
 import logging
 
+from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
+
 from apps.accounts.services.token_service import (
-    _redis,
     clear_auth_cookies,
-    make_fingerprint,
-    verify_access_token,
+    decode_access_token,
+    is_session_revoked,
+    set_device_cookie,
 )
 
 log = logging.getLogger(__name__)
@@ -28,66 +30,27 @@ class DeviceCheckMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        self._check_device(request)
+        self._check_session(request)
         return self.get_response(request)
 
-    def _check_device(self, request) -> None:
-        """
-        Refresh token mavjud bo'lsa — Redis da saqlangan fingerprint
-        joriy so'rov fingerprinti bilan taqqoslanadi.
-
-        Agar single_device_policy=True: mos kelmasa → force logout
-        Agar single_device_policy=False: ko'p qurilmaga ruxsat, check skip
-        """
-        access_token = request.COOKIES.get('access_token')
-        refresh_token = request.COOKIES.get('refresh_token')
-
-        if not access_token or not refresh_token:
+    def _check_session(self, request) -> None:
+        token = request.COOKIES.get('access_token')
+        if not token:
             return
-
-        user_id = verify_access_token(access_token)
-        if user_id is None:
-            # Muddati o'tgan access token — refresh endpoint hal qiladi
+        payload = decode_access_token(token)
+        if payload is None:
+            # Expired/invalid: the refresh endpoint deals with it.
             return
-
-        # Organization device policy tekshirish
-        from apps.accounts.models import CustomUser
-        from core.tenant import get_current_org
-
-        try:
-            CustomUser.objects.get(pk=user_id)
-            org = get_current_org()
-
-            if org and not org.single_device_policy:
-                # Multi-device mode — fingerprint check skip
-                return
-        except (CustomUser.DoesNotExist, Exception):
-            pass
-
-        # Single-device policy — fingerprint tekshirish
-        current_fp = make_fingerprint(request)
-        r = _redis()
-        stored_fp = r.get(f'session:active:{user_id}')
-
-        if stored_fp is None:
-            # Redis da sessiya yo'q — logout bo'lgan yoki tozalangan
-            request._force_logout = True
-            return
-
-        if stored_fp != current_fp:
-            # Boshqa qurilma kirib, bu sessiya o'chirilgan
-            log.info('Device mismatch — force logout: user=%s', user_id)
-            request._force_logout = True
+        sid = payload.get('sid')
+        if sid:
+            request.session_sid = sid
+            if is_session_revoked(sid):
+                log.info('Revoked session used: user=%s sid=%s', payload.get('sub'), sid)
+                request._force_logout = True
+                request.user = AnonymousUser()
 
 
 class DeviceLogoutMiddleware:
-    """
-    DeviceCheckMiddleware force logout belgisini response ga apply qiladi.
-    Response davrimizda ishlaydi (cookie o'chirish uchun response kerak).
-
-    HTMX requestlar uchun HX-Redirect header qo'shadi (frontend redirect).
-    """
-
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -95,13 +58,8 @@ class DeviceLogoutMiddleware:
         response = self.get_response(request)
         if getattr(request, '_force_logout', False):
             clear_auth_cookies(response)
-            # request.user ni ham tozalaymiz
-            from django.contrib.auth.models import AnonymousUser
-
             request.user = AnonymousUser()
-
-            # HTMX requestlarda redirect signal yuborish
-            if request.headers.get('HX-Request') == 'true':
-                response['HX-Redirect'] = '/login/'
-
+        new_device = getattr(request, '_device_id_to_set', None)
+        if new_device and 'device_id' not in response.cookies:
+            set_device_cookie(response, new_device, request.is_secure() or not settings.DEBUG)
         return response

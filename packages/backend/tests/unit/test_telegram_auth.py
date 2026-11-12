@@ -68,8 +68,8 @@ class TestTelegramInitDataValidation:
             verify_init_data(init_data)
 
     def test_verify_init_data_expired_timestamp(self):
-        """Auth date > max_age (24h default) → raises TelegramAuthError."""
-        old_timestamp = int(datetime.now(UTC).timestamp()) - (86400 + 1)
+        """Auth date > max_age (10 min default) → raises TelegramAuthError."""
+        old_timestamp = int(datetime.now(UTC).timestamp()) - (600 + 1)
         data = {'user': '{"id":123}', 'auth_date': str(old_timestamp)}
 
         secret_key = hashlib.sha256(f'WebAppData{settings.TELEGRAM_BOT_TOKEN}'.encode()).digest()
@@ -132,7 +132,10 @@ class TestFindOrCreateUser:
         assert user.telegram_id == 987654321
         assert user.first_name == 'Jane'
         assert user.last_name == 'Smith'
-        assert user.username == 'janesmith'
+        # generated from the name, not the Telegram handle; one free change left
+        assert user.username == 'jane.smith'
+        assert user.username_is_auto is True
+        assert user.terms_accepted_at is not None
         assert created is True
 
     def test_find_or_create_user_auto_generates_username(self, db):

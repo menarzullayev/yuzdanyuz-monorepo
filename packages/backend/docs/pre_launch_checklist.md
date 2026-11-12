@@ -54,7 +54,7 @@
 - **Action**:
   - Authenticated: `user:<user_id>` bucket (per-user, NAT immune)
   - Endpoint-specific limits:
-    - `/accounts/login/`: 5/min (brute force protection — qo'shilgan)
+    - `/api/auth/login/`, `/register/`, `/recovery/*`, `/password/*`, `/2fa/*`: 5/min (brute force protection)
     - `/api/v1/*` (browse): 120/min (oddiy navigation)
     - `/admin/*`: 60/min
     - `/api/v1/exams/*/anticheat/`: 30/min (anti-cheat spam guard)

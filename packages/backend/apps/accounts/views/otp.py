@@ -20,16 +20,12 @@ from apps.accounts.services.otp_service import (
     verify_otp,
 )
 from apps.accounts.services.phone_utils import PhoneValidationError
-from apps.accounts.services.token_service import (
-    create_token_pair,
-    make_fingerprint,
-    set_auth_cookies,
-)
+from apps.accounts.services.token_service import attach_session, issue_login
 from core.utils.client_ip import get_client_ip
 
 
-def _is_secure(request) -> bool:
-    return request.is_secure() or not settings.DEBUG
+def _disabled_response():
+    return JsonResponse({'error': 'sms_otp_disabled'}, status=404)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -40,6 +36,8 @@ class OTPSendView(View):
     """
 
     def post(self, request):
+        if not settings.ENABLE_SMS_OTP:
+            return _disabled_response()
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -78,6 +76,8 @@ class OTPVerifyView(View):
     """
 
     def post(self, request):
+        if not settings.ENABLE_SMS_OTP:
+            return _disabled_response()
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -99,8 +99,7 @@ class OTPVerifyView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        fingerprint = make_fingerprint(request)
-        access, refresh = create_token_pair(user, fingerprint)
+        issued = issue_login(request, user, remember=True)
 
         response = JsonResponse(
             {
@@ -113,5 +112,5 @@ class OTPVerifyView(View):
                 }
             }
         )
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response

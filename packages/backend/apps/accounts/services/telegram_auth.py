@@ -27,14 +27,14 @@ class TelegramAuthError(Exception):
     pass
 
 
-def verify_init_data(init_data: str, bot_token: str | None = None, max_age: int = 86400) -> dict:
+def verify_init_data(init_data: str, bot_token: str | None = None, max_age: int = 600) -> dict:
     """
     TMA initData ni tekshiradi va user dict qaytaradi.
 
     Args:
         init_data: Telegram WebApp.initData string (URL-encoded)
         bot_token: Telegram bot token. None bo'lsa settings.TELEGRAM_BOT_TOKEN ishlatiladi
-        max_age:   Tokenning maksimal yoshi (soniyada). Default 24 soat.
+        max_age:   Tokenning maksimal yoshi (soniyada). Default 10 daqiqa (login va ulash uchun).
 
     Returns:
         {'id': int, 'first_name': str, 'last_name': str, 'username': str,
@@ -54,7 +54,9 @@ def verify_init_data(init_data: str, bot_token: str | None = None, max_age: int 
 
     # Vaqt tekshiruvi
     auth_date = params.get('auth_date')
-    if auth_date and time.time() - int(auth_date) > max_age:
+    if not auth_date or not auth_date.isascii() or not auth_date.isdigit():
+        raise TelegramAuthError("initData da auth_date yo'q")
+    if time.time() - int(auth_date) > max_age:
         raise TelegramAuthError("initData muddati o'tgan (max_age exceeded)")
 
     # data-check-string
@@ -92,9 +94,20 @@ def find_or_create_user(tg_user: dict) -> tuple[CustomUser, bool]:
         pass
 
     # Yangi foydalanuvchi yaratish
+    from django.utils import timezone
+
+    from apps.accounts.services.usernames import generate_username
+
     user = CustomUser(
-        username=_unique_username(tg_user),
+        username=generate_username(
+            tg_user.get('first_name', ''),
+            tg_user.get('last_name', ''),
+            fallback=tg_user.get('username') or 'user',
+        ),
+        username_is_auto=True,
         telegram_id=tg_id,
+        terms_version=settings.TERMS_VERSION,
+        terms_accepted_at=timezone.now(),
     )
     _update_tg_fields(user, tg_user)
     user.set_unusable_password()
@@ -131,11 +144,3 @@ def _update_tg_fields(user: CustomUser, tg_user: dict) -> None:
         if user.pk
         else None
     )
-
-
-def _unique_username(tg_user: dict) -> str:
-    """Noyob username generatsiya qiladi."""
-    base = tg_user.get('username') or f'tg_{tg_user["id"]}'
-    if not CustomUser.objects.filter(username=base).exists():
-        return base
-    return f'{base}_{tg_user["id"]}'

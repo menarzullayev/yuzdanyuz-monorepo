@@ -438,10 +438,23 @@ class OrgInvite(models.Model):
             return False
         return True
 
-    def use(self):
-        """Invite ishlatilganda counter oshiriladi."""
-        self.used_count += 1
-        self.save(update_fields=['used_count'])
+    def use(self) -> bool:
+        """Atomically count one use; False when the invite is exhausted/disabled/expired.
+
+        A single UPDATE with the max_uses guard, so two concurrent joins cannot both
+        take the last seat.
+        """
+        from django.db.models import F, Q
+
+        qs = OrgInvite.objects.filter(pk=self.pk, is_active=True).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+        )
+        if self.max_uses is not None:
+            qs = qs.filter(used_count__lt=self.max_uses)
+        if not qs.update(used_count=F('used_count') + 1):
+            return False
+        self.refresh_from_db(fields=['used_count'])
+        return True
 
 
 # ─── Signal: yangi Org yaratilganda tizimiy rollarni avtomatik qo'shish ───────
