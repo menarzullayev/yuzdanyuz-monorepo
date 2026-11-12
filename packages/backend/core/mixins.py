@@ -17,9 +17,34 @@ from django.utils import timezone
 
 from .audit_user import get_current_user
 from .managers import GlobalManager, TenantManager
+from .tenant import own_org_context
 
 
-class TenantMixin(models.Model):
+class RLSRowMixin(models.Model):
+    """save / delete / refresh_from_db from code without a tenant context run under the
+    row's own organisation (core.tenant.own_org_context), so RLS accepts them (B15).
+    Models whose organisation lives on a parent override rls_org_id()."""
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        with own_org_context(self.rls_org_id()):
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with own_org_context(self.rls_org_id()):
+            return super().delete(*args, **kwargs)
+
+    def refresh_from_db(self, *args, **kwargs):
+        with own_org_context(self.rls_org_id()):
+            return super().refresh_from_db(*args, **kwargs)
+
+    def rls_org_id(self):
+        return getattr(self, 'organization_id', None)
+
+
+class TenantMixin(RLSRowMixin):
     """
     Abstract mixin. Meros olgan har bir model:
         - organization FK oladi

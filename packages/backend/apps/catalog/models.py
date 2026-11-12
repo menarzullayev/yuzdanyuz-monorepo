@@ -5,7 +5,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
-from core.mixins import AuditUserMixin, TenantTimestampMixin
+from core.mixins import AuditUserMixin, RLSRowMixin, TenantTimestampMixin
 
 
 class Subject(models.Model):
@@ -147,7 +147,7 @@ class Question(AuditUserMixin, TenantTimestampMixin):
         return f'[{self.type}] {self.id} (v{self.current_version})'
 
 
-class QuestionVersion(models.Model):
+class QuestionVersion(RLSRowMixin, models.Model):
     """Savolning versiyalangan mantiqiy kontenti (JSONB)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -192,6 +192,11 @@ class QuestionVersion(models.Model):
 
     def __str__(self):
         return f'{self.question.id} v{self.version_number}'
+
+    def rls_org_id(self):
+        from core.tenant import org_id_of
+
+        return org_id_of(Question, self.question_id)
 
 
 class QuestionBank(TenantTimestampMixin):
@@ -390,7 +395,7 @@ class ImportBatch(TenantTimestampMixin):
         ordering = ['-created_at']
 
 
-class QuestionDraft(models.Model):
+class QuestionDraft(RLSRowMixin, models.Model):
     """AI/Parser dan olingan xomaki savol — foydalanuvchi tasdiqlaguncha."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -417,3 +422,8 @@ class QuestionDraft(models.Model):
 
     def __str__(self):
         return f'Draft {self.id} ({self.batch_id})'
+
+    def rls_org_id(self):
+        from core.tenant import org_id_of
+
+        return org_id_of(ImportBatch, self.batch_id)

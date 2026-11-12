@@ -172,7 +172,8 @@ class TestDraftPublishWorkflow:
 
         assert draft.is_published is True
         assert draft.published_question == question
-        assert question.versions.count() == 1
+        with tenant_context(question.organization):
+            assert question.versions.count() == 1
 
     def test_bulk_publish_invalid_drafts_skipped(self, db, org):
         """Invalid draft'lar publish qilinmaydi."""

@@ -10,6 +10,7 @@ from django.db import connection, transaction
 from psycopg2 import sql
 
 from core import crypto
+from core.tenant import unscoped_context
 
 # (table, primary key column, encrypted column)
 ENCRYPTED_COLUMNS = [
@@ -25,7 +26,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         total = 0
-        with transaction.atomic(), connection.cursor() as cur:
+        # every tenant's rows: the explicit RLS bypass (core/db_rls.py, B15)
+        with unscoped_context(), transaction.atomic(), connection.cursor() as cur:
             for table, pk, column in ENCRYPTED_COLUMNS:
                 q = sql.SQL('SELECT {pk}, {col} FROM {t} WHERE {col} <> {empty}').format(
                     pk=sql.Identifier(pk),

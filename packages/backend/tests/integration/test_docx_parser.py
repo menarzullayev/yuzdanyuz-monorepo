@@ -11,7 +11,7 @@ from django.core.files.base import ContentFile
 from apps.catalog.models import ImportBatch, QuestionDraft
 from apps.catalog.services.ai_parser import AIParserService
 from apps.catalog.services.parsers import DocxParserService, ParserDispatcher
-from core.tenant import tenant_context
+from core.tenant import tenant_context, unscoped_context
 
 
 def _png_1x1() -> bytes:
@@ -72,7 +72,7 @@ def _parse(org, batch: ImportBatch) -> int:
 
 
 def _drafts_by_text(batch: ImportBatch) -> dict[str, QuestionDraft]:
-    return {d.data['text']: d for d in QuestionDraft.objects.filter(batch=batch)}
+    return {d.data['text']: d for d in _drafts().filter(batch=batch)}
 
 
 @pytest.mark.integration
@@ -83,7 +83,7 @@ class TestDocxParserService:
         batch = make_batch(_make_docx(['1. 2 + 2 = ?', 'A) 3', '*B) 4', 'C) 5']))
 
         assert _parse(org, batch) == 1
-        draft = QuestionDraft.objects.get(batch=batch)
+        draft = _drafts().get(batch=batch)
         assert draft.data['media'] == []
         assert all('media' not in option for option in draft.data['options'])
 
@@ -101,7 +101,7 @@ class TestDocxParserService:
         )
 
         assert _parse(org, batch) == 1
-        draft = QuestionDraft.objects.get(batch=batch)
+        draft = _drafts().get(batch=batch)
         # question picture + the picture-only paragraph after the options
         assert len(draft.data['media']) == 2
         assert all(
@@ -188,7 +188,7 @@ class TestDocxParserService:
         assert _parse(org, batch) == 0
         assert batch.status == ImportBatch.Status.FAILED
         assert batch.error_log and batch.error_log.get('error')
-        assert not QuestionDraft.objects.filter(batch=batch).exists()
+        assert not _drafts().filter(batch=batch)
 
     def test_dispatcher_routes_docx_regardless_of_case(self, org, make_batch, settings):
         settings.ENABLE_AI_PARSER = False
@@ -197,3 +197,20 @@ class TestDocxParserService:
         assert isinstance(ParserDispatcher.get_parser(batch), DocxParserService)
         with tenant_context(org):
             assert ParserDispatcher.parse(batch) == 1
+
+
+def _drafts():
+    """Draft rows for assertions, read past RLS (the parser runs in the batch's org)."""
+    return _UnscopedDrafts()
+
+
+class _UnscopedDrafts:
+    def __getattr__(self, name):
+        method = getattr(QuestionDraft.objects, name)
+
+        def call(*args, **kwargs):
+            with unscoped_context():
+                result = method(*args, **kwargs)
+                return list(result) if hasattr(result, '_fetch_all') else result
+
+        return call

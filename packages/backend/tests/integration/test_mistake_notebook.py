@@ -75,6 +75,11 @@ def card_of(user, q):
     return MistakeCard.global_objects.get(user=user, question=q)
 
 
+def _version_of(card):
+    with unscoped_context():
+        return QuestionVersion.objects.get(question_id=card.question_id)
+
+
 @pytest.fixture
 def wrong_card(db, org, user, member, subject):
     """A card created through the real hook from a wrong exam answer."""
@@ -144,7 +149,8 @@ class TestHook:
 
     def test_resaving_same_answer_is_noop_and_keeps_progress(self, wrong_card, user):
         review(wrong_card, user, 1, wrong_card.due_at)  # stage 1 -> 2
-        wrong_card.source_answer.save()  # update_or_create re-saves the same row
+        with unscoped_context():
+            wrong_card.source_answer.save()  # update_or_create re-saves the same row
         card = MistakeCard.global_objects.get(pk=wrong_card.pk)
         assert card.stage == 2 and card.lapses == 0
 
@@ -157,14 +163,14 @@ class TestHook:
     def test_new_wrong_exam_answer_resets_progress(self, wrong_card, org, user):
         now = wrong_card.due_at
         review(wrong_card, user, 1, now)
-        now = card_of(user, wrong_card.question).due_at
+        now = card_of(user, wrong_card.question_id).due_at
         review(wrong_card, user, 1, now)  # now stage 3
-        assert card_of(user, wrong_card.question).stage == 3
+        assert card_of(user, wrong_card.question_id).stage == 3
 
-        qv = wrong_card.question.versions.get()
+        qv = _version_of(wrong_card)
         answer(org, make_attempt(org, user), qv, correct=False)
 
-        card = card_of(user, wrong_card.question)
+        card = card_of(user, wrong_card.question_id)
         assert (card.stage, card.lapses) == (1, 1)
         assert card.due_at == mistakes.start_of_day_after(1)
 
@@ -172,15 +178,15 @@ class TestHook:
         wrong_card.mastered_at = timezone.now()
         wrong_card.stage = 4
         wrong_card.save()
-        qv = wrong_card.question.versions.get()
+        qv = _version_of(wrong_card)
         answer(org, make_attempt(org, user), qv, correct=False)
-        card = card_of(user, wrong_card.question)
+        card = card_of(user, wrong_card.question_id)
         assert card.mastered_at is None and card.stage == 1
 
     def test_correct_later_answer_does_not_touch_card(self, wrong_card, org, user):
-        qv = wrong_card.question.versions.get()
+        qv = _version_of(wrong_card)
         answer(org, make_attempt(org, user), qv, correct=True)
-        card = card_of(user, wrong_card.question)
+        card = card_of(user, wrong_card.question_id)
         assert (card.stage, card.lapses) == (1, 0)
 
 
@@ -200,22 +206,22 @@ class TestSchedule:
         for stage, days in [(2, 3), (3, 7), (4, 21)]:
             res = review(wrong_card, user, 1, now)
             assert res['correct'] is True
-            card = card_of(user, wrong_card.question)
+            card = card_of(user, wrong_card.question_id)
             assert card.stage == stage and card.mastered_at is None
             assert card.due_at == mistakes.start_of_day_after(days, now)
             assert card.last_reviewed_at == now
             now = card.due_at
 
         res = review(wrong_card, user, 1, now)  # the 21-day review
-        card = card_of(user, wrong_card.question)
+        card = card_of(user, wrong_card.question_id)
         assert res['correct'] is True and card.mastered_at == now
         assert card.lapses == 0
 
     def test_wrong_review_resets_to_stage1_due_tomorrow(self, wrong_card, user):
         review(wrong_card, user, 1, wrong_card.due_at)
-        now = card_of(user, wrong_card.question).due_at
+        now = card_of(user, wrong_card.question_id).due_at
         res = review(wrong_card, user, 2, now)  # wrong option
-        card = card_of(user, wrong_card.question)
+        card = card_of(user, wrong_card.question_id)
         assert res['correct'] is False
         assert (card.stage, card.lapses, card.mastered_at) == (1, 1, None)
         assert card.due_at == mistakes.start_of_day_after(1, now)
@@ -223,7 +229,7 @@ class TestSchedule:
     def test_cannot_review_before_due(self, wrong_card, user):
         with pytest.raises(mistakes.NotDueError):
             review(wrong_card, user, 1, wrong_card.due_at - timedelta(seconds=1))
-        assert card_of(user, wrong_card.question).stage == 1
+        assert card_of(user, wrong_card.question_id).stage == 1
 
     def test_cannot_review_mastered_card(self, wrong_card, user):
         wrong_card.mastered_at = timezone.now()
@@ -338,7 +344,7 @@ class TestApi:
     def test_review_not_due_is_400_and_unchanged(self, wrong_card, user):
         resp = _post_review(_client(user), wrong_card.id, {'id': 1})
         assert resp.status_code == 400
-        assert card_of(user, wrong_card.question).stage == 1
+        assert card_of(user, wrong_card.question_id).stage == 1
 
     def test_review_requires_selected(self, wrong_card, user):
         make_due(wrong_card)
@@ -372,7 +378,7 @@ class TestIsolation:
         assert c2.get(reverse('intelligence:mistakes-summary')).json()['active_total'] == 0
 
         assert _post_review(c2, wrong_card.id, {'id': 1}).status_code == 404
-        card = card_of(wrong_card.user, wrong_card.question)
+        card = card_of(wrong_card.user_id, wrong_card.question_id)
         assert (card.stage, card.last_reviewed_at) == (1, None)  # untouched
 
     def test_cross_tenant_card_is_invisible_and_not_reviewable(

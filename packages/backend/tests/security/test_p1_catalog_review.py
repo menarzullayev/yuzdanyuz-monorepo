@@ -58,7 +58,8 @@ class TestStudentCannotEditQuestionBank:
         batch, draft = _batch(org, subject)
         resp = _bulk(_client(user), batch, draft, 'delete')
         assert resp.status_code == 403
-        assert QuestionDraft.objects.filter(pk=draft.pk).exists()
+        with unscoped_context():
+            assert QuestionDraft.objects.filter(pk=draft.pk).exists()
 
     def test_student_cannot_bulk_publish(self, org, user, member, subject):
         batch, draft = _batch(org, subject)
@@ -89,13 +90,15 @@ class TestStudentCannotEditQuestionBank:
     def test_user_without_organization_cannot_touch_any_batch(self, org, user2, subject):
         batch, draft = _batch(org, subject)
         assert _bulk(_client(user2), batch, draft, 'delete').status_code in (403, 404)
-        assert QuestionDraft.objects.filter(pk=draft.pk).exists()
+        with unscoped_context():
+            assert QuestionDraft.objects.filter(pk=draft.pk).exists()
 
     def test_teacher_of_another_org_cannot_touch_batch(self, org, org2, user2, subject):
         _join(user2, org2, 'teacher')
         batch, draft = _batch(org, subject)
         assert _bulk(_client(user2), batch, draft, 'delete').status_code == 404
-        assert QuestionDraft.objects.filter(pk=draft.pk).exists()
+        with unscoped_context():
+            assert QuestionDraft.objects.filter(pk=draft.pk).exists()
 
 
 class TestEditorsKeepAccess:

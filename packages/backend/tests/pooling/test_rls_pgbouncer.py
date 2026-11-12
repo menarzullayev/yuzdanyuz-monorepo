@@ -13,7 +13,7 @@ import psycopg2
 import pytest
 from django.db import connection
 from django.db.backends.postgresql.base import DatabaseWrapper
-from django.test import RequestFactory, override_settings
+from django.test import RequestFactory
 
 from apps.webhooks.models import WebhookEndpoint
 from core.middleware import rls_middleware
@@ -73,9 +73,6 @@ def test_one_request_org_never_reaches_another_client(org, release_pool, monkeyp
 
 
 @pytest.mark.django_db(transaction=True)
-# DB-level filtering of org sessions is opt-in (core/db_roles.py); with it on, the bypass
-# flag rides on every statement next to the org and must survive pooling too.
-@override_settings(RLS_ENFORCE_ORG_SESSIONS=True)
 def test_interleaved_tenants_see_only_their_rows(org, org2, release_pool):
     for o in (org, org2):
         with tenant_context(o):
@@ -124,3 +121,40 @@ class _atomic:
         else:
             self.wrapper.commit()
         self.wrapper.set_autocommit(True)
+
+
+def _orgs_seen(wrapper):
+    with wrapper.cursor() as cur:
+        cur.execute('SELECT DISTINCT organization_id FROM webhooks_webhookendpoint')
+        return {str(r[0]) for r in cur.fetchall()}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_unscoped_bypass_never_reaches_another_client(org, org2, release_pool):
+    """B15: the explicit bypass rides on the statement like the org does, so a pooled
+    client never inherits it from another client (or from an earlier statement)."""
+    from core.tenant import unscoped_context
+
+    for o in (org, org2):
+        with tenant_context(o):
+            WebhookEndpoint.objects.create(organization=o, name=o.slug, url='https://e.x/h')
+    with connection.cursor() as cur:
+        cur.execute(
+            f"""
+            DO $$ BEGIN CREATE ROLE {APP_ROLE} LOGIN;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            """
+        )
+        cur.execute(f'GRANT SELECT ON webhooks_webhookendpoint TO {APP_ROLE}')
+
+    both = {str(org.id), str(org2.id)}
+    e, f = _pooled('pool_e', APP_ROLE), _pooled('pool_f', APP_ROLE)
+    try:
+        for _ in range(5):
+            with unscoped_context():
+                assert _orgs_seen(e) == both
+            assert _orgs_seen(f) == set()  # same server connection, no bypass
+            assert _orgs_seen(e) == set()  # nor for e once its block is over
+    finally:
+        e.close()
+        f.close()

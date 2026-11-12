@@ -23,7 +23,7 @@ from django.db.models import CheckConstraint, Q
 from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
-from core.mixins import AuditUserMixin, SoftDeleteMixin, TenantTimestampMixin
+from core.mixins import AuditUserMixin, RLSRowMixin, SoftDeleteMixin, TenantTimestampMixin
 
 from .managers import PublicOrTenantManager
 
@@ -143,7 +143,7 @@ class MockExam(TenantTimestampMixin):
 
 
 # ── 2. MockExamQuestion (through) ──────────────────────────────────
-class MockExamQuestion(models.Model):
+class MockExamQuestion(RLSRowMixin, models.Model):
     """MockExam → QuestionVersion through table.
 
     QuestionVersion FK (Question emas) — savol catalogda tahrirlansa ham
@@ -180,6 +180,11 @@ class MockExamQuestion(models.Model):
 
     def __str__(self):
         return f'{self.mock_exam.title} #{self.order}'
+
+    def rls_org_id(self):
+        from core.tenant import org_id_of
+
+        return org_id_of(MockExam, self.mock_exam_id)
 
 
 # ── 3. ExamAttempt ─────────────────────────────────────────────────

@@ -38,7 +38,11 @@ class PublicOrTenantManager(models.Manager):
 
     def for_org(self, org):
         """Aniq org uchun queryset — context'siz."""
-        return super().get_queryset().filter(Q(is_public=True) | Q(organization=org))
+        from core.managers import OrgScopedQuerySet
+
+        return OrgScopedQuerySet.for_model(self.model, org, using=self._db).filter(
+            Q(is_public=True) | Q(organization=org)
+        )
 
     def public_only(self):
         """Faqat platform mocks (cross-tenant)."""

@@ -95,3 +95,27 @@ def unscoped_context():
         yield
     finally:
         _unscoped_allowed.reset(token)
+
+
+def own_org_context(org):
+    """For writing or reloading a row of `org` (an Organization or its id) from code without
+    a tenant context (signals, workers, services): run under that org, so RLS accepts the
+    row. A request that has an org, or an unscoped block, keeps its own context, so touching
+    another org's row from a tenant request is still refused by the database (B15)."""
+    from contextlib import nullcontext
+
+    if org is None or get_current_org() is not None or is_unscoped_allowed():
+        return nullcontext()
+    if not hasattr(org, 'pk'):
+        from apps.organizations.models import Organization
+
+        org = Organization(pk=org)
+    return tenant_context(org)
+
+
+def org_id_of(model, pk):
+    """Organisation id of `model` row `pk`, read past RLS (for rows without their own org)."""
+    if pk is None:
+        return None
+    with unscoped_context():
+        return model._base_manager.filter(pk=pk).values_list('organization_id', flat=True).first()

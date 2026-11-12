@@ -17,7 +17,7 @@ import uuid
 from django.db import models
 
 from core.fields import EncryptedTextField
-from core.mixins import TenantTimestampMixin
+from core.mixins import RLSRowMixin, TenantTimestampMixin
 
 from .egress import validate_webhook_url
 
@@ -68,7 +68,7 @@ class WebhookEndpoint(TenantTimestampMixin):
         return event in (self.events or [])
 
 
-class WebhookDelivery(models.Model):
+class WebhookDelivery(RLSRowMixin, models.Model):
     """One attempt-history row per outbound webhook fire.
 
     State machine:
@@ -122,3 +122,8 @@ class WebhookDelivery(models.Model):
         if self.response_body and len(self.response_body) > 2000:
             self.response_body = self.response_body[:2000]
         super().save(*args, **kwargs)
+
+    def rls_org_id(self):
+        from core.tenant import org_id_of
+
+        return org_id_of(WebhookEndpoint, self.endpoint_id)
