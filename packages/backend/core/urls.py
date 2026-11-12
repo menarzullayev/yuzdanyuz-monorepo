@@ -46,6 +46,7 @@ urlpatterns = [
     # Yangi REST client'lar /api/v1/ ishlatishi shart.
     path('api/v1/exams/', include('apps.exams.urls', namespace='exams-v1')),
     path('api/v1/leaderboard/', include('apps.engagement.urls', namespace='engagement-v1')),
+    path('api/v1/engagement/', include('apps.engagement.api_urls', namespace='engagement-api-v1')),
     path('api/v1/intelligence/', include('apps.intelligence.urls', namespace='intelligence-v1')),
     path('api/v1/catalog/', include('apps.catalog.api_urls', namespace='catalog-api-v1')),
     path('api/v1/', include('apps.commerce.urls', namespace='commerce-v1')),
