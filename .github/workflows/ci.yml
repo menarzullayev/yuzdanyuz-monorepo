@@ -195,8 +195,11 @@ jobs:
       - name: Rule self-test (must catch fakes, ignore placeholders)
         run: bash scripts/test-gitleaks-rules.sh
 
+      # Full history of the checked-out commit only. With fetch-depth 0 the default
+      # (`git log --all`) also scans every other branch, so one branch with a
+      # finding failed every PR.
       - name: Scan full git history
-        run: gitleaks git . --config .gitleaks.toml --redact --no-banner
+        run: gitleaks git . --config .gitleaks.toml --redact --no-banner --log-opts="HEAD"
 
   # ──────────────────────────────────────────────────────────────────
   # Ops config — workflows, alert rules, Alertmanager, Terraform
