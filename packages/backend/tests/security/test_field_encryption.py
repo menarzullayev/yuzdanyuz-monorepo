@@ -214,7 +214,7 @@ class TestAdminMasking:
             status_code = 500
             text = 'boom'
 
-        monkeypatch.setattr(tasks.requests, 'post', lambda *a, **k: _Resp())
+        monkeypatch.setattr(tasks, 'safe_post', lambda *a, **k: _Resp())
         with tenant_context(org):
             delivery = WebhookDelivery.objects.create(
                 endpoint=endpoint, event='exam.submitted', payload={'a': 1}
