@@ -16,6 +16,7 @@ Milestone rewards (Coin):
 import logging
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 
 from .models import UserStreak
@@ -40,7 +41,15 @@ def update_on_activity(user, activity_date=None) -> UserStreak:
     yangi qiymat bo'lsa beriladi).
     """
     today = activity_date or timezone.now().date()
-    streak, created = UserStreak.objects.get_or_create(user=user)
+    # Row lock: parallel activity calls (two tabs, retries) are serialised, so only
+    # the first one advances the streak and pays a milestone; the others see
+    # last_activity_date == today. The reward is written in the same transaction.
+    with transaction.atomic():
+        return _update_locked(user, today)
+
+
+def _update_locked(user, today) -> UserStreak:
+    streak, created = UserStreak.objects.select_for_update().get_or_create(user=user)
 
     awarded_milestone = False
     if created or streak.last_activity_date is None:
@@ -67,13 +76,15 @@ def update_on_activity(user, activity_date=None) -> UserStreak:
 
             reward = get_reward_service()
             coins = MILESTONE_REWARDS[streak.current_streak]
-            reward(
-                user.pk,
-                coins,
-                reason=f'Streak milestone {streak.current_streak} days',
-                ref_id=f'streak:{streak.current_streak}',
-            )
+            with transaction.atomic():  # savepoint: a DB error here keeps the streak
+                reward(
+                    user.pk,
+                    coins,
+                    reason=f'Streak milestone {streak.current_streak} days',
+                    ref_id=f'streak:{streak.current_streak}',
+                )
         except Exception as e:
+            # a failed reward must not roll back the streak update itself
             logger.warning('streak milestone Coin reward failed: %s', e)
 
     return streak

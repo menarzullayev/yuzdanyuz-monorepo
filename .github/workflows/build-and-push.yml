@@ -13,6 +13,8 @@ on:
       - 'scripts/check-helm-pull-secrets.py'
       - 'scripts/check-helm-deploy-path.py'
       - 'scripts/test-check-helm-deploy-path.sh'
+      - 'scripts/check-helm-reliability.py'
+      - 'scripts/test-check-helm-reliability.sh'
       - '.github/workflows/build-and-push.yml'
   workflow_dispatch:
 
@@ -149,6 +151,10 @@ jobs:
           python scripts/check-helm-deploy-path.py \
             --external-secret yuzdanyuz-secrets --external-secret yuzdanyuz-backup-rclone \
             /tmp/rendered-default.yaml /tmp/rendered.yaml /tmp/rendered-keda.yaml /tmp/rendered-all.yaml
+      - name: PgBouncer wiring, worker media mounts, nginx static files
+        run: |
+          bash scripts/test-check-helm-reliability.sh /tmp/rendered.yaml
+          python scripts/check-helm-reliability.py             /tmp/rendered-default.yaml /tmp/rendered.yaml /tmp/rendered-keda.yaml /tmp/rendered-all.yaml
       - name: Chart refuses unsafe values
         run: |
           # expect_fail <must-contain> <helm args...>
@@ -163,6 +169,7 @@ jobs:
           }
           expect_fail "web.command is set" --set 'web.command={web}'
           expect_fail "celeryWorker.command is set" --set 'celeryWorker.command={worker}'
+          expect_fail "exceeds externalServices.postgres.maxConnections" --set pgbouncer.replicas=3
           expect_fail "backup.destination is empty" --values charts/yuzdanyuz/values-prod.yaml \
             --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
           expect_fail "backup.gpgPublicKey is empty" --values charts/yuzdanyuz/values-prod.yaml \

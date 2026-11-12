@@ -1,4 +1,11 @@
-# Backup — WAL-G + PITR
+# Backup — WAL-G + PITR (self-managed PostgreSQL host only)
+
+> **Not what the Helm chart runs.** The chart's `CronJob <release>-backup` is a daily
+> encrypted `pg_dump` (RPO ≤ 24 h), documented in
+> [`docs/operations/backup-restore.md`](../../../../docs/operations/backup-restore.md);
+> RPO/RTO and the recovery procedures are in [`../DR_RUNBOOK.md`](../DR_RUNBOOK.md).
+> This page applies only if PostgreSQL runs on a host we manage and continuous
+> archiving is set up there; nothing in the chart builds or runs WAL-G.
 
 PostgreSQL Point-In-Time Recovery via [WAL-G](https://github.com/wal-g/wal-g).
 
@@ -12,7 +19,6 @@ Files:
 - [`scripts/backup/wal-g-config.sh`](../../../../scripts/backup/wal-g-config.sh) — env config
 - [`scripts/backup/backup_full.sh`](../../../../scripts/backup/backup_full.sh) — daily full backup
 - [`scripts/backup/restore.sh`](../../../../scripts/backup/restore.sh) — PITR restore
-- [`charts/yuzdanyuz/templates/cronjob-backup.yaml`](../../../../charts/yuzdanyuz/templates/cronjob-backup.yaml) — K8s CronJob
 
 ## Setup (one-time, on PostgreSQL primary)
 

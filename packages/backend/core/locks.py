@@ -24,6 +24,7 @@ Idle workers wait yo'q — agar lock band bo'lsa, task darhol qaytadi.
 
 from __future__ import annotations
 
+import functools
 import logging
 import secrets
 from collections.abc import Iterator
@@ -31,6 +32,8 @@ from contextlib import contextmanager
 
 import redis
 from django.conf import settings
+
+from core.infra import redis_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +67,7 @@ def _redis() -> redis.Redis:
     """Cached Redis client. Test'da conftest.py mock_redis patch qiladi."""
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        _redis_client = redis_from_url(settings.REDIS_URL, decode_responses=True)
     return _redis_client
 
 
@@ -106,3 +109,24 @@ def single_runner_lock(name: str, expire: int = 300) -> Iterator[bool]:
                 logger.debug('Lock released: %s', key)
             else:
                 logger.warning('Lock %s not released — token mismatch (TTL expired?)', key)
+
+
+def single_run(name: str, expire: int = 300):
+    """Decorator form of `single_runner_lock` for periodic tasks (place under @shared_task).
+
+    A run that finds the lock held returns {'status': 'skipped_lock_busy'} without
+    doing any work, so two beat instances (failover, overlapping deploys) never run a
+    job twice. Set `expire` well above the job's normal duration.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            with single_runner_lock(name, expire=expire) as acquired:
+                if not acquired:
+                    return {'status': 'skipped_lock_busy'}
+                return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

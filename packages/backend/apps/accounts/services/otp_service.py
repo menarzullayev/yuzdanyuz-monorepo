@@ -17,6 +17,7 @@ from django.conf import settings
 from apps.accounts.models import CustomUser, OTPCode
 from apps.accounts.services.phone_utils import normalize_phone
 from apps.accounts.services.sms_backend import get_sms_backend
+from core.infra import redis_from_url
 
 log = logging.getLogger(__name__)
 
@@ -41,9 +42,8 @@ class OTPRateLimitError(OTPError):
 
 
 def _redis():
-    import redis
 
-    return redis.Redis.from_url(
+    return redis_from_url(
         getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
         decode_responses=True,
     )

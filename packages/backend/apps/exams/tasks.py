@@ -14,9 +14,10 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
-from django.db import transaction
+from django.db import InterfaceError, OperationalError, transaction
 from django.utils import timezone
 
+from core.locks import single_run
 from core.tenant import unscoped_context
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ QUARANTINE_RATIO_THRESHOLD = getattr(settings, 'QUARANTINE_RATIO_THRESHOLD', 0.0
 
 # ── 1. Auto-publish weekly mocks ──────────────────────────────────────────────
 @shared_task(name='exams.publish_scheduled_mocks')
+@single_run('exams.publish_scheduled_mocks', expire=240)
 def publish_scheduled_mocks():
     """
     DRAFT statusidagi mocks'ni scheduled_at vaqti yetganda PUBLISHED'ga o'zgartiradi.
@@ -146,7 +148,14 @@ def quarantine_check(question_version_id: str):
 
 
 # ── 3. Finalize attempt score ─────────────────────────────────────────────────
-@shared_task(name='exams.finalize_attempt_score')
+# Recomputes from stored answers, so a retry or an acks_late redelivery is harmless.
+@shared_task(
+    name='exams.finalize_attempt_score',
+    autoretry_for=(OperationalError, InterfaceError),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    max_retries=5,
+)
 def finalize_attempt_score(attempt_id: str):
     """
     ExamAttempt submit'dan keyin yoki quarantine recompute paytida chaqiriladi.

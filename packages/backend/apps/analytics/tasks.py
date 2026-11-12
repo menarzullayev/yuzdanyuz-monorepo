@@ -14,6 +14,8 @@ from celery import shared_task
 from django.core.files.base import ContentFile
 from django.utils import timezone
 
+from core.locks import single_run
+
 from .models import ExamEvent, ReportExport
 
 logger = logging.getLogger(__name__)
@@ -112,16 +114,15 @@ def generate_export(self, report_id: str) -> dict:
 
 
 @shared_task(name='analytics.refresh_question_quality')
+@single_run('analytics.refresh_question_quality', expire=3600)
 def refresh_question_quality(org_id: str | None = None) -> dict:
     """
     Recompute QuestionQualityStat per organization (daily beat on the `batch` queue).
 
     Cross-tenant scan: the org list is read unscoped, every org is then computed inside its
-    own tenant_context (+ RLS session variable) so no query ever mixes tenants.
+    own tenant_context (+ transaction-local RLS variable) so no query ever mixes tenants.
     Idempotent: re-running upserts the same rows.
     """
-    from django.db import connection
-
     from apps.organizations.models import Organization
     from core.tenant import tenant_context, unscoped_context
 
@@ -134,16 +135,12 @@ def refresh_question_quality(org_id: str | None = None) -> dict:
 
     results = []
     for org in orgs:
+        # tenant_context also scopes the RLS variable of every statement (core/db_rls.py)
         with tenant_context(org):
-            with connection.cursor() as cur:
-                cur.execute("SELECT set_config('app.current_org_id', %s, false)", [str(org.id)])
             try:
                 results.append(refresh_for_org(org))
             except Exception:
                 logger.exception('refresh_question_quality failed for org %s', org.id)
-            finally:
-                with connection.cursor() as cur:
-                    cur.execute('RESET app.current_org_id')
     return {
         'orgs': len(results),
         'versions': sum(r['versions'] for r in results),

@@ -68,6 +68,8 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
+from core.infra import redis_from_url
+
 log = logging.getLogger(__name__)
 
 
@@ -122,9 +124,8 @@ class RateLimitExceeded(Exception):
 
 
 def _redis():
-    import redis
 
-    return redis.Redis.from_url(
+    return redis_from_url(
         getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
         decode_responses=True,
     )

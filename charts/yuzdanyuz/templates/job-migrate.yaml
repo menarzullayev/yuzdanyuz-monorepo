@@ -33,6 +33,12 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          # Straight to Postgres, no statement timeout: migrations build indexes
+          # CONCURRENTLY and must not be cut off by the pooled request timeout.
+          env:
+            {{- include "yuzdanyuz.directDbEnv" . | nindent 12 }}
+            - name: DB_STATEMENT_TIMEOUT_MS
+              value: "0"
           resources: {{- toYaml .Values.migrate.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
 {{- end }}

@@ -27,6 +27,21 @@ spec:
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
+      # F05: nginx serves the hashed static files itself (the emptyDir used to stay
+      # empty and every asset fell through to Django). Copied from the backend image
+      # of the same release, so names always match the deployed manifest.
+      initContainers:
+        - name: static
+          image: {{ include "yuzdanyuz.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["copy-static", "/static"]
+          resources:
+            requests: { cpu: "50m",  memory: "64Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: static
+              mountPath: /static
       containers:
         - name: nginx
           image: {{ include "yuzdanyuz.nginxImage" . }}
@@ -59,6 +74,9 @@ spec:
             requests: { cpu: "50m",  memory: "64Mi" }
             limits:   { cpu: "300m", memory: "256Mi" }
           volumeMounts:
+            - name: static
+              mountPath: /var/www/static
+              readOnly: true
             - name: media
               mountPath: /var/www/media
               readOnly: true
@@ -70,6 +88,9 @@ spec:
             - name: upstreams
               mountPath: /etc/nginx/upstreams
       volumes:
+        - name: static
+          emptyDir:
+            sizeLimit: 512Mi
         - name: media
           persistentVolumeClaim:
             claimName: {{ include "yuzdanyuz.fullname" . }}-media

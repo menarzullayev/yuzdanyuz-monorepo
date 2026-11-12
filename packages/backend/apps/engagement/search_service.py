@@ -25,7 +25,7 @@ def search_questions(query: str, *, org=None, limit: int = 20) -> list[dict]:
 
 
 def _search_postgres(query: str, *, org=None, limit: int = 20) -> list[dict]:
-    """JSONField'da text qidiruv. Slow lekin small dataset uchun ok."""
+    """Substring search over the whole content JSON (pg_trgm index, E01)."""
     from apps.catalog.models import QuestionVersion
 
     qs = QuestionVersion.objects.select_related('question__subject')
@@ -34,6 +34,7 @@ def _search_postgres(query: str, *, org=None, limit: int = 20) -> list[dict]:
 
     # JSONField text search via cast (PG extension yoki contains)
     # Note: bu PostgreSQL'ga moslashtirilgan
+    # served by the catalog_qv_content_trgm GIN index (migration catalog 0012)
     qs = qs.filter(content__icontains=query)
     if org is not None:
         qs = qs.filter(question__organization=org)

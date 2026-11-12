@@ -71,6 +71,26 @@ Render env vars from .Values.env (ConfigMap-style) + secret refs.
 {{- end -}}
 
 {{/*
+Env overrides for pods that must reach Postgres directly (migrate Job), bypassing
+PgBouncer: DB_HOST/DB_PORT of the server, its sslmode, and no pooler mode.
+*/}}
+{{- define "yuzdanyuz.directDbEnv" -}}
+{{- $pg := .Values.externalServices.postgres -}}
+- name: DB_HOST
+  value: {{ $pg.host | quote }}
+- name: DB_PORT
+  value: {{ $pg.port | quote }}
+- name: DB_POOLER
+  value: ""
+- name: DB_SSLMODE
+  value: {{ $pg.sslmode | quote }}
+{{- with $pg.sslrootcert }}
+- name: DB_SSLROOTCERT
+  value: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Fail rendering when a backend workload sets `command` (it would replace the image
 ENTRYPOINT). Use `args` instead.
 */}}

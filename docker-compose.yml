@@ -11,8 +11,10 @@ x-backend-base: &backend-base
     - ./packages/backend/.env
   environment: &backend-env
     DJANGO_SETTINGS_MODULE: core.settings.dev
-    DB_HOST: postgres
-    DB_PORT: 5432
+    # through PgBouncer in transaction mode, like the Helm chart (E05)
+    DB_HOST: pgbouncer
+    DB_PORT: 6432
+    DB_POOLER: pgbouncer
     DB_NAME: yuzdanyuz_db
     DB_USER: yuzdanyuz
     DB_PASSWORD: yuzdanyuz_dev
@@ -26,7 +28,7 @@ x-backend-base: &backend-base
     # packages/backend/.env, or set LLM_BACKEND=anthropic_api with ANTHROPIC_API_KEY.
     LLM_BACKEND: ${LLM_BACKEND:-claude_cli}
   depends_on:
-    postgres:
+    pgbouncer:
       condition: service_healthy
     redis:
       condition: service_healthy
@@ -47,6 +49,26 @@ services:
       test: ["CMD", "pg_isready", "-U", "yuzdanyuz", "-d", "yuzdanyuz_db"]
       interval: 5s
       timeout: 5s
+      retries: 10
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    environment:
+      AUTH_TYPE: scram-sha-256
+      AUTH_FILE: /etc/pgbouncer-run/userlist.txt
+      DB_USER: yuzdanyuz
+      DB_PASSWORD: yuzdanyuz_dev
+    volumes:
+      - ./docker/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    tmpfs:
+      - /etc/pgbouncer-run
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 6432"]
+      interval: 5s
+      timeout: 3s
       retries: 10
 
   redis:
@@ -89,8 +111,9 @@ services:
     command: ["web"]
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.dev
-      DB_HOST: postgres
-      DB_PORT: 5432
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      DB_POOLER: pgbouncer
       DB_NAME: yuzdanyuz_db
       DB_USER: yuzdanyuz
       DB_PASSWORD: yuzdanyuz_dev
@@ -120,6 +143,10 @@ services:
     environment:
       <<: *backend-env
       CELERY_QUEUES: default,celery,critical,realtime,batch
+      DB_NAME: yuzdanyuz_db_worker
+    # F13: task-written files (report exports) must be visible to web/nginx
+    volumes:
+      - mediadata:/app/media
 
   celery-ai:
     <<: *backend-base
@@ -128,6 +155,9 @@ services:
       <<: *backend-env
       CELERY_QUEUES: ai
       CELERY_CONCURRENCY: "2"
+      DB_NAME: yuzdanyuz_db_worker
+    volumes:
+      - mediadata:/app/media
 
   celery-beat:
     <<: *backend-base
