@@ -116,6 +116,7 @@ class JoinedVia(models.TextChoices):
     MANUAL = 'manual', "Admin qo'shdi"
     INVITE = 'invite', 'Invite link'
     API = 'api', 'API integratsiya'
+    AUTO = 'auto', 'Avtomatik (platforma)'
 
 
 # ─── Organization ─────────────────────────────────────────────────────────────

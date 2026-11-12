@@ -47,6 +47,19 @@ class CustomUserAdmin(UserAdmin):
     ordering = ['-date_joined']
     readonly_fields = ['user_type', 'is_profile_complete', 'display_name']
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        from apps.organizations.services import (
+            drop_auto_platform_membership,
+            ensure_platform_membership,
+        )
+
+        if not change:
+            ensure_platform_membership(obj)
+        elif obj.is_staff or obj.is_superuser:
+            # Staff run unscoped (no org); a leftover platform membership would scope them.
+            drop_auto_platform_membership(obj)
+
     fieldsets = UserAdmin.fieldsets + (
         (
             'Telegram',

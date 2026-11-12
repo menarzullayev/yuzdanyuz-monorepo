@@ -19,8 +19,10 @@ import time
 from urllib.parse import parse_qsl, unquote
 
 from django.conf import settings
+from django.db import transaction
 
 from apps.accounts.models import CustomUser
+from apps.organizations.services import ensure_platform_membership
 
 
 class TelegramAuthError(Exception):
@@ -111,7 +113,9 @@ def find_or_create_user(tg_user: dict) -> tuple[CustomUser, bool]:
     )
     _update_tg_fields(user, tg_user)
     user.set_unusable_password()
-    user.save()
+    with transaction.atomic():
+        user.save()
+        ensure_platform_membership(user)
     return user, True
 
 
