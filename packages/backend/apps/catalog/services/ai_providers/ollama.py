@@ -2,6 +2,7 @@ import json
 
 import httpx
 
+from ._http import post_json
 from .base import SYSTEM_PROMPT, BaseAIProvider
 
 
@@ -18,9 +19,35 @@ class OllamaProvider(BaseAIProvider):
     base_url odatda http://localhost:11434
     """
 
-    def __init__(self, model: str, base_url: str = 'http://localhost:11434', **_):
+    def __init__(self, model: str, base_url: str = '', **_):
         self.model = model
-        self.base_url = base_url.rstrip('/')
+        self.base_url = (base_url or 'http://localhost:11434').rstrip('/')
+
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system: str = '',
+        json_schema: dict | None = None,
+        max_tokens: int = 2048,
+    ) -> str:
+        messages = []
+        if system:
+            messages.append({'role': 'system', 'content': system})
+        messages.append({'role': 'user', 'content': prompt})
+        body: dict = {
+            'model': self.model,
+            'messages': messages,
+            'stream': False,
+            'options': {'num_predict': max_tokens},
+        }
+        if json_schema is not None:
+            body['format'] = 'json'
+        data = post_json(f'{self.base_url}/api/chat', json=body)
+        try:
+            return data['message']['content'] or ''
+        except (KeyError, TypeError):
+            raise RuntimeError('Unexpected Ollama response shape') from None
 
     def parse_text_block(self, text: str) -> dict:
         # Ollama /api/generate — system va prompt birlashtiriladi

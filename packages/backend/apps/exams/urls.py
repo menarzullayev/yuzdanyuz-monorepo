@@ -6,7 +6,7 @@ Mounted under /api/exams/ via core/urls.py.
 
 from django.urls import path
 
-from . import sse_views, views
+from . import sitting_views, sse_views, views
 
 app_name = 'exams'
 
@@ -64,5 +64,50 @@ urlpatterns = [
         'practice/<uuid:session_id>/finish/',
         views.PracticeFinishView.as_view(),
         name='practice-finish',
+    ),
+    # Sittings (Rasch scoring + certificates)
+    path('sittings/', sitting_views.SittingListCreateView.as_view(), name='sitting-list'),
+    path('sittings/mine/', sitting_views.MyResultsView.as_view(), name='sitting-mine'),
+    path('sittings/<uuid:pk>/', sitting_views.SittingDetailView.as_view(), name='sitting-detail'),
+    path(
+        'sittings/<uuid:pk>/my-result/',
+        sitting_views.MyResultView.as_view(),
+        name='sitting-my-result',
+    ),
+    path(
+        'sittings/<uuid:pk>/results/',
+        sitting_views.SittingResultsView.as_view(),
+        name='sitting-results',
+    ),
+    path(
+        'sittings/<uuid:pk>/open/',
+        sitting_views.SittingActionView.as_view(action='open'),
+        name='sitting-open',
+    ),
+    path(
+        'sittings/<uuid:pk>/close/',
+        sitting_views.SittingActionView.as_view(action='close'),
+        name='sitting-close',
+    ),
+    path(
+        'sittings/<uuid:pk>/calculate/',
+        sitting_views.SittingActionView.as_view(action='calculate'),
+        name='sitting-calculate',
+    ),
+    path(
+        'sittings/<uuid:pk>/publish/',
+        sitting_views.SittingActionView.as_view(action='publish'),
+        name='sitting-publish',
+    ),
+    path('certificates/mine/', sitting_views.MyCertificatesView.as_view(), name='certificate-mine'),
+    path(
+        'certificates/verify/<str:number>/',
+        sitting_views.CertificateVerifyView.as_view(),
+        name='certificate-verify',
+    ),
+    path(
+        'certificates/<uuid:pk>/revoke/',
+        sitting_views.CertificateRevokeView.as_view(),
+        name='certificate-revoke',
     ),
 ]

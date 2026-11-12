@@ -213,6 +213,30 @@ class QuestionBank(TenantTimestampMixin):
         return self.name
 
 
+class ContentTarget(TenantTimestampMixin):
+    """
+    Kontent rejasi: fan bo'yicha maqsad (nechta tasdiqlangan savol / variant).
+    Qator bo'lmasa services.content_plan dagi DEFAULT_* qiymatlar ishlatiladi.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='content_targets')
+    target_questions = models.PositiveIntegerField(default=300)
+    target_variants = models.PositiveIntegerField(default=10)
+
+    class Meta:
+        verbose_name = _('Kontent maqsadi')
+        verbose_name_plural = _('Kontent maqsadlari')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organization', 'subject'], name='uniq_contenttarget_org_subject'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.subject_id}: {self.target_questions}q/{self.target_variants}v'
+
+
 # ─── AI Provider Configuration ──────────────────────────────────────────────
 
 
@@ -232,7 +256,10 @@ class AIProviderConfig(models.Model):
     class UseFor(models.TextChoices):
         PARSER = 'parser', 'Savol Parseri (Bulk Import)'
         TUTOR = 'tutor', 'AI Tutor (Diagnostika)'
-        ALL = 'all', 'Barchasi'
+        WRITING = 'writing', 'Writing baholash'
+        SPEAKING = 'speaking', 'Speaking baholash'
+        # 'all' is the default profile: tasks without a profile of their own use it.
+        ALL = 'all', 'Barchasi (default profil)'
 
     name = models.CharField(
         max_length=100,
@@ -247,11 +274,17 @@ class AIProviderConfig(models.Model):
         verbose_name=_('Model nomi'),
         help_text=_('claude-sonnet-5-5 | gpt-4o | gemini-1.5-pro | llama3'),
     )
+    # Stored encrypted ('enc1:' + Fernet token); save() encrypts plaintext, get_api_key() decrypts.
     api_key = models.CharField(
-        max_length=500,
+        max_length=1000,
         blank=True,
         verbose_name=_('API kalit'),
-        help_text=_("Ollama uchun bo'sh qoldiring"),
+        help_text=_("Ollama uchun bo'sh qoldiring. Shifrlangan holda saqlanadi."),
+    )
+    api_key_hint = models.CharField(max_length=8, blank=True, editable=False)
+    # Provider-specific options, e.g. {"purpose": "stt", "stt_model": "whisper-1"}.
+    extra_options = models.JSONField(
+        default=dict, blank=True, verbose_name=_("Qo'shimcha sozlamalar")
     )
     base_url = models.CharField(
         max_length=500,
@@ -286,6 +319,28 @@ class AIProviderConfig(models.Model):
         return (
             f'{status} [{self.priority}] {self.name} ({self.get_provider_display()}: {self.model})'
         )
+
+    def save(self, *args, **kwargs):
+        from core import crypto
+
+        if self.api_key and not crypto.is_encrypted(self.api_key):
+            self.api_key_hint = self.api_key[-4:]
+            self.api_key = crypto.encrypt(self.api_key)
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = {*kwargs['update_fields'], 'api_key_hint'}
+        elif not self.api_key:
+            self.api_key_hint = ''
+        super().save(*args, **kwargs)
+
+    def get_api_key(self) -> str:
+        from core import crypto
+
+        return crypto.decrypt(self.api_key)
+
+    @property
+    def purpose(self) -> str:
+        """'llm' (default) or 'stt' for speech-to-text rows (extra_options['purpose'])."""
+        return (self.extra_options or {}).get('purpose', 'llm')
 
 
 # ─── Bulk Import & Draft System ─────────────────────────────────────────────

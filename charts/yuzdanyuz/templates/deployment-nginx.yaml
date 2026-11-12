@@ -35,16 +35,24 @@ spec:
             - name: http
               containerPort: 80
               protocol: TCP
+          env:
+            # docker/nginx/templates/upstreams.conf.template; must match templates/services.yaml
+            - name: BACKEND_UPSTREAM
+              value: "{{ include "yuzdanyuz.fullname" . }}-web:{{ .Values.service.port }}"
+            - name: CHANNELS_UPSTREAM
+              value: "{{ include "yuzdanyuz.fullname" . }}-channels:{{ .Values.service.port }}"
           livenessProbe:
             httpGet:
               path: /health/
               port: http
+              {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health/
               port: http
+              {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
@@ -58,6 +66,9 @@ spec:
               mountPath: /var/cache/nginx
             - name: run
               mountPath: /var/run
+            # the image entrypoint renders the upstreams here; the pod runs non-root
+            - name: upstreams
+              mountPath: /etc/nginx/upstreams
       volumes:
         - name: media
           persistentVolumeClaim:
@@ -65,5 +76,7 @@ spec:
         - name: cache
           emptyDir: {}
         - name: run
+          emptyDir: {}
+        - name: upstreams
           emptyDir: {}
 {{- end }}

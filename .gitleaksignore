@@ -1,0 +1,3 @@
+# Fake test fixture key (sk-live-ABCDEFGH1234) in a PR commit, replaced by 55fd1b1; the
+# commit stays in branch history until squash-merged, and gitleaks scans full history.
+38bfab13950e99312c5f7de7cc318640d2c355e1:packages/backend/tests/unit/test_ai_providers.py:generic-api-key:14

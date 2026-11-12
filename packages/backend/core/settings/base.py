@@ -400,6 +400,14 @@ ENABLE_REAL_PAYMENTS = os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'tr
 PAYME_SECRET_KEY = os.getenv('PAYME_SECRET_KEY') or os.getenv('PAYME_MERCHANT_KEY', '')
 CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '')
 
+# Monetisation (apps.commerce): exam access paywall.
+# Off by default so the exam flow is unchanged until the frontend sells tariffs.
+BILLING_ENFORCE_EXAM_ACCESS = os.getenv('BILLING_ENFORCE_EXAM_ACCESS', 'false').lower() == 'true'
+# Free exam attempts every user gets before payment is required.
+BILLING_FREE_ATTEMPTS = int(os.getenv('BILLING_FREE_ATTEMPTS', '3'))
+# Weekly limits reset on Monday 00:00 in this timezone.
+BILLING_WEEK_TZ = os.getenv('BILLING_WEEK_TZ', 'Asia/Tashkent')
+
 # ISSUE-505: django-flags — runtime feature gating (per-user, per-org, percentage rollout).
 # Default conditions env var bilan boshqariladi. Admin'da `/admin/flags/` orqali override.
 #
@@ -429,6 +437,8 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
 CLAUDE_CLI_PATH = os.getenv('CLAUDE_CLI_PATH', '')  # empty -> `claude` on PATH
 CLAUDE_CLI_TIMEOUT = int(os.getenv('CLAUDE_CLI_TIMEOUT', '300'))
+# Fernet key for secrets stored in the DB (AIProviderConfig.api_key); empty -> derived from SECRET_KEY.
+FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', '')
 # YYYY-MM-DD: `claude setup-token` date + 1 year. Not secret. Drives the system check
 # (apps/intelligence/checks.py) and the daily intelligence.check_ai_token_expiry task.
 CLAUDE_CODE_OAUTH_TOKEN_EXPIRES = os.getenv('CLAUDE_CODE_OAUTH_TOKEN_EXPIRES', '')

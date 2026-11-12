@@ -11,16 +11,19 @@ Endpoints:
   POST /api/intelligence/openended/<id>/qa/      admin tasdiqlash
 """
 
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework import generics, status
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import QuestionVersion
 
-from .models import AIFeedback, OpenEndedSubmission
+from .mistakes import STAGE_INTERVAL_DAYS, NotDueError, ReviewError, review_card
+from .models import AIFeedback, MistakeCard, OpenEndedSubmission
+from .serializers import MistakeCardSerializer, MistakeReviewSerializer
 from .services import get_user_summary, recommend_questions
 from .tasks import (
     compute_summary_hash,
@@ -114,11 +117,28 @@ def _serialize_feedback(fb: AIFeedback) -> dict:
 # ─── Open-Ended Submission ───────────────────────────────────────────────────
 
 
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
+AUDIO_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.ogg', '.oga', '.webm', '.flac', '.mp4')
+
+
+def _validate_audio(audio, transcript: str) -> None:
+    """Speaking needs an audio file (or, for tests/imports, a ready transcript)."""
+    if audio is None:
+        if not transcript.strip():
+            raise ValidationError({'audio': 'audio file is required'})
+        return
+    if audio.size > MAX_AUDIO_BYTES:
+        raise ValidationError({'audio': 'file is larger than 25 MB'})
+    if not audio.name.lower().endswith(AUDIO_EXTENSIONS):
+        raise ValidationError({'audio': f'allowed formats: {", ".join(AUDIO_EXTENSIONS)}'})
+
+
 class OpenEndedSubmitView(APIView):
     def post(self, request):
         qv_id = request.data.get('question_version')
         sub_type = request.data.get('submission_type', 'essay')
-        content = request.data.get('content', '')
+        content = request.data.get('content', '') or ''
+        audio = request.FILES.get('audio')
 
         if not qv_id:
             raise ValidationError({'question_version': 'required'})
@@ -126,6 +146,8 @@ class OpenEndedSubmitView(APIView):
             raise ValidationError({'submission_type': "'essay' yoki 'audio'"})
         if sub_type == 'essay' and not content.strip():
             raise ValidationError({'content': "essay bo'sh bo'lmasligi kerak"})
+        if sub_type == 'audio':
+            _validate_audio(audio, content)
 
         qv = get_object_or_404(QuestionVersion, pk=qv_id)
 
@@ -150,6 +172,7 @@ class OpenEndedSubmitView(APIView):
             question_version=qv,
             submission_type=sub_type,
             content=content,
+            audio_file=audio if sub_type == 'audio' else None,
             status=OpenEndedSubmission.Status.PENDING,
         )
         evaluate_openended_submission.delay(str(sub.id))
@@ -197,16 +220,106 @@ class OpenEndedQAView(APIView):
 
 
 def _serialize_submission(sub: OpenEndedSubmission) -> dict:
+    # The AI score is an estimate until a teacher sets the final score; students must be able
+    # to tell the two apart, so `score` says which one it is.
+    if sub.human_score is not None:
+        score = {'value': float(sub.human_score), 'is_final': True, 'label': 'final'}
+    elif sub.ai_score is not None:
+        score = {'value': float(sub.ai_score), 'is_final': False, 'label': 'AI estimate'}
+    else:
+        score = None
+    feedback = sub.ai_feedback or {}
     return {
         'id': str(sub.id),
         'submission_type': sub.submission_type,
         'status': sub.status,
         'content': sub.content[:500] + '...' if len(sub.content) > 500 else sub.content,
+        'score': score,
         'ai_score': float(sub.ai_score) if sub.ai_score is not None else None,
         'ai_feedback': sub.ai_feedback,
+        'ai_not_assessed': feedback.get('not_assessed', []),
         'human_score': float(sub.human_score) if sub.human_score is not None else None,
+        'human_criteria': sub.human_criteria or {},
         'human_notes': sub.human_notes,
         'submitted_at': sub.submitted_at,
         'ai_completed_at': sub.ai_completed_at,
         'human_completed_at': sub.human_completed_at,
     }
+
+
+# ─── Mistake notebook (xatolar daftari) ──────────────────────────────────────
+
+
+def _user_cards(request):
+    # TenantManager scopes to the current org; user filter scopes to the owner.
+    return MistakeCard.objects.filter(user=request.user)
+
+
+class MistakeDueListView(generics.ListAPIView):
+    """GET /api/intelligence/mistakes/due/ — due, not yet mastered cards (paginated)."""
+
+    serializer_class = MistakeCardSerializer
+
+    def get_queryset(self):
+        return (
+            _user_cards(self.request)
+            .filter(mastered_at__isnull=True, due_at__lte=timezone.now())
+            .select_related('question')
+            .prefetch_related('question__versions')
+            .order_by('due_at', 'id')
+        )
+
+
+class MistakeSummaryView(APIView):
+    """GET /api/intelligence/mistakes/summary/ — counts per stage, due and mastered."""
+
+    def get(self, request):
+        now = timezone.now()
+        active = _user_cards(request).filter(mastered_at__isnull=True)
+        totals = dict(active.values_list('stage').annotate(n=Count('id')))
+        due = dict(active.filter(due_at__lte=now).values_list('stage').annotate(n=Count('id')))
+        return Response(
+            {
+                'stages': [
+                    {
+                        'stage': stage,
+                        'interval_days': days,
+                        'total': totals.get(stage, 0),
+                        'due': due.get(stage, 0),
+                    }
+                    for stage, days in STAGE_INTERVAL_DAYS.items()
+                ],
+                'due_total': sum(due.values()),
+                'active_total': sum(totals.values()),
+                'mastered': _user_cards(request).filter(mastered_at__isnull=False).count(),
+            }
+        )
+
+
+class MistakeReviewView(APIView):
+    """POST /api/intelligence/mistakes/<card_id>/review/ {selected} — grade a review."""
+
+    def post(self, request, card_id):
+        ser = MistakeReviewSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            result = review_card(card_id, request.user, ser.validated_data['selected'])
+        except MistakeCard.DoesNotExist:
+            raise NotFound('Card not found.') from None  # also hides other users' cards
+        except NotDueError as e:
+            raise ValidationError({'detail': str(e), 'code': 'not_due'}) from None
+        except ReviewError as e:
+            raise ValidationError({'detail': str(e)}) from None
+
+        card = result['card']
+        return Response(
+            {
+                'correct': result['correct'],
+                'correct_option_ids': result['correct_option_ids'],
+                'explanation': result['explanation'],
+                'stage': card.stage,
+                'due_at': card.due_at,
+                'lapses': card.lapses,
+                'mastered': card.mastered_at is not None,
+            }
+        )

@@ -48,6 +48,8 @@ class MockExam(TenantTimestampMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, verbose_name=_('Sarlavha'))
     description = models.TextField(blank=True, verbose_name=_('Tavsif'))
+    # commerce.ExamType.code (plain slug, no FK: exams must not depend on commerce).
+    exam_type = models.SlugField(max_length=32, default='dtm', db_index=True)
 
     duration_minutes = models.PositiveIntegerField(
         verbose_name=_('Davomiyligi (daqiqa)'),
@@ -601,3 +603,13 @@ class QuestionDispute(TenantTimestampMixin):
         self._validate_transition(self.Status.REJECTED)
         self.status = self.Status.REJECTED
         self.save(update_fields=['status', 'updated_at'])
+
+
+# Sittings (Rasch scoring + certificates) live in a separate module for readability.
+from .sitting_models import (  # noqa: E402,F401
+    Certificate,
+    ExamSitting,
+    GradeScale,
+    SittingItem,
+    SittingResult,
+)
