@@ -1,11 +1,17 @@
 from django.contrib import admin
 
 from .models import (
+    ExamKey,
+    ExamKeyBatch,
+    ExamType,
     OrganizationSubscription,
     PaymentIntent,
+    PromoCode,
+    PromoRedemption,
     Referral,
     ReferralCode,
     SubscriptionPlan,
+    UserSubscription,
     Wallet,
     WalletTransaction,
 )
@@ -72,3 +78,49 @@ class ReferralAdmin(admin.ModelAdmin):
     list_display = ('inviter', 'invited', 'coin_reward', 'created_at')
     raw_id_fields = ('inviter', 'invited')
     readonly_fields = ('created_at',)
+
+
+@admin.register(ExamType)
+class ExamTypeAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'is_enabled', 'sort_order')
+    list_editable = ('is_enabled', 'sort_order')
+
+
+@admin.register(PromoCode)
+class PromoCodeAdmin(admin.ModelAdmin):
+    list_display = ('code', 'discount_type', 'value', 'max_uses', 'expires_at', 'is_active')
+    list_filter = ('discount_type', 'is_active')
+    search_fields = ('code',)
+    filter_horizontal = ('allowed_plans', 'allowed_exam_types')
+
+
+@admin.register(PromoRedemption)
+class PromoRedemptionAdmin(admin.ModelAdmin):
+    list_display = ('promo', 'user', 'discount_uzs', 'created_at')
+    raw_id_fields = ('user', 'payment_intent', 'promo')
+
+
+@admin.register(UserSubscription)
+class UserSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'plan', 'status', 'current_period_ends_at', 'attempts_remaining')
+    list_filter = ('status',)
+    raw_id_fields = ('user', 'last_payment_intent')
+
+
+@admin.register(ExamKeyBatch)
+class ExamKeyBatchAdmin(admin.ModelAdmin):
+    list_display = ('organization', 'exam_type', 'quantity', 'source', 'created_at')
+    list_filter = ('source',)
+
+    def get_queryset(self, request):
+        return ExamKeyBatch.global_objects.all()
+
+
+@admin.register(ExamKey)
+class ExamKeyAdmin(admin.ModelAdmin):
+    list_display = ('code', 'organization', 'exam_type', 'status', 'assigned_to')
+    list_filter = ('status',)
+    readonly_fields = ('code',)
+
+    def get_queryset(self, request):
+        return ExamKey.global_objects.all()

@@ -145,7 +145,7 @@ class TestWebhookFlow:
         # Webhook external — no auth
         resp = client.post(
             reverse('commerce:payme-webhook'),
-            data={'id': 'payme-test-123', 'state': 'succeeded', 'amount': 10000},
+            data={'id': 'payme-test-123', 'state': 'succeeded', 'amount': 1000000},
             content_type='application/json',
             HTTP_X_SIGNATURE='stub-sig',
         )
@@ -173,7 +173,7 @@ class TestWebhookFlow:
         # Second webhook for same intent — should not double-credit
         resp = client.post(
             reverse('commerce:payme-webhook'),
-            data={'id': 'payme-idem-1', 'state': 'succeeded', 'amount': 10000},
+            data={'id': 'payme-idem-1', 'state': 'succeeded', 'amount': 1000000},
             content_type='application/json',
             HTTP_X_SIGNATURE='stub-sig',
         )

@@ -103,3 +103,17 @@ def get_client_ip(request) -> str:
     if cf_ip is not None:
         return str(cf_ip)
     return str(peer)
+
+
+def get_trusted_proxy_header(request, name: str) -> str:
+    """Return a forwarding header (e.g. ``CF-IPCountry``) only when the peer is one of our proxies.
+
+    Edge-supplied geo headers are as forgeable as ``X-Forwarded-For``, so they are
+    ignored unless ``REMOTE_ADDR`` is in ``TRUSTED_PROXY_CIDRS``.
+    """
+    peer = _parse_ip(request.META.get('REMOTE_ADDR'))
+    networks = _trusted_networks()
+    if peer is None or not networks or not _is_trusted(peer, networks):
+        return ''
+    meta_key = 'HTTP_' + name.upper().replace('-', '_')
+    return (request.META.get(meta_key) or '').strip()

@@ -286,7 +286,7 @@ def mock_otp_code(db, phone_number):
 
     code = OTPCode.objects.create(
         phone=phone_number,
-        code='123456',
+        code_hash=OTPCode.hash_code(phone_number, '123456'),
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
         is_verified=False,
         attempts=0,

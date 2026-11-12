@@ -2,9 +2,9 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
-from django.urls import include, path
+from django.urls import include, path, re_path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -21,10 +21,14 @@ def ping_view(request):
     return HttpResponse('pong')
 
 
+def not_found_view(request, *args, **kwargs):
+    raise Http404
+
+
 def home_view(request):
     if request.user.is_authenticated:
         return render(request, 'index.html')
-    return redirect('accounts:login')
+    return redirect(f'{settings.FRONTEND_BASE_URL}/login')
 
 
 urlpatterns = [
@@ -35,7 +39,11 @@ urlpatterns = [
     path('health/', health_views.liveness, name='health-liveness'),
     path('health/ready/', health_views.readiness, name='health-readiness'),
     path('', include('django_prometheus.urls')),  # /metrics endpoint
-    # Google OAuth (django-allauth)
+    # Google OAuth (django-allauth). Only the Google login/callback and the social
+    # error pages are exposed: allauth's own login, signup, email-based password
+    # reset, email confirmation and connections pages are not part of the product
+    # (JSON API under /api/auth/ instead), so everything else under /accounts/ is 404.
+    re_path(r'^accounts/(?!google/|3rdparty/(login|signup)/)', not_found_view),
     path('accounts/', include('allauth.urls')),
     # Domain apps (HTMX + REST aralash — accounts'da auth view'lar)
     path('', include('apps.accounts.urls', namespace='accounts')),
@@ -46,6 +54,7 @@ urlpatterns = [
     # Yangi REST client'lar /api/v1/ ishlatishi shart.
     path('api/v1/exams/', include('apps.exams.urls', namespace='exams-v1')),
     path('api/v1/leaderboard/', include('apps.engagement.urls', namespace='engagement-v1')),
+    path('api/v1/engagement/', include('apps.engagement.api_urls', namespace='engagement-api-v1')),
     path('api/v1/intelligence/', include('apps.intelligence.urls', namespace='intelligence-v1')),
     path('api/v1/catalog/', include('apps.catalog.api_urls', namespace='catalog-api-v1')),
     path('api/v1/', include('apps.commerce.urls', namespace='commerce-v1')),

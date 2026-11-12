@@ -11,31 +11,32 @@ Endpoints:
 import json
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.accounts.authentication import origin_allowed
+from apps.accounts.models import CustomUser, PreferredLang
 from apps.accounts.services.telegram_auth import (
     TelegramAuthError,
     find_or_create_user,
     verify_init_data,
 )
 from apps.accounts.services.token_service import (
+    attach_session,
     clear_auth_cookies,
-    create_token_pair,
-    make_fingerprint,
-    revoke_token,
+    issue_login,
+    revoke_session,
     rotate_refresh_token,
-    set_auth_cookies,
+    session_from_refresh,
 )
-
-
-def _is_secure(request) -> bool:
-    return request.is_secure() or not settings.DEBUG
+from apps.accounts.views.base import AuthAPIView, api_error, field_errors
+from apps.accounts.views.credentials import text_field
+from apps.accounts.views.payloads import user_payload
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -49,6 +50,8 @@ class TelegramAuthView(View):
     """
 
     def post(self, request):
+        if not origin_allowed(request):
+            return JsonResponse({'error': 'origin_not_allowed'}, status=403)
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -67,21 +70,17 @@ class TelegramAuthView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Account blocked'}, status=403)
 
-        fingerprint = make_fingerprint(request)
-        org = user.primary_organization
-        access, refresh = create_token_pair(user, fingerprint, org=org)
+        if created:
+            from urllib.parse import parse_qsl, unquote
 
-        response = JsonResponse(
-            {
-                'user': {
-                    'id': user.pk,
-                    'display_name': user.display_name,
-                    'user_type': user.user_type,
-                    'is_new': created,
-                }
-            }
-        )
-        set_auth_cookies(response, access, refresh, is_secure=_is_secure(request))
+            from apps.accounts.services.onboarding import capture_acquisition
+
+            start = dict(parse_qsl(unquote(init_data))).get('start_param')
+            capture_acquisition(user, {'start_param': start, **(body.get('acquisition') or {})})
+        issued = issue_login(request, user, remember=True)
+
+        response = JsonResponse({'user': {**user_payload(user), 'is_new': created}})
+        attach_session(response, issued, request)
         return response
 
 
@@ -99,37 +98,19 @@ class TokenRefreshView(View):
         if not old_refresh:
             return JsonResponse({'error': "refresh_token cookie yo'q"}, status=401)
 
-        access_token = request.COOKIES.get('access_token')
-        fingerprint = make_fingerprint(request)
-
-        # user_id ni eskirgan access token dan olish (imzo tekshirilmaydi, faqat payload)
-        import jwt as pyjwt
-
-        user_id = None
-        if access_token:
-            try:
-                payload = pyjwt.decode(
-                    access_token,
-                    settings.SECRET_KEY,
-                    algorithms=['HS256'],
-                    options={'verify_exp': False},
-                )
-                user_id = payload.get('sub', '')
-            except pyjwt.PyJWTError:
-                pass
-
-        if not user_id:
-            return JsonResponse({'error': "Token o'qib bo'lmadi"}, status=401)
-
-        result = rotate_refresh_token(old_refresh, user_id, fingerprint)
-        if result is None:
-            return JsonResponse(
+        # The refresh token alone identifies the session; the access cookie is
+        # normally already gone by the time we get here.
+        device_id = request.COOKIES.get('device_id', '')
+        issued = rotate_refresh_token(old_refresh, request, device_id=device_id)
+        if issued is None:
+            response = JsonResponse(
                 {'error': "Refresh token noto'g'ri yoki muddati o'tgan"}, status=401
             )
+            clear_auth_cookies(response)
+            return response
 
-        new_access, new_refresh = result
         response = JsonResponse({'ok': True})
-        set_auth_cookies(response, new_access, new_refresh, is_secure=_is_secure(request))
+        attach_session(response, issued, request)
         return response
 
 
@@ -141,75 +122,106 @@ class LogoutView(View):
     """
 
     def post(self, request):
-        access_token = request.COOKIES.get('access_token')
-        fingerprint = make_fingerprint(request)
+        session = None
+        refresh = request.COOKIES.get('refresh_token')
+        if refresh:
+            session = session_from_refresh(refresh)
+        if session is None:
+            # Fall back to the session id inside a (possibly expired) access token.
+            token = request.COOKIES.get('access_token')
+            if token:
+                import jwt as pyjwt
 
-        if access_token:
-            import jwt as pyjwt
+                try:
+                    payload = pyjwt.decode(
+                        token,
+                        settings.SECRET_KEY,
+                        algorithms=['HS256'],
+                        options={'verify_exp': False},
+                    )
+                except pyjwt.PyJWTError:
+                    payload = {}
+                sid = payload.get('sid')
+                if sid:
+                    from apps.accounts.models import DeviceSession
 
-            try:
-                payload = pyjwt.decode(
-                    access_token,
-                    settings.SECRET_KEY,
-                    algorithms=['HS256'],
-                    options={'verify_exp': False},
-                )
-                user_id = payload.get('sub', '')
-                if user_id:
-                    revoke_token(user_id, fingerprint)
-            except pyjwt.PyJWTError:
-                pass
+                    session = DeviceSession.objects.filter(
+                        pk=sid, user_id=payload.get('sub'), revoked_at__isnull=True
+                    ).first()
+        if session is not None:
+            revoke_session(session, 'logout')
 
         response = JsonResponse({'ok': True})
         clear_auth_cookies(response)
         return response
 
 
-class MeView(APIView):
+class MeView(AuthAPIView):
     """
-    GET /api/auth/me/
+    GET   /api/auth/me/   current user (frontend bootstrap on app load / after login)
+    PATCH /api/auth/me/   first_name, last_name, email (optional, unverified), preferred_lang
 
-    Returns the authenticated user's profile + primary organization.
-    Frontend invokes this immediately after login (or on app boot) to bootstrap
-    the user shell (display name, role, org switcher, locale).
-
-    Authentication: JWTAuthMiddleware reads the `access_token` HttpOnly cookie
-    and populates request.user. SessionAuthentication (DRF default) then passes
-    through. 401 when anonymous, 200 with payload when authenticated.
+    401 when anonymous or when the device session was revoked.
     """
-
-    permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        return Response(self._payload(request.user))
+
+    def patch(self, request):
         user = request.user
-        org = user.primary_organization
-        return Response(
-            {
-                'id': str(user.pk),
-                'email': user.email or None,
-                'phone_number': user.phone_number or None,
-                'display_name': user.display_name,
-                'first_name': user.first_name or None,
-                'last_name': user.last_name or None,
-                'avatar': user.avatar.url if user.avatar else None,
-                'preferred_lang': user.preferred_lang,
-                'user_type': user.user_type,
-                'is_profile_complete': user.is_profile_complete,
-                'telegram': {
-                    'id': user.telegram_id,
-                    'username': user.telegram_username,
-                    'photo_url': user.telegram_photo_url,
-                }
-                if user.telegram_id
-                else None,
-                'primary_organization': {
-                    'id': str(org.id),
-                    'name': org.name,
-                    'slug': getattr(org, 'slug', None),
-                }
-                if org
-                else None,
-                'is_staff': user.is_staff,
-                'is_superuser': user.is_superuser,
-            }
-        )
+        data = request.data
+        errors: dict[str, list[tuple[str, str]]] = {}
+        update = []
+
+        for key in ('first_name', 'last_name'):
+            if key in data:
+                val = text_field(data, key)
+                if not 2 <= len(val) <= 60:
+                    errors[key] = [(f'{key}_length', 'Must be between 2 and 60 characters.')]
+                else:
+                    setattr(user, key, val)
+                    update.append(key)
+
+        if 'email' in data:
+            email = text_field(data, 'email').lower()
+            if not email:
+                user.email = None
+                update.append('email')
+            else:
+                try:
+                    validate_email(email)
+                except DjangoValidationError:
+                    errors['email'] = [('email_invalid', 'Enter a valid email.')]
+                else:
+                    if CustomUser.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
+                        errors['email'] = [('email_taken', 'This email is already in use.')]
+                    else:
+                        user.email = email
+                        update.append('email')
+
+        if 'preferred_lang' in data:
+            lang = text_field(data, 'preferred_lang')
+            if lang not in PreferredLang.values:
+                errors['preferred_lang'] = [('invalid_choice', 'Unsupported language.')]
+            else:
+                user.preferred_lang = lang
+                update.append('preferred_lang')
+
+        if errors:
+            return api_error(
+                'validation_error', 'Maʼlumotlar notoʻgʻri.', 400, field_errors(**errors)
+            )
+        if update:
+            user.save(update_fields=update)
+        return Response(self._payload(user))
+
+    @staticmethod
+    def _payload(user) -> dict:
+        body = user_payload(user)
+        body['is_profile_complete'] = user.is_profile_complete
+        from apps.accounts.services import onboarding, two_factor
+
+        missing = onboarding.missing_fields(user)
+        body['onboarding'] = {'is_complete': not missing, 'missing': missing}
+        body['two_factor_enabled'] = two_factor.is_enabled(user)
+        return body

@@ -24,8 +24,6 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
-    'allauth.socialaccount.providers.yandex',
-    'allauth.socialaccount.providers.apple',
     # SEO (Task 9)
     'django.contrib.sitemaps',
     # Observability (Task 10)
@@ -111,9 +109,19 @@ TRUSTED_PROXY_CIDRS = [
 
 # Per-account password-login backoff (core/utils/login_throttle.py).
 LOGIN_FAILURE_FREE_ATTEMPTS = int(os.getenv('LOGIN_FAILURE_FREE_ATTEMPTS', '5'))
-LOGIN_BACKOFF_BASE_SECONDS = int(os.getenv('LOGIN_BACKOFF_BASE_SECONDS', '30'))
-LOGIN_BACKOFF_MAX_SECONDS = int(os.getenv('LOGIN_BACKOFF_MAX_SECONDS', '900'))
+# After the free attempts: 1 min, then 5 min, then 15 min (cap) per further failure.
+LOGIN_LOCK_LADDER_SECONDS = (60, 300, 900)
+# Account-wide (all IPs) bucket tolerates far more failures; known devices bypass its lock.
+LOGIN_GLOBAL_FREE_ATTEMPTS = int(os.getenv('LOGIN_GLOBAL_FREE_ATTEMPTS', '20'))
 LOGIN_FAILURE_WINDOW_SECONDS = int(os.getenv('LOGIN_FAILURE_WINDOW_SECONDS', '3600'))
+
+# ── Device sessions (apps/accounts/services/token_service.py) ──
+AUTH_MAX_DEVICES = int(os.getenv('AUTH_MAX_DEVICES', '3'))  # orgs with single_device_policy: 1
+AUTH_REMEMBER_DAYS = int(os.getenv('AUTH_REMEMBER_DAYS', '30'))  # "remember me" sliding session
+AUTH_SESSION_HOURS = int(os.getenv('AUTH_SESSION_HOURS', '24'))  # without "remember me"
+AUTH_REFRESH_COOKIE_PATH = os.getenv('AUTH_REFRESH_COOKIE_PATH', '/api/auth/')
+# Key for encrypting 2FA secrets at rest; falls back to SECRET_KEY when empty.
+TOTP_ENCRYPTION_KEY = os.getenv('TOTP_ENCRYPTION_KEY', '')
 
 # ── Celery ────────────────────────────────────────────────────
 # Worker: `celery -A core worker -l info`
@@ -212,6 +220,9 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '')  # @ siz, masalan: milsert_bot
 TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')  # ixtiyoriy xavfsizlik token
 
+# Next.js app origin (OAuth redirects, recovery links, anonymous home redirect).
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')
+
 # ── django-allauth ────────────────────────────────────────────
 ACCOUNT_ADAPTER = 'apps.accounts.adapters.AccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'apps.accounts.adapters.SocialAccountAdapter'
@@ -236,31 +247,15 @@ SOCIALACCOUNT_PROVIDERS = {
         'OAUTH_PKCE_ENABLED': True,
         'VERIFIED_EMAIL': True,
     },
-    'yandex': {
-        'APP': {
-            'client_id': os.getenv('YANDEX_CLIENT_ID', ''),
-            'secret': os.getenv('YANDEX_CLIENT_SECRET', ''),
-            'key': '',
-        },
-        'SCOPE': ['login:email', 'login:info', 'login:avatar'],
-    },
-    'apple': {
-        'APP': {
-            'client_id': os.getenv('APPLE_CLIENT_ID', ''),
-            'secret': os.getenv('APPLE_SECRET', ''),
-            'key': os.getenv('APPLE_PRIVATE_KEY', ''),
-        },
-        'VERIFIED_EMAIL': True,
-    },
 }
 
-YANDEX_CLIENT_ID = os.getenv('YANDEX_CLIENT_ID', '')
-YANDEX_CLIENT_SECRET = os.getenv('YANDEX_CLIENT_SECRET', '')
-APPLE_CLIENT_ID = os.getenv('APPLE_CLIENT_ID', '')
-APPLE_SECRET = os.getenv('APPLE_SECRET', '')
+# GET /accounts/google/login/ starts the flow (a plain link from the Next.js UI).
+SOCIALACCOUNT_LOGIN_ON_GET = True
+
 # allauth login/signup dan keyin JWT cookie o'rnatiladigan URL
-ACCOUNT_LOGIN_REDIRECT_URL = 'accounts:login'
-ACCOUNT_LOGOUT_REDIRECT_URL = 'accounts:login'
+ACCOUNT_LOGIN_REDIRECT_URL = FRONTEND_BASE_URL + '/'
+ACCOUNT_LOGOUT_REDIRECT_URL = FRONTEND_BASE_URL + '/login'
+LOGIN_URL = FRONTEND_BASE_URL + '/login'
 
 GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
@@ -270,6 +265,8 @@ GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
 # 'playmobile' — production
 # 'dummy' — test
 # 'console' dev, 'playmobile' yoki 'eskiz' prod — admin tanlaydi
+# SMS OTP sign-in is a feature flag, off by default (Telegram/password/Google are the launch methods).
+ENABLE_SMS_OTP = os.getenv('ENABLE_SMS_OTP', 'false').lower() == 'true'
 SMS_BACKEND = os.getenv('SMS_BACKEND', 'console')
 PLAYMOBILE_LOGIN = os.getenv('PLAYMOBILE_LOGIN', '')
 PLAYMOBILE_PASSWORD = os.getenv('PLAYMOBILE_PASSWORD', '')
@@ -313,11 +310,22 @@ DATABASES = {
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
+# Single source of truth for password rules (register, change/set, recovery, admin).
+# Policy: 8-128 chars, <=72 UTF-8 bytes, not one repeated char, not common/numeric,
+# no platform words or 123456 variants, not similar to / equal to the username.
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 8},
+    },
+    {'NAME': 'apps.accounts.password_validators.MaximumLengthValidator'},
+    {'NAME': 'apps.accounts.password_validators.Utf8ByteLengthValidator'},
+    {'NAME': 'apps.accounts.password_validators.RepeatedCharacterValidator'},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {'NAME': 'apps.accounts.password_validators.LocalWordsValidator'},
+    {'NAME': 'apps.accounts.password_validators.NotEqualToUsernameValidator'},
 ]
 
 LANGUAGE_CODE = 'uz'
@@ -335,6 +343,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PROJECT_BRAND_NAME = os.getenv('PROJECT_BRAND_NAME', 'Milliy Sertifikat')
+
+# Version of the terms/privacy text shown at signup; stored with the consent timestamp.
+TERMS_VERSION = os.getenv('TERMS_VERSION', '2026-11-12')
 
 # ── Logging (ISSUE-X06) ───────────────────────────────────────
 # Dev/test'da plain console handler — JSON formatter prod.py'da
@@ -388,6 +399,14 @@ ENABLE_AI_PARSER = os.getenv('ENABLE_AI_PARSER', 'true').lower() == 'true'
 ENABLE_REAL_PAYMENTS = os.getenv('ENABLE_REAL_PAYMENTS', 'false').lower() == 'true'
 PAYME_SECRET_KEY = os.getenv('PAYME_SECRET_KEY') or os.getenv('PAYME_MERCHANT_KEY', '')
 CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '')
+
+# Monetisation (apps.commerce): exam access paywall.
+# Off by default so the exam flow is unchanged until the frontend sells tariffs.
+BILLING_ENFORCE_EXAM_ACCESS = os.getenv('BILLING_ENFORCE_EXAM_ACCESS', 'false').lower() == 'true'
+# Free exam attempts every user gets before payment is required.
+BILLING_FREE_ATTEMPTS = int(os.getenv('BILLING_FREE_ATTEMPTS', '3'))
+# Weekly limits reset on Monday 00:00 in this timezone.
+BILLING_WEEK_TZ = os.getenv('BILLING_WEEK_TZ', 'Asia/Tashkent')
 
 # ISSUE-505: django-flags — runtime feature gating (per-user, per-org, percentage rollout).
 # Default conditions env var bilan boshqariladi. Admin'da `/admin/flags/` orqali override.

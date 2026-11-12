@@ -92,6 +92,6 @@ class TestJWTTokenSecurity:
         }
         token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
-        result = rotate_refresh_token(token, str(user.pk), 'test-fp')
+        result = rotate_refresh_token(token)
         # Should fail because type != refresh
         assert result is None

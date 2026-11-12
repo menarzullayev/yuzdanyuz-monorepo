@@ -50,20 +50,20 @@ class TestCleanupUsedOTPCodes:
         # Used
         used = OTPCode.objects.create(
             phone='+998901234567',
-            code='111111',
+            code_hash='111111',
             is_verified=True,
             expires_at=timezone.now() + timedelta(minutes=5),
         )
         # Expired beyond grace
         old_expired = OTPCode.objects.create(
             phone='+998901234568',
-            code='222222',
+            code_hash='222222',
             expires_at=timezone.now() - timedelta(hours=48),
         )
         # Fresh, not verified — saqlanadi
         fresh = OTPCode.objects.create(
             phone='+998901234569',
-            code='333333',
+            code_hash='333333',
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
