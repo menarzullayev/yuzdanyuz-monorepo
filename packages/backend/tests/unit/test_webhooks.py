@@ -125,7 +125,7 @@ class TestDispatchWebhook:
         ep1 = _make_endpoint(org, name='A', events=['exam.submitted'])
         ep2 = _make_endpoint(org, name='B', events=['exam.submitted'])
 
-        with patch('apps.webhooks.tasks.requests.post', return_value=_mock_response(200, 'ok')):
+        with patch('apps.webhooks.tasks.safe_post', return_value=_mock_response(200, 'ok')):
             deliveries = dispatch_webhook('exam.submitted', {'attempt_id': 'x'}, org=org)
 
         assert len(deliveries) == 2
@@ -136,7 +136,7 @@ class TestDispatchWebhook:
         _make_endpoint(org, name='Exam', events=['exam.submitted'])
         _make_endpoint(org, name='Payment', events=['payment.completed'])
 
-        with patch('apps.webhooks.tasks.requests.post', return_value=_mock_response(200, 'ok')):
+        with patch('apps.webhooks.tasks.safe_post', return_value=_mock_response(200, 'ok')):
             deliveries = dispatch_webhook('exam.submitted', {'k': 'v'}, org=org)
 
         assert len(deliveries) == 1
@@ -146,7 +146,7 @@ class TestDispatchWebhook:
         _make_endpoint(org, name='Active', events=['exam.submitted'], is_active=True)
         _make_endpoint(org, name='Off', events=['exam.submitted'], is_active=False)
 
-        with patch('apps.webhooks.tasks.requests.post', return_value=_mock_response(200, 'ok')):
+        with patch('apps.webhooks.tasks.safe_post', return_value=_mock_response(200, 'ok')):
             deliveries = dispatch_webhook('exam.submitted', {}, org=org)
 
         assert len(deliveries) == 1
@@ -174,7 +174,7 @@ class TestDeliverWebhookTask:
             endpoint=ep, event='exam.submitted', payload={'k': 'v'}
         )
 
-        with patch('apps.webhooks.tasks.requests.post', return_value=_mock_response(200, 'OK')):
+        with patch('apps.webhooks.tasks.safe_post', return_value=_mock_response(200, 'OK')):
             deliver_webhook(str(delivery.id))
 
         delivery.refresh_from_db()
@@ -190,7 +190,7 @@ class TestDeliverWebhookTask:
         )
 
         with patch(
-            'apps.webhooks.tasks.requests.post', return_value=_mock_response(200, 'ok')
+            'apps.webhooks.tasks.safe_post', return_value=_mock_response(200, 'ok')
         ) as mock_post:
             deliver_webhook(str(delivery.id))
 
@@ -199,7 +199,7 @@ class TestDeliverWebhookTask:
         assert 'X-Webhook-Signature' in headers
         assert headers['X-Webhook-Signature'].startswith('sha256=')
         # Verify signature matches body + secret
-        body = call_kwargs['data']
+        body = call_kwargs['body']
         expected = 'sha256=' + sign_payload(body, ep.secret)
         assert headers['X-Webhook-Signature'] == expected
         assert headers['X-Webhook-Event'] == 'exam.submitted'
@@ -213,7 +213,7 @@ class TestDeliverWebhookTask:
 
         with (
             patch(
-                'apps.webhooks.tasks.requests.post',
+                'apps.webhooks.tasks.safe_post',
                 return_value=_mock_response(400, 'bad req'),
             ),
             patch(
@@ -237,7 +237,7 @@ class TestDeliverWebhookTask:
 
         with (
             patch(
-                'apps.webhooks.tasks.requests.post',
+                'apps.webhooks.tasks.safe_post',
                 return_value=_mock_response(503, 'svc unavailable'),
             ),
             patch(
@@ -253,15 +253,15 @@ class TestDeliverWebhookTask:
         assert delivery.response_status == 503
 
     def test_network_error_triggers_retry(self, org):
-        import requests as _requests
+        from apps.webhooks.egress import EgressError
 
         ep = _make_endpoint(org)
         delivery = WebhookDelivery.objects.create(endpoint=ep, event='exam.submitted', payload={})
 
         with (
             patch(
-                'apps.webhooks.tasks.requests.post',
-                side_effect=_requests.ConnectionError('boom'),
+                'apps.webhooks.tasks.safe_post',
+                side_effect=EgressError('boom'),
             ),
             patch(
                 'apps.webhooks.tasks.deliver_webhook.retry',
@@ -275,19 +275,21 @@ class TestDeliverWebhookTask:
         assert delivery.status == WebhookDelivery.Status.FAILED
         assert delivery.response_status is None
 
-    def test_response_body_truncated_to_2000(self, org):
+    def test_response_body_truncated_to_limit(self, org):
+        from apps.webhooks.tasks import RESPONSE_BODY_MAX_CHARS
+
         ep = _make_endpoint(org)
         delivery = WebhookDelivery.objects.create(endpoint=ep, event='exam.submitted', payload={})
         long_body = 'x' * 5000
 
         with patch(
-            'apps.webhooks.tasks.requests.post',
+            'apps.webhooks.tasks.safe_post',
             return_value=_mock_response(200, long_body),
         ):
             deliver_webhook(str(delivery.id))
 
         delivery.refresh_from_db()
-        assert len(delivery.response_body) == 2000
+        assert len(delivery.response_body) == RESPONSE_BODY_MAX_CHARS
 
     def test_max_retries_exhausted_marks_dlq(self, org):
         """After 5 retries (request.retries == max_retries), mark EXHAUSTED + DLQ."""
@@ -303,7 +305,7 @@ class TestDeliverWebhookTask:
         deliver_webhook.push_request(retries=5, id='fake-task-id-12345')
         try:
             with patch(
-                'apps.webhooks.tasks.requests.post',
+                'apps.webhooks.tasks.safe_post',
                 return_value=_mock_response(500, 'err'),
             ):
                 with pytest.raises(RuntimeError):

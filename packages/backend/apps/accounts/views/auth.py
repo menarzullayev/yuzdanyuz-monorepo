@@ -8,8 +8,6 @@ Endpoints:
   GET  /api/auth/me/         — Current user + primary org
 """
 
-import json
-
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
@@ -29,6 +27,7 @@ from apps.accounts.services.telegram_auth import (
 from apps.accounts.services.token_service import (
     attach_session,
     clear_auth_cookies,
+    deny_access_token,
     issue_login,
     revoke_session,
     rotate_refresh_token,
@@ -37,6 +36,7 @@ from apps.accounts.services.token_service import (
 from apps.accounts.views.base import AuthAPIView, api_error, field_errors
 from apps.accounts.views.credentials import text_field
 from apps.accounts.views.payloads import user_payload
+from apps.accounts.views.schemas import TelegramInitDataSchema, parse_json_body
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -52,14 +52,10 @@ class TelegramAuthView(View):
     def post(self, request):
         if not origin_allowed(request):
             return JsonResponse({'error': 'origin_not_allowed'}, status=403)
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-        init_data = body.get('init_data', '').strip()
-        if not init_data:
-            return JsonResponse({'error': 'init_data required'}, status=400)
+        data, error = parse_json_body(request, TelegramInitDataSchema)
+        if error is not None:
+            return error
+        init_data = data['init_data']
 
         try:
             tg_user = verify_init_data(init_data)
@@ -76,7 +72,7 @@ class TelegramAuthView(View):
             from apps.accounts.services.onboarding import capture_acquisition
 
             start = dict(parse_qsl(unquote(init_data))).get('start_param')
-            capture_acquisition(user, {'start_param': start, **(body.get('acquisition') or {})})
+            capture_acquisition(user, {'start_param': start, **data['acquisition']})
         issued = issue_login(request, user, remember=True)
 
         response = JsonResponse({'user': {**user_payload(user), 'is_new': created}})
@@ -150,6 +146,9 @@ class LogoutView(View):
                     ).first()
         if session is not None:
             revoke_session(session, 'logout')
+        access = request.COOKIES.get('access_token')
+        if access:
+            deny_access_token(access)
 
         response = JsonResponse({'ok': True})
         clear_auth_cookies(response)

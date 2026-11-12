@@ -18,7 +18,7 @@ from django.contrib.auth.models import AnonymousUser
 from apps.accounts.services.token_service import (
     clear_auth_cookies,
     decode_access_token,
-    is_session_revoked,
+    is_access_revoked,
     set_device_cookie,
 )
 
@@ -37,17 +37,17 @@ class DeviceCheckMiddleware:
         token = request.COOKIES.get('access_token')
         if not token:
             return
-        payload = decode_access_token(token)
+        payload = decode_access_token(token, check_revocation=False)
         if payload is None:
             # Expired/invalid: the refresh endpoint deals with it.
             return
         sid = payload.get('sid')
         if sid:
             request.session_sid = sid
-            if is_session_revoked(sid):
-                log.info('Revoked session used: user=%s sid=%s', payload.get('sub'), sid)
-                request._force_logout = True
-                request.user = AnonymousUser()
+        if is_access_revoked(payload):
+            log.info('Revoked access token used: user=%s sid=%s', payload.get('sub'), sid)
+            request._force_logout = True
+            request.user = AnonymousUser()
 
 
 class DeviceLogoutMiddleware:

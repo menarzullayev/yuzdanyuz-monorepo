@@ -192,6 +192,23 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return self.display_name
 
+    def save(self, *args, **kwargs):
+        # set_password() leaves the raw password in _password until the next save.
+        password_changed = self._password is not None and not self._state.adding
+        super().save(*args, **kwargs)
+        if password_changed:
+            self._revoke_sessions_after_password_change()
+
+    def _revoke_sessions_after_password_change(self) -> None:
+        """Every path that changes a password (API, admin, manage.py changepassword)
+        signs out all sessions; the API change view may spare the caller's own session
+        by setting ``_keep_session_id`` first."""
+        from apps.accounts.services.token_service import revoke_user_sessions
+
+        keep = getattr(self, '_keep_session_id', None)
+        self._keep_session_id = None
+        revoke_user_sessions(self, except_session_id=keep, reason='password')
+
     # ── Computed properties ───────────────────────────────────────────────────
 
     @property

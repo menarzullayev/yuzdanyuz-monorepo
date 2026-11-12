@@ -19,7 +19,7 @@ bir-ikki millisekund.
 
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,6 +31,28 @@ User = get_user_model()
 
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
+
+
+def _require_visible_mock(request, mock_id) -> None:
+    """404 unless the mock is public or belongs to the caller's organization.
+
+    Leaderboards are keyed by mock id only, so without this a member of one
+    tenant could read another tenant's private results by guessing ids.
+    """
+    import uuid
+
+    from apps.exams.models import MockExam
+
+    try:
+        mock_uuid = uuid.UUID(str(mock_id))
+    except ValueError:
+        raise NotFound('Mock topilmadi.') from None
+    user = request.user
+    if user.is_staff or user.is_superuser:
+        return
+    org = getattr(request, 'org', None)
+    if org is None or not MockExam.objects.for_org(org).filter(pk=mock_uuid).exists():
+        raise NotFound('Mock topilmadi.')
 
 
 def _parse_limit(request) -> int:
@@ -171,6 +193,7 @@ class MockLeaderboardView(APIView):
     """GET /api/leaderboard/mock/<mock_id>/  — per-mock"""
 
     def get(self, request, mock_id):
+        _require_visible_mock(request, mock_id)
         limit = _parse_limit(request)
         scope_key = leaderboard.key_mock(mock_id)
         entries = _build_entries(
@@ -216,6 +239,7 @@ class MyLeaderboardRankView(APIView):
             scope_key = leaderboard.key_tenant(org.id)
         elif scope.startswith('mock:'):
             mock_id = scope[len('mock:') :]
+            _require_visible_mock(request, mock_id)
             scope_key = leaderboard.key_mock(mock_id)
         else:
             return Response(
@@ -259,6 +283,15 @@ class LeaderboardHistoryView(APIView):
                 {'detail': 'scope_kind: global | region | tenant | mock'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if scope_kind == 'tenant':
+            # A tenant board is only ever the caller's own organization.
+            org = getattr(request, 'org', None)
+            if org is None or (scope_id and scope_id != str(org.id)):
+                return Response({'detail': 'Snapshot topilmadi.'}, status=status.HTTP_404_NOT_FOUND)
+            scope_id = str(org.id)
+        elif scope_kind == 'mock':
+            _require_visible_mock(request, scope_id)
 
         qs = LeaderboardSnapshot.objects.filter(
             period=period, scope_kind=scope_kind, scope_id=scope_id

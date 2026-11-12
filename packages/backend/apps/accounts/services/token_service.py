@@ -132,21 +132,69 @@ def _create_access_token(user: CustomUser, org=None, sid: uuid.UUID | None = Non
     return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
 
-def decode_access_token(token: str) -> dict | None:
-    """Validated payload of an access token, or None."""
+def decode_access_token(token: str, *, check_revocation: bool = True) -> dict | None:
+    """Validated payload of an access token, or None.
+
+    Signature and expiry alone are not enough: a token whose session was revoked
+    (logout, "sign out device", password change) or whose own ``jti`` was denied
+    is rejected here, so every consumer (HTTP backend, WebSocket auth) agrees.
+    """
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
     except jwt.PyJWTError:
         return None
     if payload.get('type') != 'access' or not payload.get('sub'):
         return None
+    if check_revocation and is_access_revoked(payload):
+        return None
     return payload
 
 
 def verify_access_token(token: str) -> str | None:
-    """Access token -> user_id (str UUID), or None when invalid/expired."""
+    """Access token -> user_id (str UUID), or None when invalid/expired/revoked."""
     payload = decode_access_token(token)
     return payload['sub'] if payload else None
+
+
+def _denied_key(jti: str) -> str:
+    return f'access:denied:{jti}'
+
+
+def is_access_revoked(payload: dict) -> bool:
+    """True when the token's jti is denied or its session is revoked."""
+    keys = []
+    if payload.get('jti'):
+        keys.append(_denied_key(str(payload['jti'])))
+    if payload.get('sid'):
+        keys.append(f'session:revoked:{payload["sid"]}')
+    if not keys:
+        return False
+    try:
+        return bool(_redis().exists(*keys))
+    except Exception:  # Redis down: the DB-side session revocation still stops refresh.
+        return False
+
+
+def deny_access_token(token: str) -> None:
+    """Put this access token's jti on the denylist until it would have expired anyway."""
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=['HS256'], options={'verify_exp': False}
+        )
+    except jwt.PyJWTError:
+        return
+    jti, exp = payload.get('jti'), payload.get('exp')
+    if not jti or not isinstance(exp, int | float):
+        return
+    ttl = int(exp - datetime.now(UTC).timestamp()) + 1
+    if ttl <= 0:
+        return
+    try:
+        _redis().set(
+            _denied_key(str(jti)), '1', ex=min(ttl, int(ACCESS_TOKEN_TTL.total_seconds()) + 60)
+        )
+    except Exception:
+        pass
 
 
 # ── Issuing sessions ────────────────────────────────────────

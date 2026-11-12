@@ -7,19 +7,21 @@ AccountAdapter:
 
 SocialAccountAdapter:
   - Pre-hijacking protection: an existing account is linked to a Google login
-    automatically ONLY when that account's email is already verified. An
-    unverified email (anyone can type any address at signup) never grants
-    access: it is stripped from the squatting account and the Google user gets
-    a fresh account with the verified address.
+    automatically ONLY when Google explicitly says the address is verified AND
+    our stored copy of it is verified too. In every other case where the address
+    matches an account nothing is linked and nothing is taken from that account:
+    the login stops with ``?error=link_required`` and the owner links Google from
+    the profile (signed in by Telegram or password), which proves both sides.
   - New Google users get a username generated from their name (one free change).
 """
 
 from allauth.account.adapter import DefaultAccountAdapter
+from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
 from django.conf import settings
 from django.db import transaction
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponseRedirect
 from django.utils import timezone
 
 from apps.accounts.services.token_service import issue_login
@@ -44,6 +46,18 @@ class AccountAdapter(DefaultAccountAdapter):
         request.session.flush()
 
 
+def provider_email_verified(extra: dict) -> bool:
+    """Only an explicit boolean True from the provider counts (Google: email_verified,
+    or verified_email in the v1 userinfo); a missing or truthy-looking value does not."""
+    return extra.get('email_verified') is True or extra.get('verified_email') is True
+
+
+def _stop_login(error: str) -> None:
+    raise ImmediateHttpResponse(
+        HttpResponseRedirect(f'{settings.FRONTEND_BASE_URL}/login?error={error}')
+    )
+
+
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin) -> None:
         from allauth.account.models import EmailAddress
@@ -56,26 +70,29 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
             return  # "connect" flow from the profile: allauth attaches it to request.user
 
         extra = sociallogin.account.extra_data or {}
-        email = (extra.get('email') or '').strip().lower()
-        if not email or extra.get('email_verified') is False:
-            return  # nothing trustworthy to match on
+        provider_verified = provider_email_verified(extra)
+        if not provider_verified:
+            # VERIFIED_EMAIL in settings must not upgrade an address the provider did not vouch for.
+            for address in sociallogin.email_addresses:
+                address.verified = False
 
+        email = (extra.get('email') or '').strip().lower()
+        if not email:
+            return
         existing = CustomUser.objects.filter(email__iexact=email).first()
         if existing is None:
-            return
+            return  # a brand-new account
 
-        verified = EmailAddress.objects.filter(
+        locally_verified = EmailAddress.objects.filter(
             user=existing, email__iexact=email, verified=True
         ).exists()
-        if verified and existing.is_active:
+        if provider_verified and locally_verified and existing.is_active:
             sociallogin.connect(request, existing)
             return
-
-        # Unverified: the email was merely typed at signup. Google's verified
-        # ownership wins; the squatter loses the address, never the other way round.
-        EmailAddress.objects.filter(user=existing, email__iexact=email).delete()
-        existing.email = None
-        existing.save(update_fields=['email'])
+        if not existing.is_active:
+            _stop_login('account_disabled')
+        # Someone already uses this address but ownership is not proven on both sides.
+        _stop_login('link_required')
 
     def populate_user(self, request: HttpRequest, sociallogin: SocialLogin, data: dict):
         user = super().populate_user(request, sociallogin, data)

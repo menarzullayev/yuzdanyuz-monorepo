@@ -491,7 +491,7 @@ Qo'shimcha bo'shliq: **env boolean'lardan tashqari feature flag tizimi yo'q**. Q
 
 **Risk**: Bu hozirgi production lifecycle yechimi. Aqlli, lekin:
 - Watchdog log'lari `/tmp`'da (reboot'da tozalanadi, log aggregation yo'q)
-- Token rotation manual (bitta hardcoded `FpaTnY7nmWWZKM7dLiGcCXFxNpbpEGLM`)
+- Token rotation manual (bitta hardcoded `<keepalive-token>`)
 - Watchdog'ning o'ziga monitoring yo'q (`{watchdog dead AND backend dead} = jim`)
 
 **Fix**: Log'larni `<server-home>/logs/yuzdanyuz/`'ga ko'chirish, bir xil Sentry/Prometheus bilan integratsiya, oylik token rotation, tashqi healthcheck qo'shish.

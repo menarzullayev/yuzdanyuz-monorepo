@@ -38,6 +38,7 @@ from .models import (
     AntiCheatEvent,
     ExamAttempt,
     MockExam,
+    MockExamQuestion,
     PracticeSession,
     QuestionDispute,
     UserAnswer,
@@ -91,6 +92,26 @@ def _get_user_session_or_404(user, session_id):
     if session.user_id != user.id:
         raise PermissionDenied('Bu sizning session emas.')
     return session
+
+
+def _practisable(question_version, session) -> bool:
+    """Practice grading answers "is this option correct?" for any id it is given,
+    so it must stay away from questions a student could meet in a real exam:
+    only the session's own organization, never quarantined, and never pinned to
+    a mock that is still being prepared, scheduled or open."""
+    if question_version.is_quarantined:
+        return False
+    from apps.catalog.models import Question
+
+    if not Question._base_manager.filter(
+        pk=question_version.question_id, organization_id=session.organization_id
+    ).exists():
+        return False
+    return not MockExamQuestion.objects.filter(
+        question_version=question_version,
+        mock_exam__status__in=(MockExam.Status.DRAFT, MockExam.Status.PUBLISHED),
+        mock_exam__closes_at__gt=timezone.now(),
+    ).exists()
 
 
 def _evaluate_answer(question_version, selected) -> bool:
@@ -391,6 +412,8 @@ class PracticeAnswerView(APIView):
         ser = UserAnswerSubmitSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         qv = ser.validated_data['question_version']
+        if not _practisable(qv, session):
+            raise ValidationError({'question_version': 'Bu savol mashq uchun mavjud emas.'})
 
         is_correct = _evaluate_answer(qv, ser.validated_data['selected'])
 

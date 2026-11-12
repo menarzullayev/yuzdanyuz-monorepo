@@ -18,6 +18,8 @@ from django.db import models
 
 from core.mixins import TenantTimestampMixin
 
+from .egress import validate_webhook_url
+
 
 def _generate_secret() -> str:
     """64-char URL-safe HMAC secret (default for new endpoints)."""
@@ -48,6 +50,15 @@ class WebhookEndpoint(TenantTimestampMixin):
         indexes = [
             models.Index(fields=['organization', 'is_active']),
         ]
+
+    def clean(self):
+        super().clean()
+        validate_webhook_url(self.url)
+
+    def save(self, *args, **kwargs):
+        # Every write path (admin, API, shell) gets the SSRF check, not only forms.
+        validate_webhook_url(self.url)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f'{self.name} → {self.url}'

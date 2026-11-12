@@ -223,10 +223,27 @@ class TestLeaderboardAPI:
         assert resp.status_code == 400
 
     def test_mock_leaderboard(self, db, org, user, user2, member):
-        import uuid
+        from datetime import timedelta
 
-        mock_alpha = uuid.uuid4()
-        mock_beta = uuid.uuid4()
+        from django.utils import timezone
+
+        from apps.exams.models import MockExam
+        from core.tenant import tenant_context
+
+        def _mock():
+            now = timezone.now()
+            with tenant_context(org):
+                return MockExam.objects.create(
+                    organization=org,
+                    title='M',
+                    duration_minutes=60,
+                    scheduled_at=now,
+                    closes_at=now + timedelta(hours=1),
+                    created_by=user,
+                ).id
+
+        mock_alpha = _mock()
+        mock_beta = _mock()
         leaderboard.record_attempt(user_id=user.id, score=60, mock_id=mock_alpha, org_id=org.id)
         leaderboard.record_attempt(user_id=user2.id, score=95, mock_id=mock_alpha, org_id=org.id)
         leaderboard.record_attempt(user_id=user.id, score=80, mock_id=mock_beta, org_id=org.id)

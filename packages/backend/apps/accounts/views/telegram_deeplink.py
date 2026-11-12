@@ -31,8 +31,8 @@ from apps.accounts.services.bot_sender import (
 )
 from apps.accounts.services.token_service import attach_session, issue_login
 from apps.accounts.services.user_agents import parse_user_agent
-from apps.accounts.views.credentials import flag_field
 from apps.accounts.views.payloads import user_payload
+from apps.accounts.views.schemas import DeeplinkCompleteSchema, parse_json_body
 from core.utils.client_ip import get_client_ip
 
 log = logging.getLogger(__name__)
@@ -108,21 +108,18 @@ class TGDeeplinkCompleteView(View):
     def post(self, request):
         if not origin_allowed(request):
             return JsonResponse({'error': 'origin_not_allowed'}, status=403)
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        data, error = parse_json_body(request, DeeplinkCompleteSchema)
+        if error is not None:
+            return error
+        token = data['token']
+        nonce = request.COOKIES.get(NONCE_COOKIE, '')
 
-        token = body.get('token', '').strip()
-        if not token:
-            return JsonResponse({'error': 'token majburiy'}, status=400)
-
-        if not dl.nonce_matches(token, request.COOKIES.get(NONCE_COOKIE, '')):
+        if not dl.nonce_matches(token, nonce):
             return JsonResponse(
                 {'error': "Sessiya bu brauzerda boshlanmagan yoki muddati o'tgan"}, status=401
             )
 
-        user_pk = dl.get_verified_user_pk(token)
+        user_pk = dl.consume_verified(token, nonce)
         if user_pk is None:
             return JsonResponse(
                 {'error': "Sessiya tasdiqlanmagan yoki muddati o'tgan"},
@@ -137,11 +134,10 @@ class TGDeeplinkCompleteView(View):
         if not user.is_active:
             return JsonResponse({'error': 'Akkaunt bloklangan'}, status=403)
 
-        issued = issue_login(request, user, remember=flag_field(body, 'remember', True))
+        issued = issue_login(request, user, remember=data['remember'])
 
         response = JsonResponse({'user': user_payload(user)})
         attach_session(response, issued, request)
-        dl.expire_session(token)
         return response
 
 

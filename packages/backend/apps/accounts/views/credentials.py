@@ -428,14 +428,10 @@ class PasswordChangeView(AuthAPIView):
                 field_errors(new_password=errs),
             )
 
+        current_sid = getattr(request, 'session_sid', None)
+        user._keep_session_id = uuid.UUID(hex=current_sid) if current_sid else None
         user.set_password(new)
         user.must_change_password = False
-        user.save(update_fields=['password', 'must_change_password'])
-        current_sid = getattr(request, 'session_sid', None)
-        revoke_user_sessions(
-            user,
-            except_session_id=uuid.UUID(hex=current_sid) if current_sid else None,
-            reason='password',
-        )
+        user.save(update_fields=['password', 'must_change_password'])  # revokes other sessions
         notify(user, 'password_changed')
         return Response({'ok': True})

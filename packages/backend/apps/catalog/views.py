@@ -1,6 +1,9 @@
+from functools import wraps
+
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
@@ -9,22 +12,53 @@ from .models import ImportBatch, Question, QuestionDraft, QuestionVersion, Subje
 from .services import watermark as wm
 from .services.parsers import _validate
 
+REVIEW_PERMISSION = 'catalog:edit'
+
+
+def _is_platform_staff(user) -> bool:
+    return user.is_staff or user.is_superuser
+
+
+def review_permission_required(view):
+    """Import review edits the question bank: catalog:edit in the current org (or staff)."""
+
+    @wraps(view)
+    @login_required
+    def wrapper(request, *args, **kwargs):
+        user = request.user
+        if not _is_platform_staff(user):
+            org = getattr(request, 'org', None)
+            if org is None or not user.has_org_permission(org, REVIEW_PERMISSION):
+                raise PermissionDenied
+        return view(request, *args, **kwargs)
+
+    return wrapper
+
+
+def _check_batch_org(batch, request) -> None:
+    if _is_platform_staff(request.user):
+        return
+    org = getattr(request, 'org', None)
+    if org is None or batch.organization_id != org.id:
+        raise Http404
+
 
 def _get_batch(batch_id, request):
     """Tenant-aware batch olish — boshqa org ning batch'ini ko'rish imkonsiz."""
-    qs = (
-        ImportBatch.global_objects
-        if hasattr(ImportBatch, 'global_objects')
-        else ImportBatch.objects
-    )
-    batch = get_object_or_404(qs, id=batch_id)
-    # Tenant chechi: request.org middleware tomonidan o'rnatiladi
-    org = getattr(request, 'org', None)
-    if org and batch.organization_id != org.id:
-        from django.http import Http404
-
-        raise Http404
+    batch = get_object_or_404(ImportBatch.global_objects, id=batch_id)
+    _check_batch_org(batch, request)
     return batch
+
+
+def _get_draft(draft_id, request):
+    draft = get_object_or_404(QuestionDraft.objects.select_related('batch'), id=draft_id)
+    _check_batch_org(draft.batch, request)
+    return draft
+
+
+def _subjects_for(org_id):
+    """Platform-wide subjects plus the batch organization's private ones."""
+    return Subject.objects.filter(Q(organization__isnull=True) | Q(organization_id=org_id))
 
 
 def _draft_counts(batch):
@@ -42,11 +76,11 @@ def _draft_counts(batch):
     }
 
 
-@login_required
+@review_permission_required
 def review_dashboard(request, batch_id):
     batch = _get_batch(batch_id, request)
     counts = _draft_counts(batch)
-    subjects = Subject.objects.filter(is_active=True).order_by('name')
+    subjects = _subjects_for(batch.organization_id).filter(is_active=True).order_by('name')
     return render(
         request,
         'catalog/review_dashboard.html',
@@ -58,7 +92,7 @@ def review_dashboard(request, batch_id):
     )
 
 
-@login_required
+@review_permission_required
 def draft_list_htmx(request, batch_id):
     batch = _get_batch(batch_id, request)
     status = request.GET.get('status', 'all')
@@ -103,16 +137,10 @@ def draft_list_htmx(request, batch_id):
     )
 
 
-@login_required
+@review_permission_required
 def draft_detail_htmx(request, draft_id):
-    draft = get_object_or_404(QuestionDraft, id=draft_id)
-    batch = draft.batch
-    org = getattr(request, 'org', None)
-    if org and batch.organization_id != org.id:
-        from django.http import Http404
-
-        raise Http404
-    subjects = Subject.objects.filter(is_active=True).order_by('name')
+    draft = _get_draft(draft_id, request)
+    subjects = _subjects_for(draft.batch.organization_id).filter(is_active=True).order_by('name')
     topics = Topic.objects.filter(subject=draft.subject).order_by('name') if draft.subject else []
     return render(
         request,
@@ -125,13 +153,10 @@ def draft_detail_htmx(request, draft_id):
     )
 
 
-@login_required
+@review_permission_required
 @require_POST
 def draft_autosave_htmx(request, draft_id):
-    draft = get_object_or_404(QuestionDraft, id=draft_id)
-    org = getattr(request, 'org', None)
-    if org and draft.batch.organization_id != org.id:
-        return HttpResponse(status=403)
+    draft = _get_draft(draft_id, request)
 
     data = dict(draft.data)  # shallow copy
 
@@ -144,15 +169,15 @@ def draft_autosave_htmx(request, draft_id):
     subject_id = request.POST.get('subject_id')
     topic_id = request.POST.get('topic_id')
     if subject_id:
-        try:
-            draft.subject = Subject.objects.get(id=subject_id)
-        except Subject.DoesNotExist:
-            pass
+        subject = _subjects_for(draft.batch.organization_id).filter(id=subject_id).first()
+        if subject is not None:
+            draft.subject = subject
     if topic_id:
-        try:
-            draft.topic = Topic.objects.get(id=topic_id)
-        except Topic.DoesNotExist:
-            pass
+        topic = Topic.objects.filter(
+            id=topic_id, subject__in=_subjects_for(draft.batch.organization_id)
+        ).first()
+        if topic is not None:
+            draft.topic = topic
 
     # Variant matnlari
     options = data.get('options', [])
@@ -184,7 +209,7 @@ def draft_autosave_htmx(request, draft_id):
     )
 
 
-@login_required
+@review_permission_required
 @require_POST
 def draft_bulk_action_htmx(request, batch_id):
     batch = _get_batch(batch_id, request)

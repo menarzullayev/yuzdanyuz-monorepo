@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 
-import requests
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 from django.utils import timezone
 
+from .egress import BlockedDestination, EgressError, safe_post
 from .models import WebhookDelivery
 from .services import canonical_json, sign_payload
 
@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 RETRY_SCHEDULE_SECONDS = (60, 300, 1800, 7200, 43200)
 
 REQUEST_TIMEOUT_SECONDS = 10
-RESPONSE_BODY_MAX_CHARS = 2000
+# Only a short prefix of the receiver's answer is read and kept: enough to debug,
+# too little to turn the delivery log into a reader for internal pages.
+RESPONSE_BODY_MAX_BYTES = 1024
+RESPONSE_BODY_MAX_CHARS = 512
 
 
 def _record_attempt(
@@ -75,13 +78,25 @@ def deliver_webhook(self, delivery_id: str):
     }
 
     try:
-        response = requests.post(
+        response = safe_post(
             endpoint.url,
-            data=body,
+            body=body,
             headers=headers,
             timeout=REQUEST_TIMEOUT_SECONDS,
+            max_body_bytes=RESPONSE_BODY_MAX_BYTES,
         )
-    except requests.RequestException as exc:
+    except BlockedDestination as exc:
+        # Permanent: retrying cannot make an internal address acceptable.
+        logger.warning('deliver_webhook: delivery %s blocked: %s', delivery_id, exc)
+        _record_attempt(
+            delivery,
+            status=WebhookDelivery.Status.EXHAUSTED,
+            response_status=None,
+            response_body=f'blocked: {exc}',
+            completed=True,
+        )
+        return
+    except EgressError as exc:
         logger.warning('deliver_webhook: network error for delivery %s: %s', delivery_id, exc)
         _record_attempt(
             delivery,
@@ -115,7 +130,7 @@ def deliver_webhook(self, delivery_id: str):
     _retry_or_exhaust(
         self,
         delivery,
-        RuntimeError(f'HTTP {response.status_code} from {endpoint.url}'),
+        RuntimeError(f'HTTP {response.status_code} from webhook endpoint {endpoint.pk}'),
     )
 
 
