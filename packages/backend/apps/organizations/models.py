@@ -39,6 +39,8 @@ SYSTEM_ROLES = {
             'members:manage',
             'members:view',
             'analytics:view',
+            'groups:*',
+            'lessons:*',
         ],
     },
     'teacher': {
@@ -52,6 +54,8 @@ SYSTEM_ROLES = {
             'catalog:view',
             'members:view',
             'analytics:view',
+            'groups:view_own',
+            'lessons:*',
         ],
     },
     'student': {
@@ -60,6 +64,8 @@ SYSTEM_ROLES = {
             'exam:take',
             'exam:view_own_results',
             'catalog:view',
+            'groups:view_own',
+            'lessons:view_own',
         ],
     },
     'observer': {
@@ -68,6 +74,8 @@ SYSTEM_ROLES = {
             'exam:view',
             'analytics:view',
             'members:view',
+            'groups:view',
+            'lessons:view',
         ],
     },
 }
@@ -475,3 +483,12 @@ def create_system_roles(sender, instance, created, **kwargs):
             permissions=data['permissions'],
             is_system_role=True,
         )
+
+
+# B2B models live in their own modules; imported here so Django registers them.
+from .group_models import Group, GroupMember, GroupRole, Lesson  # noqa: E402,F401
+from .partnership_models import (  # noqa: E402,F401
+    ApplicantType,
+    ApplicationStatus,
+    PartnershipApplication,
+)
