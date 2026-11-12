@@ -42,7 +42,11 @@ def prod_sentry(monkeypatch):
     real_init = sentry_sdk.init
 
     def init_keeping_breadcrumbs(**options):
+        scrub = options.pop('before_breadcrumb', None)
+
         def keep(crumb, hint):
+            if scrub is not None:
+                crumb = scrub(crumb, hint)
             crumbs.append(crumb)
             return crumb
 

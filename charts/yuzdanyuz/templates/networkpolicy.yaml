@@ -45,6 +45,11 @@ spec:
         # app pods -> PgBouncer
         - protocol: TCP
           port: 6432
+        # Prometheus: celery worker metrics + celery-exporter
+        - protocol: TCP
+          port: {{ .Values.workerMetrics.port }}
+        - protocol: TCP
+          port: {{ .Values.celeryExporter.port }}
 ---
 # Egress to: postgres, redis, dns, otel-collector + outbound HTTPS (sentry, anthropic, telegram, payments)
 apiVersion: networking.k8s.io/v1

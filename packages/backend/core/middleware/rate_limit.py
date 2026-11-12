@@ -87,6 +87,12 @@ ANTICHEAT_PATH_MARKERS = ('/anticheat/',)
 
 STATIC_PREFIXES = ('/static/', '/media/', '/favicon.ico')
 
+# Kubelet probes, the container HEALTHCHECK and the Prometheus scrape: one source IP,
+# every few seconds. Limiting them turned healthy pods unready (load test 2026-11-12).
+# Matched on path_info, so a FORCE_SCRIPT_NAME prefix does not matter. The only
+# expensive variant, /health/ready/?deep=1, needs a token (core/health.py).
+UNLIMITED_PATHS = frozenset({'/health/', '/health/ready/', '/metrics'})
+
 # Browse vs mutation split — applies under any /api/ prefix
 API_PATH_MARKERS = ('/api/',)
 READ_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
@@ -145,7 +151,7 @@ class RateLimitMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if _is_bypass(request):
+        if request.path_info in UNLIMITED_PATHS or _is_bypass(request):
             return self.get_response(request)
 
         identifier = _identifier(request)

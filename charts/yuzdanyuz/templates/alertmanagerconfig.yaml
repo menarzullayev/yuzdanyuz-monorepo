@@ -1,0 +1,45 @@
+{{- with .Values.alerting.telegram }}
+{{- if .enabled }}
+{{- if not .chatId }}
+{{- fail "alerting.telegram.enabled=true but alerting.telegram.chatId is empty: set the Telegram chat/group id that should receive alerts." }}
+{{- end }}
+# Routes this namespace's alerts to a Telegram chat. The bot token stays out of git:
+# create the Secret out-of-band (docs/deployment/monitoring.md, "Alert delivery").
+# Requires Alertmanager from kube-prometheus-stack with an alertmanagerConfigSelector
+# matching alerting.labels.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: {{ include "yuzdanyuz.fullname" $ }}-alerts
+  labels:
+    {{- include "yuzdanyuz.labels" $ | nindent 4 }}
+    {{- with $.Values.alerting.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  route:
+    receiver: telegram
+    groupBy: [alertname, namespace]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      # Pages fast and repeats more often.
+      - receiver: telegram
+        matchers:
+          - name: severity
+            value: critical
+            matchType: "="
+        groupWait: 10s
+        repeatInterval: 1h
+  receivers:
+    - name: telegram
+      telegramConfigs:
+        - chatID: {{ .chatId | int64 }}
+          botToken:
+            name: {{ .botTokenSecret.name }}
+            key: {{ .botTokenSecret.key }}
+          parseMode: HTML
+          sendResolved: true
+{{- end }}
+{{- end }}

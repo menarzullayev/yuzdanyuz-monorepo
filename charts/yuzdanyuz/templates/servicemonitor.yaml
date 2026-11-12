@@ -1,13 +1,21 @@
 {{- if .Values.serviceMonitor.enabled }}
-# Prometheus Operator scrape target for /metrics. Requires monitoring.coreos.com
-# CRDs (kube-prometheus-stack). If absent, Helm will skip the manifest.
+{{- /*
+Prometheus Operator scrape targets (monitoring.coreos.com CRDs from
+kube-prometheus-stack; docs/deployment/monitoring.md). Every target gets a fixed
+`job` label because the alert rules (files/prometheus-rules.yml) select on it:
+  yuzdanyuz-backend          web pods /metrics
+  yuzdanyuz-celery-worker    worker pods :metrics (yz_* counters bumped in tasks)
+  yuzdanyuz-celery-exporter  celery-exporter (task/queue/worker metrics)
+*/ -}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "yuzdanyuz.fullname" . }}
   labels:
     {{- include "yuzdanyuz.labels" . | nindent 4 }}
-    release: prometheus      # most kube-prometheus-stack installs require this
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   selector:
     matchLabels:
@@ -18,4 +26,61 @@ spec:
       path: {{ .Values.serviceMonitor.path }}
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        - targetLabel: job
+          replacement: yuzdanyuz-backend
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-worker
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - celery-worker
+          {{- range $q := list "critical" "ai" "realtime" "batch" }}
+          - celery-worker-{{ $q }}
+          {{- end }}
+  podMetricsEndpoints:
+    - port: metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        - targetLabel: job
+          replacement: yuzdanyuz-celery-worker
+{{- if .Values.celeryExporter.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-exporter
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        - targetLabel: job
+          replacement: yuzdanyuz-celery-exporter
+{{- end }}
 {{- end }}

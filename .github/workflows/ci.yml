@@ -106,23 +106,28 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements/development.txt
 
+      - name: Dependency audit (pip-audit, known CVEs)
+        run: |
+          pip install pip-audit==2.10.0
+          pip-audit -r requirements/production.txt -r requirements/development.txt --progress-spinner off
+
       - name: Django system check
         run: python manage.py check --fail-level WARNING
 
       - name: Pytest — unit tests
-        run: python -m pytest tests/unit/ apps/*/tests.py --tb=short -q -n auto
+        run: python -m pytest tests/unit/ apps/*/tests.py --tb=short -q -n auto --cov=apps --cov=core --cov-append --cov-report=
 
       - name: Pytest — integration tests
-        run: python -m pytest tests/integration/ --tb=short -q -n auto
+        run: python -m pytest tests/integration/ --tb=short -q -n auto --cov=apps --cov=core --cov-append --cov-report=
 
       - name: Pytest — security tests
-        run: python -m pytest tests/security/ --tb=short -q -n auto
+        run: python -m pytest tests/security/ --tb=short -q -n auto --cov=apps --cov=core --cov-append --cov-report=
 
-      - name: Coverage report (ISSUE-115 gate)
-        run: |
-          python -m pytest tests/ apps/*/tests.py --cov=apps --cov=core \
-            --cov-report=term-missing --cov-fail-under=70 -n auto
-        continue-on-error: true
+      # Blocking (audit H02): this gate used to be continue-on-error. Coverage comes
+      # from the three runs above (--cov-append) instead of a fourth run of everything
+      # in one session, where tests relying on data-migration rows got them flushed.
+      - name: Coverage gate (ISSUE-115)
+        run: python -m coverage report --show-missing --skip-covered --fail-under=70
 
   # ──────────────────────────────────────────────────────────────────
   # Frontend Web — Next.js (TS check + lint + build)
@@ -149,6 +154,10 @@ jobs:
       - name: Install dependencies (workspace)
         working-directory: .
         run: npm ci
+
+      - name: Dependency audit (npm, high and critical)
+        working-directory: .
+        run: npm audit --audit-level=high
 
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -186,8 +195,46 @@ jobs:
       - name: Rule self-test (must catch fakes, ignore placeholders)
         run: bash scripts/test-gitleaks-rules.sh
 
+      # Full history of the checked-out commit only. With fetch-depth 0 the default
+      # (`git log --all`) also scans every other branch, so one branch with a
+      # finding failed every PR.
       - name: Scan full git history
-        run: gitleaks git . --config .gitleaks.toml --redact --no-banner
+        run: gitleaks git . --config .gitleaks.toml --redact --no-banner --log-opts="HEAD"
+
+  # ──────────────────────────────────────────────────────────────────
+  # Ops config — workflows, alert rules, Alertmanager, Terraform
+  # ──────────────────────────────────────────────────────────────────
+  ops-config:
+    name: Ops config (actionlint, promtool, amtool, terraform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: actionlint (GitHub workflows)
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Alert rules parse (promtool check rules)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.16.0 \
+            check rules charts/yuzdanyuz/files/prometheus-rules.yml
+
+      - name: Alert rules fire on bad series only (promtool test rules)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.16.0 \
+            test rules monitoring/prometheus/tests/rules-test.yml
+
+      - name: Prometheus + Alertmanager configs (compose monitoring stack)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.16.0 \
+            check config --syntax-only monitoring/prometheus/prometheus.yml
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint amtool prom/alertmanager:v0.35.0 \
+            check-config monitoring/alertmanager/alertmanager.yml
+
+      - name: Terraform fmt + validate (Cloudflare, nothing applied)
+        run: |
+          docker run --rm -v "$PWD/terraform/cloudflare:/tf" -w /tf --entrypoint sh hashicorp/terraform:1.17.2 -c \
+            'terraform fmt -check -recursive && terraform init -backend=false -input=false >/dev/null && terraform validate'
 
   # ──────────────────────────────────────────────────────────────────
   # Aggregator — barcha job'lar yashilmi (branch protection uchun)
@@ -195,7 +242,7 @@ jobs:
   all-checks-passed:
     name: All Checks Passed
     if: always()
-    needs: [lint, backend, frontend-web, secrets]
+    needs: [lint, backend, frontend-web, secrets, ops-config]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
@@ -214,6 +261,10 @@ jobs:
           fi
           if [[ "${{ needs.secrets.result }}" != "success" ]]; then
             echo "❌ Secrets scan failed"
+            exit 1
+          fi
+          if [[ "${{ needs.ops-config.result }}" != "success" ]]; then
+            echo "❌ Ops config failed"
             exit 1
           fi
           echo "✅ Hammasi yashil"

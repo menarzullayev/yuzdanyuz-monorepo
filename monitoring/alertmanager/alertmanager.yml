@@ -1,0 +1,26 @@
+# Alertmanager for the local compose monitoring stack. In Kubernetes the chart's
+# AlertmanagerConfig (templates/alertmanagerconfig.yaml) does the same routing.
+#
+# Bot token and chat id are read from files that are never committed (.gitignore):
+#   echo -n '<token from @BotFather>' > monitoring/alertmanager/telegram-bot-token
+#   echo -n '-1001234567890'          > monitoring/alertmanager/telegram-chat-id
+# CI: `amtool check-config` on this file.
+route:
+  receiver: telegram
+  group_by: [alertname, namespace]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: telegram
+      matchers: ['severity="critical"']
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/secrets/telegram-bot-token
+        chat_id_file: /etc/alertmanager/secrets/telegram-chat-id
+        parse_mode: HTML
+        send_resolved: true

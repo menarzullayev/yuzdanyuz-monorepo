@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: yuzdanyuz
+    folder: yuzdanyuz
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards/yuzdanyuz

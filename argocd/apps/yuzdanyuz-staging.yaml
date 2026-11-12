@@ -16,6 +16,11 @@ spec:
       valueFiles:
         - values.yaml
         - values-staging.yaml
+      # Immutable image built by build-and-push.yml only after CI passed on that commit
+      # (the chart refuses `latest`/empty tags). Bump with scripts/bump-image-tag.sh staging <sha> in a PR; ArgoCD auto-syncs it after merge.
+      parameters:
+        - name: image.tag
+          value: sha-402e821
   destination:
     server: https://kubernetes.default.svc
     namespace: yuzdanyuz-staging

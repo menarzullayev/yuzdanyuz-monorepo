@@ -10,14 +10,17 @@ global:
 
 image:
   repository: yuzdanyuz-backend
-  tag: latest                       # CI/CD overrides with git SHA
+  # REQUIRED: sha-<full git sha> (or vX.Y.Z). Images exist only for commits whose CI
+  # passed (build-and-push.yml); the chart refuses empty/`latest`/branch tags. Each
+  # environment pins it in argocd/apps/yuzdanyuz-<env>.yaml (scripts/bump-image-tag.sh).
+  tag: ""
   pullPolicy: IfNotPresent
 
 nginx:
   enabled: true
   image:
     repository: yuzdanyuz-nginx
-    tag: latest
+    tag: ""                         # defaults to image.tag (built from the same commit)
     pullPolicy: IfNotPresent
   replicas: 2
 
@@ -385,9 +388,58 @@ networkPolicy:
   # Egress allowed to: postgres, redis, otel-collector, sentry.io,
   # api.anthropic.com, api.telegram.org, payments providers, SMTP gateway.
 
-# ── ServiceMonitor (Prometheus Operator) ─────────────────────────────────────
+# ── Monitoring (Prometheus Operator / kube-prometheus-stack) ─────────────────
+# The chart ships scrape targets, alert rules, dashboards and alert routing; the
+# Prometheus/Alertmanager/Grafana stack itself is installed separately
+# (docs/deployment/monitoring.md). The CRDs must exist before this release syncs.
 serviceMonitor:
   enabled: true
   interval: 30s
   scrapeTimeout: 10s
   path: /metrics
+  # kube-prometheus-stack selects ServiceMonitors/PodMonitors by its release label.
+  labels:
+    release: prometheus
+
+# Worker-side metrics server (core.celery.start_worker_metrics_server).
+workerMetrics:
+  port: 9540
+
+# celery-exporter: task/queue/worker metrics from Celery events (templates/celery-exporter.yaml).
+celeryExporter:
+  enabled: true
+  image:
+    repository: danihodovic/celery-exporter
+    tag: "0.12.2"
+    pullPolicy: IfNotPresent
+  port: 9808
+  resources:
+    requests: { cpu: "20m", memory: "64Mi" }
+    limits:   { cpu: "200m", memory: "256Mi" }
+
+# Alert rules from files/prometheus-rules.yml.
+prometheusRule:
+  enabled: true
+  labels:
+    release: prometheus
+
+# Grafana dashboards from files/dashboards/ (Grafana sidecar import).
+grafanaDashboards:
+  enabled: true
+  labels:
+    grafana_dashboard: "1"
+  folder: yuzdanyuz
+
+# Alert delivery to a human. The bot token never goes in values or git: create
+#   kubectl -n <ns> create secret generic yuzdanyuz-alertmanager-telegram \
+#     --from-literal=bot-token='<token from @BotFather>'
+# and set chatId (group/channel id, e.g. "-1001234567890") per environment.
+alerting:
+  labels:
+    alertmanagerConfig: yuzdanyuz
+  telegram:
+    enabled: false
+    chatId: ""
+    botTokenSecret:
+      name: yuzdanyuz-alertmanager-telegram
+      key: bot-token

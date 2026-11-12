@@ -1,0 +1,82 @@
+{{- if .Values.celeryExporter.enabled }}
+{{- /*
+celery-exporter (github.com/danihodovic/celery-exporter): listens to Celery task
+events on the broker and serves celery_task_*_total, celery_task_runtime,
+celery_task_queue_wait_time, celery_queue_length and celery_worker_up. Workers
+send the events because core/settings/base.py sets CELERY_WORKER_SEND_TASK_EVENTS
+and CELERY_TASK_SEND_SENT_EVENT. One replica: a second one would export the same
+counters again and double every sum() in the dashboards and alerts.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-exporter
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-exporter
+    spec:
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: celery-exporter
+          image: "{{ .Values.celeryExporter.image.repository }}:{{ .Values.celeryExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.celeryExporter.image.pullPolicy }}
+          args:
+            - --port={{ .Values.celeryExporter.port }}
+            # Survive a broker restart instead of exiting.
+            - --retry-interval=5
+          env:
+            - name: CE_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRef.name }}
+                  key: CELERY_BROKER_URL
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.celeryExporter.port }}
+              protocol: TCP
+          # TCP, not httpGet: scripts/check-helm-deploy-path.py treats HTTP probes as
+          # Django probes (Host header, SECURE_REDIRECT_EXEMPT), and this is not Django.
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            periodSeconds: 15
+          resources: {{- toYaml .Values.celeryExporter.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-celery-exporter
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "yuzdanyuz.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+  ports:
+    - name: metrics
+      port: {{ .Values.celeryExporter.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

@@ -67,3 +67,11 @@ htmlcov/
 
 # OS
 Thumbs.db
+
+# Local Alertmanager bot token (monitoring/alertmanager/alertmanager.yml)
+monitoring/alertmanager/telegram-bot-token
+monitoring/alertmanager/telegram-chat-id
+
+# Load test outputs (loadtest/seed_loadtest.py, k6 summary, ZAP reports)
+loadtest/out/
+loadtest/zap.yaml

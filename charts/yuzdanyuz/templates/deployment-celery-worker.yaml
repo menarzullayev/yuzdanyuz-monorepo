@@ -85,6 +85,13 @@ spec:
             - name: CLAUDE_CONFIG_DIR
               value: /tmp/claude
             {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "worker") | nindent 12 }}
+            - name: CELERY_METRICS_PORT
+              value: {{ $.Values.workerMetrics.port | quote }}
+          # yz_* counters bumped inside tasks (core.celery start_worker_metrics_server)
+          ports:
+            - name: metrics
+              containerPort: {{ $.Values.workerMetrics.port }}
+              protocol: TCP
           # Liveness via celery inspect (covers stuck event loops)
           livenessProbe:
             exec:

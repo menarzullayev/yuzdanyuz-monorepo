@@ -134,7 +134,7 @@ psql -c "SELECT * FROM backup_drill_marker;"   # → ERROR: relation does not ex
 
 ## Monitoring
 
-`BackupTooOld` alert in [`monitoring/prometheus/alerts.yml`](../../../../monitoring/prometheus/alerts.yml)
+`BackupTooOld` and `BackupJobFailed` alerts in [`charts/yuzdanyuz/files/prometheus-rules.yml`](../../../../charts/yuzdanyuz/files/prometheus-rules.yml)
 fires if `walg_last_backup_timestamp` is >25h old.
 
 To expose this metric, run `wal-g-prometheus-exporter` as a sidecar

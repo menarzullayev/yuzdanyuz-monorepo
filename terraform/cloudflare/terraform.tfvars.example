@@ -3,3 +3,6 @@
 # zone_id              = "1234abcd...."
 # domain               = "yuzdanyuz.uz"
 # origin_ip            = "203.0.113.10"
+# account_id           = "abcd1234...."    # for the uptime notification policy
+# uptime_alert_emails  = ["ops@example.uz"]
+# enable_uptime_checks = true              # false on a Free plan zone

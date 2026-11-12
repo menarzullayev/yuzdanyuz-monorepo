@@ -1,0 +1,226 @@
+# Prometheus alerting rules — the single source of truth.
+#
+# Loaded by the chart as a PrometheusRule (templates/prometheusrule.yaml) and by the
+# local compose monitoring stack (monitoring/prometheus/prometheus.yml). Routed to a
+# human by Alertmanager (templates/alertmanagerconfig.yaml, monitoring/alertmanager/).
+# CI: `promtool check rules` + `promtool test rules monitoring/prometheus/tests/*.yml`.
+#
+# Jobs (set by the ServiceMonitors / compose scrape config):
+#   yuzdanyuz-backend          web pods, /metrics (django-prometheus + yz_*)
+#   yuzdanyuz-celery-worker    worker pods, :9540 (yz_* counters bumped inside tasks)
+#   yuzdanyuz-celery-exporter  celery-exporter (celery_task_*, celery_queue_length, celery_worker_up)
+groups:
+  - name: yuzdanyuz.api
+    rules:
+      - alert: HighRequestErrorRate
+        expr: |
+          sum by (namespace) (rate(django_http_responses_total_by_status_total{status=~"5.."}[5m]))
+          /
+          sum by (namespace) (rate(django_http_responses_total_by_status_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "5xx error rate >5% (current: {{ $value | humanizePercentage }})"
+          description: "Backend is returning >5% server errors over 5 minutes. Check Sentry (filter by request_id)."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (namespace, le) (rate(django_http_requests_latency_seconds_by_view_method_bucket[5m]))
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "p95 latency > 1.5s (current: {{ $value | humanizeDuration }})"
+
+      - alert: BackendDown
+        expr: up{job="yuzdanyuz-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend target {{ $labels.instance }} is down"
+
+      - alert: BackendNotScraped
+        expr: absent(up{job="yuzdanyuz-backend"})
+        for: 10m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Prometheus has no yuzdanyuz-backend target (ServiceMonitor missing or not selected)"
+
+  - name: yuzdanyuz.celery
+    rules:
+      - alert: CeleryExporterDown
+        expr: up{job="yuzdanyuz-celery-exporter"} == 0 or absent(up{job="yuzdanyuz-celery-exporter"})
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "celery-exporter is not scraped: queue and task alerts are blind"
+
+      - alert: CeleryWorkerDown
+        expr: celery_worker_up == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "Celery worker {{ $labels.hostname }} stopped sending heartbeats"
+
+      # Per-queue backlog thresholds follow the queue SLOs in core/celery.py.
+      - alert: CeleryCriticalQueueBacklog
+        expr: celery_queue_length{queue_name="critical"} > 50
+        for: 2m
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "critical queue backlog {{ $value }} (exam finalize / payments are delayed)"
+
+      - alert: CeleryRealtimeQueueBacklog
+        expr: celery_queue_length{queue_name="realtime"} > 200
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "realtime queue backlog {{ $value }} (notifications are late)"
+
+      - alert: CeleryAIQueueBacklog
+        expr: celery_queue_length{queue_name="ai"} > 200
+        for: 15m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "ai queue backlog {{ $value }} (one shared Claude subscription; check rate limits)"
+
+      - alert: CeleryDefaultQueueBacklog
+        expr: celery_queue_length{queue_name=~"default|celery"} > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "{{ $labels.queue_name }} queue backlog {{ $value }}"
+
+      - alert: CeleryBatchQueueBacklog
+        expr: celery_queue_length{queue_name="batch"} > 5000
+        for: 30m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "batch queue backlog {{ $value }}"
+
+      - alert: CeleryTaskFailureRate
+        expr: |
+          sum by (namespace) (rate(celery_task_failed_total[5m]))
+          /
+          sum by (namespace) (rate(celery_task_received_total[5m])) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Celery task failure rate >10% (current: {{ $value | humanizePercentage }})"
+
+      - alert: CeleryCriticalTaskFailed
+        expr: sum by (namespace, name) (increase(celery_task_failed_total{queue_name="critical"}[10m])) > 0
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "critical task {{ $labels.name }} failed (exam score / payment not finalized)"
+
+      - alert: TasksDeadLettered
+        expr: sum by (namespace, task_name) (increase(yz_task_dlq_total[15m])) > 0
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "{{ $value }} {{ $labels.task_name }} task(s) went to the DLQ (apps.analytics FailedTask)"
+
+      # ops.run_health_probe is scheduled every 5 minutes (core/celery.py beat_schedule).
+      # No run for 20 minutes = beat is down or the batch worker is not consuming.
+      - alert: CeleryBeatMissedRuns
+        expr: |
+          (sum(increase(celery_task_received_total{name="ops.run_health_probe"}[20m])) or vector(0)) < 1
+        for: 10m
+        labels:
+          severity: critical
+          component: celery-beat
+        annotations:
+          summary: "No scheduled ops.run_health_probe run in 20 minutes: celery beat is not scheduling"
+
+  - name: yuzdanyuz.backup
+    rules:
+      # Needs kube-state-metrics (part of kube-prometheus-stack). CronJob: templates/cronjob-backup.yaml
+      - alert: BackupTooOld
+        expr: time() - kube_cronjob_status_last_successful_time{cronjob=~".*-backup"} > 90000
+        for: 1h
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "No successful database backup from {{ $labels.cronjob }} in >25 hours"
+
+      - alert: BackupJobFailed
+        expr: kube_job_status_failed{job_name=~".*-backup-.*"} > 0
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "Backup job {{ $labels.job_name }} failed"
+
+  # The next two groups need postgres_exporter / redis_exporter, which the managed
+  # PostgreSQL/Redis release (or the provider) must run; this chart does not deploy them.
+  - name: yuzdanyuz.db
+    rules:
+      - alert: PostgresHighConnections
+        expr: |
+          sum by (instance) (pg_stat_activity_count) /
+          sum by (instance) (pg_settings_max_connections) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connections >85% on {{ $labels.instance }}"
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 60
+        for: 5m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "Replica is {{ $value }}s behind primary"
+
+  - name: yuzdanyuz.redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis instance {{ $labels.instance }} is down"
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.90
+        for: 10m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage >90% ({{ $value | humanizePercentage }})"
