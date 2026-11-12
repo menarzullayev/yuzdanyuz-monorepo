@@ -413,7 +413,9 @@ class TestAIProviderConfig:
         configs = list(AIProviderConfig.objects.all())
         assert configs[0].priority < configs[1].priority
 
-    def test_ollama_provider_without_api_key(self, db):
+    def test_ollama_provider_without_api_key(self, db, settings):
+        # a private Ollama host is reachable only when the operator allow-lists it (C07)
+        settings.AI_PROVIDER_PRIVATE_HOSTS = ['localhost:11434']
         config = AIProviderConfig.objects.create(
             name='Ollama Local',
             provider=AIProviderConfig.Provider.OLLAMA,

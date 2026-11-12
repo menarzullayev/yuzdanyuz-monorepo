@@ -3,6 +3,7 @@ AI/teacher calibration report and the speaking pipeline."""
 
 import json
 from datetime import timedelta
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import pytest
@@ -14,6 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.catalog.models import AIProviderConfig, Question, QuestionVersion
+from apps.catalog.services.ai_providers import egress as ai_egress
 from apps.intelligence import grading, tasks
 from apps.intelligence.models import OpenEndedSubmission
 from apps.organizations.models import Membership, MembershipStatus, OrgRole
@@ -22,6 +24,24 @@ from core.tenant import tenant_context
 User = get_user_model()
 pytestmark = pytest.mark.integration
 SECRET = 'fake-provider-key-9876'  # obviously fake, low entropy (gitleaks)
+PUBLIC_IP = '93.184.215.14'
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch, settings):
+    # Provider URLs are SSRF-checked and pinned at call time (C07); keep these tests off the
+    # network. The SSRF rules themselves are covered in tests/security/test_ai_base_url_ssrf.py.
+    monkeypatch.setattr(ai_egress, 'resolve_public', lambda target: [PUBLIC_IP])
+    settings.AI_PROVIDER_PRIVATE_HOSTS = ['localhost:11434', 'gpu:11434']
+
+
+def _logical_url(url, kwargs):
+    """The URL before pinning: the request goes to the checked IP with the real Host header."""
+    host = (kwargs.get('headers') or {}).get('Host')
+    if not host:
+        return url
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, ''))
 
 
 @pytest.fixture(autouse=True)
@@ -514,7 +534,7 @@ class FakeApis:
         monkeypatch.setattr(httpx, 'post', self._post)
 
     def _post(self, url, **kw):
-        self.calls.append((url, kw))
+        self.calls.append((_logical_url(url, kw), kw))
         req = httpx.Request('POST', url)
         if url.endswith('/audio/transcriptions'):
             return httpx.Response(200, json={'text': self.transcript}, request=req)

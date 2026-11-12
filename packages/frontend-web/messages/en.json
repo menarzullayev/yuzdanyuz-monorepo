@@ -82,7 +82,9 @@
     "changeTitle": "Set a new password",
     "changeHelp": "Your account was opened with a temporary password. Choose your own password to continue.",
     "newPassword": "New password",
-    "changeSubmit": "Save password and log in"
+    "changeSubmit": "Save password and log in",
+    "oauthLinkRequired": "An account with this email already exists. Sign in with Telegram or your password, then connect Google in your profile.",
+    "oauthAccountDisabled": "This account is inactive. Please contact support."
   },
   "register": {
     "title": "Create an account",

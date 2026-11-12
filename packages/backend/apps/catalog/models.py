@@ -301,7 +301,10 @@ class AIProviderConfig(models.Model):
         max_length=500,
         blank=True,
         verbose_name=_('Base URL'),
-        help_text=_('Faqat Ollama uchun: http://localhost:11434'),
+        help_text=_(
+            "Bo'sh = provayder standarti. Faqat ochiq HTTPS manzil; ichki tarmoqdagi Ollama "
+            "uchun host AI_PROVIDER_PRIVATE_HOSTS ga qo'shilgan bo'lishi kerak."
+        ),
     )
 
     use_for = models.CharField(
@@ -332,8 +335,11 @@ class AIProviderConfig(models.Model):
         )
 
     def save(self, *args, **kwargs):
+        from apps.catalog.services.ai_providers.egress import validate_base_url
         from core import crypto
 
+        # Every write path (admin, staff API, shell) gets the SSRF check, not only forms.
+        validate_base_url(self.base_url)
         if self.api_key and not crypto.is_encrypted(self.api_key):
             self.api_key_hint = self.api_key[-4:]
             self.api_key = crypto.encrypt(self.api_key)
@@ -342,6 +348,12 @@ class AIProviderConfig(models.Model):
         elif not self.api_key:
             self.api_key_hint = ''
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        from apps.catalog.services.ai_providers.egress import validate_base_url
+
+        validate_base_url(self.base_url)
 
     def get_api_key(self) -> str:
         from core import crypto

@@ -95,7 +95,8 @@ class AIProviderConfigAdmin(admin.ModelAdmin):
                 'description': (
                     'API kalit: Claude → console.anthropic.com | OpenAI → platform.openai.com | '
                     'Gemini → aistudio.google.com.<br>'
-                    'Ollama uchun API kalit kerak emas, faqat Base URL (http://localhost:11434).'
+                    'Ollama uchun API kalit kerak emas. Base URL faqat ochiq HTTPS; ichki Ollama '
+                    'hosti AI_PROVIDER_PRIVATE_HOSTS env orqali ruxsat etiladi (masalan ollama:11434).'
                 ),
             },
         ),
