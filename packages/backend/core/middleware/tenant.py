@@ -24,7 +24,10 @@ class TenantMiddleware:
       - request.org = Organization | None (RLSMiddleware va views uchun)
       - thread-local set_current_org() (TenantManager uchun)
       - Platform admin/staff org'siz holatda → unscoped_allowed (admin uchun)
-      - Regular user (non-admin, non-staff) org'siz → 403 Forbidden
+      - B2C users are STUDENT members of the platform org (apps.organizations.services), so
+        they resolve to an org like everyone else.
+      - Regular user (non-admin, non-staff) org'siz → 403 Forbidden (e.g. platform membership
+        removed/blocked)
         (auth/static endpoint'larda exempt — login/logout/signup org'siz ham ishlashi kerak)
     """
 
@@ -37,6 +40,12 @@ class TenantMiddleware:
         '/static/',
         '/media/',
         '/__debug__/',
+        # Public endpoints reachable by anonymous AND logged-in users whatever their org
+        # (both the /api/ and /api/v1/ mounts).
+        '/api/exams/certificates/verify/',
+        '/api/v1/exams/certificates/verify/',
+        '/api/v1/partnerships/apply/',
+        '/api/v1/engagement/ratings/organizations/',
     )
 
     def __init__(self, get_response):

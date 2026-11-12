@@ -330,3 +330,9 @@ class Notification(models.Model):
         self._validate_transition(self.Status.PENDING)
         self.status = self.Status.PENDING
         self.save(update_fields=['status'])
+
+
+# -- Engagement features: arena, org rating, typing practice (registered under this app) --
+from .arena_models import Quiz, QuizPlay, QuizPlayAnswer, QuizQuestion  # noqa: E402,F401
+from .rating_models import OrgRatingProfile  # noqa: E402,F401
+from .typing_models import TypingRun, TypingText  # noqa: E402,F401
