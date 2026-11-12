@@ -1,10 +1,13 @@
 """AI provider layer: key encryption, profile selection/fallback, HTTP providers (mocked)."""
 
+from urllib.parse import urlsplit, urlunsplit
+
 import httpx
 import pytest
 
 from apps.catalog.models import AIProviderConfig
 from apps.catalog.services.ai_providers import ProviderFactory
+from apps.catalog.services.ai_providers import egress as ai_egress
 from apps.catalog.services.ai_providers.base import TransientProviderError
 from apps.intelligence import llm
 from core import crypto
@@ -12,6 +15,24 @@ from core import crypto
 pytestmark = pytest.mark.django_db
 
 SECRET = 'fake-provider-key-1234'  # obviously fake, low entropy (gitleaks)
+PUBLIC_IP = '93.184.215.14'
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch, settings):
+    # Provider URLs are SSRF-checked and pinned at call time (C07); keep these tests off the
+    # network. The SSRF rules themselves are covered in tests/security/test_ai_base_url_ssrf.py.
+    monkeypatch.setattr(ai_egress, 'resolve_public', lambda target: [PUBLIC_IP])
+    settings.AI_PROVIDER_PRIVATE_HOSTS = ['localhost:11434', 'gpu:11434']
+
+
+def _logical_url(url, kwargs):
+    """The URL before pinning: the request goes to the checked IP with the real Host header."""
+    host = (kwargs.get('headers') or {}).get('Host')
+    if not host:
+        return url
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, ''))
 
 
 def _config(provider='openai', use_for='all', key=SECRET, **kw):
@@ -38,7 +59,7 @@ class FakeHttp:
         self.replies.append((status, body))
 
     def _send(self, url, **kwargs):
-        self.calls.append({'url': url, **kwargs})
+        self.calls.append({**kwargs, 'url': _logical_url(url, kwargs)})
         status, body = self.replies.pop(0)
         if isinstance(body, Exception):
             raise body

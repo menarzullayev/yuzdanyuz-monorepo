@@ -8,6 +8,7 @@ The API key is write-only: responses carry only `api_key_last4`. Sending `api_ke
 clears it; omitting it on PATCH keeps the stored (encrypted) key.
 """
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, serializers
 from rest_framework.permissions import BasePermission
@@ -15,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import AIProviderConfig
+from apps.catalog.services.ai_providers.egress import validate_base_url
 
 from .llm import PROFILE_USE_FOR, USE_FOR_PROFILE, test_connection
 
@@ -76,9 +78,11 @@ class AIProviderConfigSerializer(serializers.ModelSerializer):
         return obj.api_key_hint
 
     def validate_base_url(self, value):
-        if value and not value.startswith(('http://', 'https://')):
-            raise serializers.ValidationError('Must start with http:// or https://')
-        return value
+        try:
+            validate_base_url(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict['base_url']) from None
+        return value.strip()
 
     def validate_extra_options(self, value):
         if not isinstance(value, dict):

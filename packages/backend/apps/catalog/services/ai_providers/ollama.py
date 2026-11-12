@@ -1,7 +1,5 @@
 import json
 
-import httpx
-
 from ._http import post_json
 from .base import SYSTEM_PROMPT, BaseAIProvider
 
@@ -16,7 +14,8 @@ class OllamaProvider(BaseAIProvider):
                  ollama pull qwen2
                  ollama pull phi3        (yengil, tez)
 
-    base_url odatda http://localhost:11434
+    base_url: the operator must allow-list a private host in AI_PROVIDER_PRIVATE_HOSTS
+    (e.g. ollama:11434); otherwise only public HTTPS hosts are reachable (C07).
     """
 
     def __init__(self, model: str, base_url: str = '', **_):
@@ -53,7 +52,7 @@ class OllamaProvider(BaseAIProvider):
         # Ollama /api/generate — system va prompt birlashtiriladi
         full_prompt = f'{SYSTEM_PROMPT}\n\n{self._prompt(text)}'
         try:
-            resp = httpx.post(
+            data = post_json(
                 f'{self.base_url}/api/generate',
                 json={
                     'model': self.model,
@@ -61,10 +60,8 @@ class OllamaProvider(BaseAIProvider):
                     'stream': False,
                     'format': 'json',
                 },
-                timeout=120.0,
             )
-            resp.raise_for_status()
-            return json.loads(resp.json()['response'])
+            return json.loads(data['response'])
         except json.JSONDecodeError as exc:
             return {'error': f'JSON parse xatosi: {exc}', 'raw_text': text}
         except Exception as exc:

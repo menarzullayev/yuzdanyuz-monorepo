@@ -82,7 +82,9 @@
     "changeTitle": "Jańa parol ornatıń",
     "changeHelp": "Akkauntıńız waqtınsha parol menen ashılǵan. Dawam etiw ushın óz paroldıńızdı saylań.",
     "newPassword": "Jańa parol",
-    "changeSubmit": "Paroldı saqlaw hám kiriw"
+    "changeSubmit": "Paroldı saqlaw hám kiriw",
+    "oauthLinkRequired": "Bul email menen akkaunt bar. Aldın Telegram yamasa parol menen kiriń, keyin profilde Google-dı jalǵań.",
+    "oauthAccountDisabled": "Bul akkaunt aktiv emes. Járdem ushın qollap-quvvatlaw xızmetine jazıń."
   },
   "register": {
     "title": "Akkaunt jaratıw",
