@@ -64,7 +64,12 @@ regexes = [
 # contains rule names and placeholders. Template values in docs such as
 # "secure_redis_password" or "your_password_here" are not secrets (letters only,
 # placeholder prefix and suffix).
+# e7f0ab5 (PR #65, first push) put the local compose Redis password
+# (`yuzdanyuz_dev_redis`, also the docker-compose.yml default) in .env.example and a
+# fake 50-char SECRET_KEY in tests/unit/test_env_example.py; the next commit replaced
+# both with placeholders. Neither is a real secret.
 [allowlist]
+commits = ["e7f0ab5ee8d31915dc3af01305a9d8f8364762e8"]
 paths = ['''(^|/)scripts/test-gitleaks-rules\.sh$''']
 regexTarget = "secret"
 regexes = [
