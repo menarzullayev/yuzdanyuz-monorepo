@@ -17,7 +17,7 @@ from django.urls import reverse
 from apps.catalog.models import AIProviderConfig
 from apps.webhooks.models import WebhookEndpoint
 from core import crypto
-from core.tenant import tenant_context
+from core.tenant import tenant_context, unscoped_context
 
 KEY_A = Fernet.generate_key().decode()
 KEY_B = Fernet.generate_key().decode()
@@ -26,7 +26,7 @@ PLAIN_HOOK_SECRET = 'whsec-PLAINTEXT-0123456789abcdefghijklmnopqrstuv'
 
 
 def _raw(table: str, column: str, pk) -> str:
-    with connection.cursor() as cur:
+    with unscoped_context(), connection.cursor() as cur:  # past RLS: the raw stored value
         cur.execute(f'SELECT {column} FROM {table} WHERE id = %s', [pk])  # noqa: S608
         return cur.fetchone()[0]
 

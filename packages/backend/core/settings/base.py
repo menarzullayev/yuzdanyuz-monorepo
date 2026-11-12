@@ -269,11 +269,9 @@ CORS_ALLOW_CREDENTIALS = True
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────
 # Multi-tenant isolation at database level (defense in depth)
 ENABLE_RLS = os.getenv('ENABLE_RLS', 'true').lower() == 'true'
-# B15 (core/db_roles.py, docs/deployment/database-roles.md): database-level RLS for sessions
-# with an org. Off until the policies cover content shared across orgs (public mock exams).
-RLS_ENFORCE_ORG_SESSIONS = os.getenv('RLS_ENFORCE_ORG_SESSIONS', 'false').lower() == 'true'
-# With enforcement on: org-less sessions (workers, platform admin, anonymous) still pass.
-RLS_BYPASS_WITHOUT_ORG = os.getenv('RLS_BYPASS_WITHOUT_ORG', 'true').lower() == 'true'
+# B15 (ops.0003, docs/deployment/database-roles.md): NOLOGIN BYPASSRLS role that owns the
+# SECURITY DEFINER functions behind shared-content policies and question search.
+DB_DEFINER_ROLE = os.getenv('DB_DEFINER_ROLE', 'yuzdanyuz_definer')
 # Set only on the migrate Job (owner role): post_migrate grants DML on every table to this role.
 DB_RUNTIME_ROLE = os.getenv('DB_RUNTIME_ROLE', '')
 # C14 (core/middleware/csp.py): HTML under these paths gets the enforced nonce policy; other

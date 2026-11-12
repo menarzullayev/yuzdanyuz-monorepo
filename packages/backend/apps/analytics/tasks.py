@@ -15,6 +15,7 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 
 from core.locks import single_run
+from core.tenant import tenant_context
 
 from .models import ExamEvent, ReportExport
 
@@ -81,11 +82,18 @@ def _build_excel(qs) -> bytes:
 
 @shared_task(name='analytics.generate_export', bind=True)
 def generate_export(self, report_id: str) -> dict:
+    # 'tenant' strategy: the worker has no tenant context, so load the row by id past the
+    # filters, then build the export inside the report's own org (also its RLS scope).
     try:
-        report = ReportExport.objects.get(pk=report_id)
+        report = ReportExport.global_objects.get(pk=report_id)
     except ReportExport.DoesNotExist:
         return {'status': 'not_found'}
+    with tenant_context(report.organization):
+        return _generate_export(report)
 
+
+def _generate_export(report) -> dict:
+    report_id = report.pk
     report.status = ReportExport.Status.PROCESSING
     report.save(update_fields=['status'])
 

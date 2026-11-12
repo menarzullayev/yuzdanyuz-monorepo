@@ -139,10 +139,14 @@ class TestSharedContent:
         with as_role(runtime_role), tenant_context(org2):
             assert _scalar('SELECT count(*) FROM exams_mockexam WHERE id = %s', [exam.id]) == 1
             assert (
-                _scalar('SELECT count(*) FROM exams_mockexamquestion WHERE mock_exam_id = %s', [exam.id])
+                _scalar(
+                    'SELECT count(*) FROM exams_mockexamquestion WHERE mock_exam_id = %s', [exam.id]
+                )
                 == 1
             )
-            assert _scalar('SELECT count(*) FROM catalog_questionversion WHERE id = %s', [qv.id]) == 1
+            assert (
+                _scalar('SELECT count(*) FROM catalog_questionversion WHERE id = %s', [qv.id]) == 1
+            )
             assert _scalar('SELECT count(*) FROM catalog_question WHERE id = %s', [q.id]) == 1
             links = list(
                 MockExamQuestion.objects.filter(mock_exam_id=exam.id).select_related(
@@ -157,7 +161,9 @@ class TestSharedContent:
         q, qv = _question(org, subject, 'shared bank question', public_bank=True)
         with as_role(runtime_role), tenant_context(org2):
             assert _scalar('SELECT count(*) FROM catalog_question WHERE id = %s', [q.id]) == 1
-            assert _scalar('SELECT count(*) FROM catalog_questionversion WHERE id = %s', [qv.id]) == 1
+            assert (
+                _scalar('SELECT count(*) FROM catalog_questionversion WHERE id = %s', [qv.id]) == 1
+            )
 
     def test_private_questions_stay_private(self, runtime_role, org, org2, subject):
         q, qv = _question(org, subject, 'private question')
@@ -220,7 +226,7 @@ class TestSearch:
         """The function's owner bypasses RLS, so the planner may use the index (E01)."""
         with transaction.atomic(), connection.cursor() as cur:
             cur.execute(
-                "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE proname = "
+                'SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE proname = '
                 "'app_search_question_versions'"
             )
             owner = cur.fetchone()[0]
@@ -243,3 +249,73 @@ def _owner_of(func):
             [func],
         )
         return cur.fetchone()
+
+
+@pytest.mark.django_db
+class TestStatementPrefix:
+    def test_failed_savepoint_inside_a_tenant_context_rolls_back_cleanly(self, org):
+        """ROLLBACK TO SAVEPOINT must not carry the RLS prefix: the transaction is aborted
+        at that point and the prefix would fail it, breaking the outer transaction too."""
+        from django.db.utils import DatabaseError
+
+        with tenant_context(org):
+            with pytest.raises(DatabaseError), transaction.atomic():
+                with connection.cursor() as cur:
+                    cur.execute('SELECT 1 / 0')
+            assert _scalar('SELECT 1') == 1
+
+    def test_unscoped_bypass_does_not_outlive_its_block(self, runtime_role, endpoints, org):
+        with as_role(runtime_role):
+            with unscoped_context():
+                assert len(_orgs_in('webhooks_webhookendpoint')) == 2
+            assert _orgs_in('webhooks_webhookendpoint') == set()
+            with tenant_context(org):
+                assert _orgs_in('webhooks_webhookendpoint') == {org.id}
+            assert _orgs_in('webhooks_webhookendpoint') == set()
+
+
+@pytest.mark.django_db
+class TestWorkersUnderRls:
+    """Code without a request context must still reach the rows it was handed."""
+
+    def test_generate_export_task_finds_and_writes_its_report(
+        self, runtime_role, org, user, tmp_path, settings
+    ):
+        from apps.analytics.models import ReportExport
+        from apps.analytics.tasks import generate_export
+
+        settings.MEDIA_ROOT = tmp_path
+        with tenant_context(org):
+            report = ReportExport.objects.create(
+                organization=org, user=user, report_type='students_full'
+            )
+        with as_role(runtime_role):
+            result = generate_export(str(report.pk))
+        assert result['status'] == 'ready', result
+
+    def test_rotate_command_reaches_every_tenant(self, runtime_role, org, org2, settings):
+        from cryptography.fernet import Fernet
+        from django.core.management import call_command
+
+        from core import crypto
+
+        old, new = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+        settings.FIELD_ENCRYPTION_KEYS = [old]
+        for o in (org, org2):
+            with tenant_context(o):
+                WebhookEndpoint.objects.create(organization=o, name=o.slug, url='https://e.x/h')
+        settings.FIELD_ENCRYPTION_KEYS = [new, old]
+        with as_role(runtime_role):
+            call_command('rotate_field_encryption')
+        settings.FIELD_ENCRYPTION_KEYS = [new]
+        with unscoped_context(), connection.cursor() as cur:
+            cur.execute('SELECT secret FROM webhooks_webhookendpoint')
+            secrets = [r[0] for r in cur.fetchall()]
+        assert len(secrets) == 2
+        for value in secrets:
+            crypto.decrypt(value)  # raises if still under the retired key
+
+    def test_for_org_is_an_explicit_scope(self, runtime_role, endpoints, org, org2):
+        with as_role(runtime_role), tenant_context(org):
+            assert WebhookEndpoint.objects.for_org(org2).count() == 1
+            assert WebhookEndpoint.objects.count() == 1  # still org only

@@ -243,7 +243,8 @@ class TestQuestionVersion:
                 question=q, version_number=3, content={}, options=[]
             )
 
-        versions = list(q.versions.all())
+        with tenant_context(q.organization):
+            versions = list(q.versions.all())
         assert versions[0].version_number == 3  # Newest first
 
 

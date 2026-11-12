@@ -288,7 +288,8 @@ class TestVariants:
         from apps.exams.models import MockExam, MockExamQuestion
 
         q = _q(org, subject)
-        qv = q.versions.first()
+        with tenant_context(org):
+            qv = q.versions.first()
         now = timezone.now()
         with tenant_context(org):
             for i, st in enumerate([MockExam.Status.PUBLISHED, MockExam.Status.DRAFT]):

@@ -29,8 +29,7 @@ import uuid
 from django.conf import settings
 from django.db.backends.signals import connection_created
 
-from core.db_roles import bypass_default
-from core.tenant import get_current_org
+from core.tenant import get_current_org, is_unscoped_allowed
 
 
 class RLSStatementPrefix:
@@ -40,22 +39,55 @@ class RLSStatementPrefix:
         if not getattr(settings, 'ENABLE_RLS', True):
             return execute(sql, params, many, context)
         org = get_current_org()
-        # B15 (core/db_roles.py): with org-session enforcement on, every statement also
-        # carries the bypass flag; without it the flag is never sent and counts as 'all'.
-        flag = bypass_default() if getattr(settings, 'RLS_ENFORCE_ORG_SESSIONS', False) else None
-        if org is not None or flag is not None:
+        # B15: the application's explicit cross-tenant marker is the only RLS bypass;
+        # without it the runtime role sees its org's rows (or none) plus shared content.
+        flag = 'all' if is_unscoped_allowed() else None
+        if org is not None or flag is not None or _needs_reset(context['connection']):
             raw_cursor = context['cursor'].cursor
-            if getattr(raw_cursor, 'name', None) is None:
-                prefix = ''
-                if flag is not None:
-                    prefix = f"SELECT set_config('app.rls_bypass', '{flag}', true); "
-                if org is not None:
-                    # UUID round-trip validates the value, so inlining it is injection-safe
-                    # and keeps the user's parameter style (%s / %(name)s) untouched.
-                    org_id = uuid.UUID(str(org.pk))
-                    prefix += f"SELECT set_config('app.current_org_id', '{org_id}', true); "
-                sql = prefix + sql
+            if getattr(raw_cursor, 'name', None) is None and not _is_tx_control(sql):
+                if not isinstance(sql, str):  # psycopg2.sql.Composed (identifiers quoted)
+                    sql = sql.as_string(raw_cursor)
+                # UUID round-trip validates the value, so inlining it is injection-safe
+                # and keeps the user's parameter style (%s / %(name)s) untouched.
+                org_id = uuid.UUID(str(org.pk)) if org is not None else ''
+                sql = (
+                    f"SELECT set_config('app.rls_bypass', '{flag or ''}', true); "
+                    f"SELECT set_config('app.current_org_id', '{org_id}', true); {sql}"
+                )
+                _mark_sent(context['connection'], org is not None or flag is not None)
         return execute(sql, params, many, context)
+
+
+_TX_CONTROL = ('SAVEPOINT', 'ROLLBACK', 'RELEASE', 'COMMIT', 'BEGIN', 'START TRANSACTION')
+
+
+def _is_tx_control(sql) -> bool:
+    """Savepoint/transaction statements go through execute_wrappers too. A prefix there
+    would run inside an aborted transaction during ROLLBACK TO SAVEPOINT and fail it, so
+    they are sent as they are (they read no rows)."""
+    return isinstance(sql, str) and sql.lstrip().upper().startswith(_TX_CONTROL)
+
+
+def _outer_tx(connection):
+    blocks = getattr(connection, 'atomic_blocks', None)
+    return id(blocks[0]) if connection.in_atomic_block and blocks else None
+
+
+def _needs_reset(connection) -> bool:
+    """set_config(..., true) lasts until the transaction ends. Inside an atomic block, once
+    a statement carried an org or the bypass, every later statement in that transaction
+    sends its own values (possibly empty), so nothing outlives its tenant_context() /
+    unscoped_context() block, not even across a rolled-back savepoint. In autocommit each
+    statement is its own transaction and needs nothing."""
+    tx = _outer_tx(connection)
+    return tx is not None and getattr(connection, '_rls_dirty_tx', None) == tx
+
+
+def _mark_sent(connection, scoped: bool) -> None:
+    if scoped:
+        tx = _outer_tx(connection)
+        if tx is not None:
+            connection._rls_dirty_tx = tx
 
 
 _PREFIX = RLSStatementPrefix()

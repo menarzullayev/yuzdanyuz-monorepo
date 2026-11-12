@@ -7,35 +7,19 @@ Two roles in production (SQL in docs/deployment/database-roles.md):
   so PostgreSQL applies row-level security to it. FORCE ROW LEVEL SECURITY (core/rls.py)
   applies it to the owner too.
 
-RLS policies filter by `app.current_org_id`; the `rls_bypass` policy reads the
-`app.rls_bypass` flag. Both ride transaction-local on each statement (core/db_rls.py), so
-they hold behind PgBouncer transaction pooling; an unset flag counts as 'all':
-
-* 'all' (default, RLS_ENFORCE_ORG_SESSIONS=false, flag not sent): every session passes, as
-  when the runtime role owned the tables. Enforcing org sessions hides content shared across
-  organisations (public mock exams and their questions belong to the publishing org; the
-  policies do not model sharing yet, measured in test_db_least_privilege), so it stays
-  off until those policies exist.
-* 'on' (RLS_ENFORCE_ORG_SESSIONS=true): a session with an org is filtered to it; org-less
-  sessions (workers, platform admin, anonymous pages) pass.
-* 'off' (also RLS_BYPASS_WITHOUT_ORG=false): org-less sessions see nothing.
-
-What the split gives regardless of the flag: the runtime role owns nothing, cannot change
-schema or policies, and cannot turn RLS off; the flag is the application's own choice.
+RLS policies filter by `app.current_org_id`. The `rls_bypass` policy passes a statement
+only when `app.rls_bypass = 'all'`, which core/db_rls.py sends (transaction-local, so it
+holds behind PgBouncer) on statements issued inside unscoped_context(): Celery workers,
+platform admin, cross-tenant jobs. Without it the runtime role sees its org's rows, or
+none without an org, plus content shared on purpose (ops.0003). The flag is set by the
+application, so it guards against application bugs (a missing tenant filter), not against
+SQL injection, which could set it as it could set the org.
 """
 
 from __future__ import annotations
 
 from django.conf import settings
 from psycopg2 import sql
-
-
-def bypass_default() -> str:
-    """Flag value for this process: 'all' until RLS_ENFORCE_ORG_SESSIONS is on; then 'on'
-    (org-less sessions pass) or, with RLS_BYPASS_WITHOUT_ORG off, 'off' (fail closed)."""
-    if not getattr(settings, 'RLS_ENFORCE_ORG_SESSIONS', False):
-        return 'all'
-    return 'on' if getattr(settings, 'RLS_BYPASS_WITHOUT_ORG', True) else 'off'
 
 
 def grant_runtime_privileges(cursor, role: str) -> None:

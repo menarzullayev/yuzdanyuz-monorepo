@@ -163,7 +163,8 @@ class TestPracticeAnswerOracle:
 
     def test_quarantined_question_is_not_graded(self, org, user, member, subject):
         qv = _qv(org, subject)
-        QuestionVersion.objects.filter(pk=qv.pk).update(is_quarantined=True)
+        with unscoped_context():
+            QuestionVersion.objects.filter(pk=qv.pk).update(is_quarantined=True)
         c = _client(user)
         assert self._answer(c, self._session(c), qv).status_code == 400
 

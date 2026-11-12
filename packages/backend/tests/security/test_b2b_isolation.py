@@ -83,18 +83,14 @@ class TestRls:
             cur.execute(f'CREATE ROLE {role} NOLOGIN')
             cur.execute(f'GRANT SELECT ON {", ".join(TABLES)} TO {role}')
             cur.execute(f'SET LOCAL ROLE {role}')
-            # the policies themselves, as with RLS_ENFORCE_ORG_SESSIONS (core/db_roles.py)
-            cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
             try:
                 for current, expected_title in ((org, 'L-a'), (org2, 'L-b')):
-                    cur.execute(
-                        "SELECT set_config('app.current_org_id', %s, true)", [str(current.id)]
-                    )
-                    for table in TABLES:
-                        cur.execute(f'SELECT DISTINCT organization_id FROM {table}')
-                        assert {r[0] for r in cur.fetchall()} == {current.id}, table
-                    cur.execute('SELECT title FROM organizations_lesson')
-                    assert [r[0] for r in cur.fetchall()] == [expected_title]
+                    with tenant_context(current):  # core.db_rls sets the org per statement
+                        for table in TABLES:
+                            cur.execute(f'SELECT DISTINCT organization_id FROM {table}')
+                            assert {r[0] for r in cur.fetchall()} == {current.id}, table
+                        cur.execute('SELECT title FROM organizations_lesson')
+                        assert [r[0] for r in cur.fetchall()] == [expected_title]
             finally:
                 cur.execute('RESET ROLE')
 

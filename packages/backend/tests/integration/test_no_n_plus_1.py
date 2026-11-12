@@ -28,6 +28,7 @@ from apps.catalog.models import ImportBatch, QuestionDraft
 from apps.commerce import wallet_service
 from apps.commerce.models import Referral, ReferralCode, Wallet
 from apps.engagement.models import League, LeagueMembership, Notification
+from core.tenant import tenant_context
 
 # Middleware chain baseline (auth + tenant + RLS + RateLimit)
 MIDDLEWARE_BASELINE = 15
@@ -106,8 +107,9 @@ class TestNoNPlusOne:
         (template loyiha ichida hali yo'q, lekin function bevosita tekshiriladi)."""
         from apps.catalog.views import _draft_counts
 
-        with assert_max_queries(1, '_draft_counts'):
-            result = _draft_counts(populated_drafts)
+        with tenant_context(populated_drafts.organization):  # as in the view's request
+            with assert_max_queries(1, '_draft_counts'):
+                result = _draft_counts(populated_drafts)
         assert result['total'] == 30
         assert result['invalid'] == 10
         assert result['published'] == 10

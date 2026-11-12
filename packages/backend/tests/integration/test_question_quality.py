@@ -73,6 +73,16 @@ def _refresh(org):
         return qq.refresh_for_org(org)
 
 
+def _share(org, qv):
+    from apps.catalog.models import QuestionBank
+
+    with tenant_context(org):
+        bank = QuestionBank.objects.create(
+            organization=org, name='shared', slug=f'shared-{qv.pk}', is_public=True
+        )
+        bank.questions.add(qv.question_id)
+
+
 def _stat(org, qv):
     with unscoped_context():
         return QuestionQualityStat.objects.get(organization=org, question_version=qv)
@@ -226,7 +236,8 @@ class TestComputation:
     def test_quarantined_version_excluded(self, db, org, user, subject):
         qv = _qv(org, subject)
         _answers(org, user, qv, wrong=8)
-        QuestionVersion.objects.filter(pk=qv.pk).update(is_quarantined=True)
+        with unscoped_context():
+            QuestionVersion.objects.filter(pk=qv.pk).update(is_quarantined=True)
         _refresh(org)
         assert _stat_count(org) == 0
 
@@ -338,6 +349,7 @@ class TestTask:
     def test_cross_tenant_isolation(self, db, org, org2, user, subject):
         """The same question version answered in two orgs gets independent stats."""
         shared = _qv(org, subject)
+        _share(org, shared)  # another org can only answer content shared with it (RLS)
         _answers(org, user, shared, wrong=8)  # org: all wrong
         _answers(org2, user, shared, right=8)  # org2: all right
         refresh_question_quality()

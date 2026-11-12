@@ -6,7 +6,7 @@ from django.core.files.base import ContentFile
 from apps.catalog.models import ImportBatch, QuestionDraft
 from apps.catalog.services.ai_parser import AIParserService
 from apps.catalog.services.parsers import ParserDispatcher, PdfParserService
-from core.tenant import tenant_context
+from core.tenant import tenant_context, unscoped_context
 
 
 def _make_pdf(pages: list[list[str]]) -> bytes:
@@ -80,7 +80,7 @@ def _parse(org, batch: ImportBatch) -> int:
 
 
 def _drafts_by_text(batch: ImportBatch) -> dict[str, QuestionDraft]:
-    return {d.data['text']: d for d in QuestionDraft.objects.filter(batch=batch)}
+    return {d.data['text']: d for d in _drafts().filter(batch=batch)}
 
 
 @pytest.mark.integration
@@ -132,7 +132,7 @@ class TestPdfParserService:
         )
 
         assert _parse(org, batch) == 1
-        draft = QuestionDraft.objects.get(batch=batch)
+        draft = _drafts().get(batch=batch)
         assert draft.data['text'] == (
             'Uzun savol\nbirinchi sahifadagi davomi\nikkinchi sahifadagi qism'
         )
@@ -202,7 +202,7 @@ class TestPdfParserService:
         assert _parse(org, batch) == 0
         assert batch.status == ImportBatch.Status.FAILED
         assert batch.error_log and batch.error_log.get('error')
-        assert not QuestionDraft.objects.filter(batch=batch).exists()
+        assert not _drafts().filter(batch=batch)
 
     def test_pdf_without_text_completes_with_no_questions(self, org, make_batch, settings):
         settings.ENABLE_AI_PARSER = False
@@ -210,7 +210,7 @@ class TestPdfParserService:
 
         assert _parse(org, batch) == 0
         assert batch.status == ImportBatch.Status.COMPLETED
-        assert not QuestionDraft.objects.filter(batch=batch).exists()
+        assert not _drafts().filter(batch=batch)
 
     def test_dispatcher_routes_pdf_regardless_of_case(self, org, make_batch, settings):
         settings.ENABLE_AI_PARSER = False
@@ -219,3 +219,20 @@ class TestPdfParserService:
         assert isinstance(ParserDispatcher.get_parser(batch), PdfParserService)
         with tenant_context(org):
             assert ParserDispatcher.parse(batch) == 1
+
+
+def _drafts():
+    """Draft rows for assertions, read past RLS (the parser runs in the batch's org)."""
+    return _UnscopedDrafts()
+
+
+class _UnscopedDrafts:
+    def __getattr__(self, name):
+        method = getattr(QuestionDraft.objects, name)
+
+        def call(*args, **kwargs):
+            with unscoped_context():
+                result = method(*args, **kwargs)
+                return list(result) if hasattr(result, '_fetch_all') else result
+
+        return call

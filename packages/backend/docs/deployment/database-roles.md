@@ -2,55 +2,40 @@
 
 Audit items B15 (least privilege) and C18 (encryption at rest).
 
-## Three roles
+## Roles
 
 | Role | Used by | Owns tables | RLS | Secret key |
 |------|---------|-------------|-----|------------|
-| `yuzdanyuz_owner` | the Helm migrate Job only | yes (schema `public`) | applies (`FORCE`) | `DB_MIGRATE_PASSWORD` |
-| `yuzdanyuz` | web, channels, Celery workers, beat (via PgBouncer) | no; `SELECT/INSERT/UPDATE/DELETE` only | stage 1: bypassed (`BYPASSRLS`); stage 2: applies | `DB_PASSWORD` |
+| `yuzdanyuz_owner` | the Helm migrate Job only | yes (schema `public`) | `FORCE`d, passes via its role default `app.rls_bypass = 'all'` | `DB_MIGRATE_PASSWORD` |
+| `yuzdanyuz` | web, channels, Celery workers, beat (via PgBouncer) | no; `SELECT/INSERT/UPDATE/DELETE` only | **enforced** (`NOBYPASSRLS`) | `DB_PASSWORD` |
 | `yuzdanyuz_backup` | backup CronJob (`pg_dump`) | no; read-only | bypassed (`BYPASSRLS`) | `DB_BACKUP_PASSWORD` |
+| `yuzdanyuz_definer` | nobody logs in (`NOLOGIN`) | owns three `SECURITY DEFINER` functions | bypassed (`BYPASSRLS`) | — |
 
 Names come from `externalServices.postgres.{migrateUser,user,backupUser}` in the chart
-values; the chart refuses to render when `migrateUser` equals `user`.
+values (the chart refuses `migrateUser == user`) and `DB_DEFINER_ROLE`.
 
 The runtime role cannot `ALTER`/`DROP` a table, change or drop a policy, turn RLS off, or
-create tables (tests/security/test_db_least_privilege.py runs these against real Postgres).
-
-### Two stages for RLS on the runtime role
-
-**Stage 1 (now): `BYPASSRLS`.** Two measured blockers keep RLS off the runtime role:
-
-1. Shared content: the policies hide another org's public mock exam questions (below).
-2. Index use: RLS quals are security barriers, so a non-leakproof predicate such as the
-   question search `ILIKE` cannot use its trigram index on a table whose RLS applies to
-   the role, even while the bypass policy passes every row
-   (`tests/integration/test_question_search_index.py` falls back to a sequential scan when
-   the suite runs as a non-superuser owner under `FORCE`).
-
-So the runtime role gets `BYPASSRLS` for now. What stage 1 already gives: it owns nothing,
-has DML only, cannot change schema or policies; the owner role is used by the migrate Job
-alone; policies are `FORCE`d and never raise.
-
-**Stage 2: enforcement.** Once the policies model shared content and the hot search paths
-no longer filter RLS tables with non-leakproof operators (e.g. search through a
-`SECURITY DEFINER` function or a denormalised search table):
-
-```sql
-ALTER ROLE yuzdanyuz NOBYPASSRLS;
-```
-
-and set `RLS_ENFORCE_ORG_SESSIONS=true` in the same release. `TestEnforcementBlocker`
-fails when the shared-content gap is closed.
+create tables, and RLS applies to it: with no org it sees no tenant rows, with an org only
+that org's rows plus content shared on purpose
+(`tests/security/test_db_least_privilege.py`, `tests/security/test_rls_enforcement.py`,
+against real Postgres).
 
 ### Create them (once, as a superuser or the managed-database admin)
 
 ```sql
-CREATE ROLE yuzdanyuz_owner  LOGIN PASSWORD '<owner password>';
-CREATE ROLE yuzdanyuz        LOGIN PASSWORD '<runtime password>'
-       NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS;   -- stage 1, see above
-CREATE ROLE yuzdanyuz_backup LOGIN PASSWORD '<backup password>' BYPASSRLS;
-GRANT pg_read_all_data TO yuzdanyuz_backup;          -- PostgreSQL 14+
+CREATE ROLE yuzdanyuz_owner   LOGIN PASSWORD '<owner password>';
+CREATE ROLE yuzdanyuz         LOGIN PASSWORD '<runtime password>'
+       NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+CREATE ROLE yuzdanyuz_backup  LOGIN PASSWORD '<backup password>' BYPASSRLS;
+GRANT pg_read_all_data TO yuzdanyuz_backup;              -- PostgreSQL 14+
+CREATE ROLE yuzdanyuz_definer NOLOGIN BYPASSRLS;
+GRANT yuzdanyuz_definer TO yuzdanyuz_owner;              -- lets migrations hand it functions
+ALTER ROLE yuzdanyuz_owner SET app.rls_bypass = 'all';   -- migrations see every tenant's rows
 ```
+
+`ALTER ROLE ... SET` for a custom parameter needs a superuser (measured on 16.15: the owner
+gets `permission denied to set parameter "app.rls_bypass"`); without it the owner is
+filtered like any role and a data migration would silently see no tenant rows.
 
 New database:
 
@@ -61,15 +46,14 @@ ALTER SCHEMA public OWNER TO yuzdanyuz_owner;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ```
 
-Existing database where the runtime role `yuzdanyuz` owns everything (the setup before
-this change):
+Existing database (runtime role owned everything before #63, or was `BYPASSRLS` after it):
 
 ```sql
 \c yuzdanyuz_db
 ALTER DATABASE yuzdanyuz_db OWNER TO yuzdanyuz_owner;
 ALTER SCHEMA public OWNER TO yuzdanyuz_owner;
 REASSIGN OWNED BY yuzdanyuz TO yuzdanyuz_owner;     -- tables, sequences, functions
-ALTER ROLE yuzdanyuz BYPASSRLS;                     -- stage 1 (as a superuser)
+ALTER ROLE yuzdanyuz NOBYPASSRLS;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ```
 
@@ -98,49 +82,56 @@ SELECT relname FROM pg_class WHERE relrowsecurity AND NOT relforcerowsecurity;  
 
 ## How RLS behaves now
 
-Migration `ops.0002_rls_force_and_bypass` (`core/rls.py`):
+Migrations `ops.0002_rls_force_and_bypass` and `ops.0003_rls_enforce_shared_content`
+(`core/rls.py`):
 
 * every policy reads the organisation through `app_current_org_id()`, which is NULL when
-  no org is set (before, most policies raised `invalid input syntax for type uuid`);
-* every RLS table has `FORCE ROW LEVEL SECURITY`, so the owner is filtered too;
-* commands that had no policy (UPDATE on `catalog_importbatch`, `catalog_questionbank`,
-  `catalog_questiondraft`, `exams_mockexamquestion`; INSERT/UPDATE on
-  `catalog_questionversion`) got the table's own org filter — without it the runtime
-  role could not run them at all;
-* a permissive `rls_bypass` policy reads the session flag `app.rls_bypass`.
+  no org is set (never `invalid input syntax for type uuid`);
+* every RLS table has `FORCE ROW LEVEL SECURITY`;
+* commands that had no policy got the table's own org filter;
+* a permissive `rls_bypass` policy passes a statement only when `app.rls_bypass = 'all'`;
+  unset means no bypass;
+* shared content is readable across organisations (SELECT only): a question is shared when
+  it is in a public question bank or one of its versions is in a public mock exam
+  (`app_question_shared`, `app_question_visible`). Writes stay with the owning org.
 
-The flag is set on every new connection (`core/db_roles.py`):
+What the application sends (`core/db_rls.py`, transaction-local on each statement, so it
+holds behind PgBouncer transaction pooling):
 
-| `RLS_ENFORCE_ORG_SESSIONS` | `RLS_BYPASS_WITHOUT_ORG` | flag | effect |
+| Code runs in | `app.current_org_id` | `app.rls_bypass` | the runtime role sees |
 |---|---|---|---|
-| `false` (default) | — | not sent (= `all`) | every session passes, as when the runtime role owned the tables |
-| `true` | `true` | `on` | a session with an org (`RLSMiddleware`) is filtered to it; org-less sessions (workers, platform admin, anonymous pages) pass |
-| `true` | `false` | `off` | org-less sessions see nothing (fail closed) |
+| a tenant request / `tenant_context(org)` | org | — | that org's rows + shared content |
+| `unscoped_context()` (workers, platform admin, cross-tenant jobs) | any | `all` | everything |
+| neither (anonymous page, stray code) | — | — | no tenant rows; shared content only |
 
-**Why enforcement is off by default (measured 2026-11-12).** The full backend suite run
-as a non-superuser table owner with the flag at `on`: 2353 passed, 10 failed. Eight were
-test artefacts of the session-level org variable (gone since the variable became
-transaction-local, #62).
-The other two show a real gap: the policies do not model content shared across
-organisations. A public mock exam is visible to another org, but its questions
-(`catalog_question`, `catalog_questionversion` belong to the publishing org) are not, and
-question-quality stats for shared questions are lost. Turning enforcement on today would
-break B2B students taking platform mock exams.
-`tests/security/test_db_least_privilege.py::TestEnforcementBlocker` pins this; when the
-policies allow shared content it fails, and the default can flip.
+Inside a transaction, once a statement carried a value, every later statement sends its
+own, so nothing outlives its `tenant_context()` / `unscoped_context()` block (savepoint
+statements are sent unchanged).
 
-What holds regardless of the flag: the runtime role owns nothing, cannot alter or drop
-tables, change or drop policies, disable or un-force RLS, or create tables; `SET
-row_security = off` makes its filtered queries fail instead of returning everything.
+Application rules that keep this working:
 
-Both variables ride transaction-local on each statement (`core/db_rls.py`, audit E05), so
-they survive PgBouncer transaction pooling. The bypass flag is only sent with enforcement
-on; a statement without it (psql, the default mode) counts as `all`.
+* `global_objects` querysets evaluate inside `unscoped_context()` (they are the declared
+  cross-tenant manager); `objects.for_org(org)` evaluates under that org;
+* `save()` / `delete()` / `refresh_from_db()` from code without a tenant context run under
+  the row's own organisation (`core.mixins.RLSRowMixin`; rows without an `organization`
+  column use their parent's). A tenant request keeps its own org, so writing another
+  org's row is still refused by the database;
+* Celery tasks that receive a row id load it inside `unscoped_context()` and work under the
+  row's org (`generate_export`, `evaluate_openended_submission`, `deliver_webhook`);
+  management commands that touch every tenant (`rotate_field_encryption`) run unscoped.
 
-Limits: the flag is set by the application, so it protects against application bugs (a missing
-tenant filter in an org request), not against SQL injection, which could set it.
-`RLS_BYPASS_WITHOUT_ORG=false` (with enforcement on) makes org-less sessions see nothing;
-use it only once every worker task sets an org.
+Question search: RLS quals are security barriers, so a `LIKE` on an RLS table cannot use
+its trigram index (E01). `app_search_question_versions` (owned by `yuzdanyuz_definer`)
+runs the match with the index and applies the same visibility rule itself; the matched
+rows are then loaded normally, under RLS.
+
+Measured (2026-11-12): the full backend suite run as a non-superuser table owner, so RLS
+applies to it like to the runtime role: 2529 passed; the 2 left are a probe role created
+earlier by a superuser in the same cluster and are environment-only. Run as the CI
+superuser: 2531 passed.
+
+Limits: the org and the bypass flag are set by the application, so RLS here catches
+application bugs (a missing tenant filter), not SQL injection, which could set them.
 
 New tenant tables: enable RLS with `core.rls.enable(cursor, table, clause)` in a
 `RunPython` migration. The guard test fails for a policy that reads

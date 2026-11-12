@@ -5,12 +5,13 @@ to a plain role with SET LOCAL ROLE inside the test transaction (rolled back aft
 
 * every RLS table has FORCE ROW LEVEL SECURITY, so even the table owner is filtered;
 * the runtime role created by core.db_roles owns nothing and only gets DML grants;
-* policies never raise when no organisation is set; the `app.rls_bypass` flag (sent per
-  statement by core.db_rls when RLS_ENFORCE_ORG_SESSIONS is on, unset = 'all') decides who
-  passes: 'all', 'on' (org sessions filtered) or 'off'.
+* policies never raise when no organisation is set; the only bypass is the explicit
+  `app.rls_bypass = 'all'` that core.db_rls sends inside unscoped_context().
+  Shared content and search: test_rls_enforcement.py.
 """
 
 import uuid
+from contextlib import nullcontext
 
 import pytest
 from django.db import connection, transaction
@@ -18,7 +19,7 @@ from django.db.utils import DatabaseError
 from django.test import override_settings
 
 from apps.webhooks.models import WebhookEndpoint
-from core.tenant import tenant_context
+from core.tenant import tenant_context, unscoped_context
 
 T = 'webhooks_webhookendpoint'
 
@@ -53,14 +54,14 @@ def _role(cur, *, owner_of=None):
     return name
 
 
-def _orgs_seen(cur, org_id=None, bypass='off'):
-    cur.execute("SELECT set_config('app.rls_bypass', %s, true)", [bypass])
-    if org_id is None:
-        cur.execute('RESET app.current_org_id')
-    else:
-        cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org_id)])
-    cur.execute(f'SELECT DISTINCT organization_id FROM {T}')  # noqa: S608
-    return {r[0] for r in cur.fetchall()}
+def _orgs_seen(cur, org=None, *, unscoped=False):
+    """Orgs visible to one statement issued the way the app issues it (core.db_rls)."""
+    with (
+        tenant_context(org) if org is not None else nullcontext(),
+        unscoped_context() if unscoped else nullcontext(),
+    ):
+        cur.execute(f'SELECT DISTINCT organization_id FROM {T}')  # noqa: S608
+        return {r[0] for r in cur.fetchall()}
 
 
 @pytest.mark.django_db
@@ -76,7 +77,7 @@ class TestForceRls:
             role = _role(cur, owner_of=T)
             cur.execute(f'SET LOCAL ROLE {role}')
             try:
-                assert _orgs_seen(cur, org.id) == {org.id}
+                assert _orgs_seen(cur, org) == {org.id}
             finally:
                 cur.execute('RESET ROLE')
 
@@ -129,12 +130,13 @@ class TestRuntimeRole:
         with connection.cursor() as cur:
             cur.execute(f'SET LOCAL ROLE {runtime}')
             try:
-                assert _orgs_seen(cur, org.id) == {org.id}
-                assert _orgs_seen(cur, org2.id) == {org2.id}
+                assert _orgs_seen(cur, org) == {org.id}
+                assert _orgs_seen(cur, org2) == {org2.id}
                 # no org and no bypass: fail closed, and no error from ''::uuid
-                assert _orgs_seen(cur, None) == set()
-                # explicit bypass (workers, admin, anonymous): everything, as before
-                assert _orgs_seen(cur, None, bypass='on') == {org.id, org2.id}
+                assert _orgs_seen(cur) == set()
+                # the explicit bypass (unscoped_context: workers, platform admin)
+                assert _orgs_seen(cur, unscoped=True) == {org.id, org2.id}
+                assert _orgs_seen(cur, org, unscoped=True) == {org.id, org2.id}
             finally:
                 cur.execute('RESET ROLE')
 
@@ -142,10 +144,10 @@ class TestRuntimeRole:
         with connection.cursor() as cur:
             cur.execute(f'SET LOCAL ROLE {runtime}')
             try:
-                _orgs_seen(cur, org.id)
-                cur.execute(f'UPDATE {T} SET name = %s', ['x'])  # noqa: S608
-                assert cur.rowcount == 1
-                with pytest.raises(DatabaseError), transaction.atomic():
+                with tenant_context(org):
+                    cur.execute(f'UPDATE {T} SET name = %s', ['x'])  # noqa: S608
+                    assert cur.rowcount == 1
+                with pytest.raises(DatabaseError), transaction.atomic(), tenant_context(org):
                     cur.execute(
                         f'INSERT INTO {T} (id, organization_id, name, url, secret, events, '  # noqa: S608
                         'is_active, created_at, updated_at) '
@@ -177,10 +179,8 @@ class TestRuntimeRole:
         with connection.cursor() as cur:
             cur.execute(f'SET LOCAL ROLE {runtime}')
             try:
-                cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org.id)])
-                cur.execute("SELECT set_config('app.rls_bypass', 'off', true)")
                 cur.execute('SET LOCAL row_security = off')
-                with pytest.raises(DatabaseError), transaction.atomic():
+                with pytest.raises(DatabaseError), transaction.atomic(), tenant_context(org):
                     cur.execute(f'SELECT count(*) FROM {T}')  # noqa: S608
             finally:
                 cur.execute('RESET ROLE')
@@ -199,95 +199,3 @@ class TestRuntimeRole:
             assert cur.fetchone()[0] is True
             cur.execute("SELECT has_table_privilege(%s, %s, 'TRUNCATE')", [role, T])
             assert cur.fetchone()[0] is False
-
-
-def _flag_seen_by_a_statement():
-    """The flag as the statement itself sees it (core/db_rls.py prefixes statements)."""
-    with connection.cursor() as cur:
-        cur.execute("SELECT current_setting('app.rls_bypass', true)")
-        return cur.fetchone()[0]
-
-
-@pytest.mark.django_db
-class TestBypassFlag:
-    def test_default_sends_no_flag(self, db):
-        """Org-session enforcement is opt-in (RLS_ENFORCE_ORG_SESSIONS): see the next class."""
-        assert _flag_seen_by_a_statement() in (None, '')
-
-    @override_settings(RLS_ENFORCE_ORG_SESSIONS=True)
-    def test_enforcement_mode_puts_the_flag_on_every_statement(self, db):
-        assert _flag_seen_by_a_statement() == 'on'
-
-    @override_settings(RLS_ENFORCE_ORG_SESSIONS=True, RLS_BYPASS_WITHOUT_ORG=False)
-    def test_fail_closed_mode(self, db):
-        assert _flag_seen_by_a_statement() == 'off'
-
-    def test_unset_flag_counts_as_all(self, two_orgs_rows, org, org2):
-        with connection.cursor() as cur:
-            role = _role(cur, owner_of=T)
-            cur.execute(f'SET LOCAL ROLE {role}')
-            try:
-                cur.execute("SELECT set_config('app.rls_bypass', '', true)")
-                cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org.id)])
-                cur.execute(f'SELECT DISTINCT organization_id FROM {T}')  # noqa: S608
-                assert {r[0] for r in cur.fetchall()} == {org.id, org2.id}
-            finally:
-                cur.execute('RESET ROLE')
-
-    def test_all_passes_an_org_session_and_on_does_not(self, two_orgs_rows, org, org2):
-        with connection.cursor() as cur:
-            role = _role(cur, owner_of=T)
-            cur.execute(f'SET LOCAL ROLE {role}')
-            try:
-                assert _orgs_seen(cur, org.id, bypass='all') == {org.id, org2.id}
-                assert _orgs_seen(cur, org.id, bypass='on') == {org.id}
-            finally:
-                cur.execute('RESET ROLE')
-
-
-@pytest.mark.django_db
-class TestEnforcementBlocker:
-    """Why RLS_ENFORCE_ORG_SESSIONS is off: under enforcement another org's public mock
-    exam questions are invisible. When the policies learn about shared content this test
-    fails; then flip the default and update docs/deployment/database-roles.md."""
-
-    def test_public_mock_questions_of_another_org_are_hidden(self, org, org2, subject, superuser):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
-        from apps.catalog.models import Question, QuestionVersion
-        from apps.exams.models import MockExam, MockExamQuestion
-
-        now = timezone.now()
-        with tenant_context(org):
-            q = Question.objects.create(organization=org, subject=subject, type='SC')
-            qv = QuestionVersion.objects.create(
-                question=q, version_number=1, content={'text': 'q'}, options=[]
-            )
-            exam = MockExam.objects.create(
-                organization=org,
-                title='public',
-                duration_minutes=60,
-                is_public=True,
-                scheduled_at=now - timedelta(hours=1),
-                closes_at=now + timedelta(hours=1),
-                status=MockExam.Status.PUBLISHED,
-                created_by=superuser,
-            )
-            MockExamQuestion.objects.create(mock_exam=exam, question_version=qv, order=1)
-        with connection.cursor() as cur:
-            role = _role(cur)
-            cur.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}')
-            cur.execute(f'SET LOCAL ROLE {role}')
-            try:
-                cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
-                cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org2.id)])
-                cur.execute('SELECT count(*) FROM exams_mockexam WHERE id = %s', [str(exam.id)])
-                assert cur.fetchone()[0] == 1  # the public exam itself is visible
-                cur.execute(
-                    'SELECT count(*) FROM catalog_questionversion WHERE id = %s', [str(qv.id)]
-                )
-                assert cur.fetchone()[0] == 0  # ...its questions are not
-            finally:
-                cur.execute('RESET ROLE')

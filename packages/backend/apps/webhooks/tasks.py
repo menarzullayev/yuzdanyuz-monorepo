@@ -8,6 +8,8 @@ from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 from django.utils import timezone
 
+from core.tenant import unscoped_context
+
 from .egress import BlockedDestination, EgressError, safe_post
 from .models import WebhookDelivery
 from .services import canonical_json, sign_payload
@@ -61,7 +63,9 @@ def deliver_webhook(self, delivery_id: str):
     mark EXHAUSTED + raise → Celery `task_failure` signal → DLQ (ISSUE-308).
     """
     try:
-        delivery = WebhookDelivery.objects.select_related('endpoint').get(pk=delivery_id)
+        # one delivery by id, from a worker without a tenant context (B15: RLS applies)
+        with unscoped_context():
+            delivery = WebhookDelivery.objects.select_related('endpoint').get(pk=delivery_id)
     except WebhookDelivery.DoesNotExist:
         logger.warning('deliver_webhook: delivery %s not found', delivery_id)
         return

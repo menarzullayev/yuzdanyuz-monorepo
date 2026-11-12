@@ -30,6 +30,7 @@ from django.utils import timezone
 from apps.catalog.services.ai_providers.base import TransientProviderError
 from core.claude_cli import ClaudeRateLimitError, ClaudeTimeoutError
 from core.locks import single_run
+from core.tenant import unscoped_context
 
 from .models import AIFeedback, OpenEndedSubmission
 
@@ -333,7 +334,12 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
     from core.metrics import AI_TUTOR_CALLS
 
     try:
-        sub = OpenEndedSubmission.objects.select_related('question_version').get(pk=submission_id)
+        # worker without a tenant context: the question version is the submitter's org's
+        # (or shared) content, which RLS would hide here (B15)
+        with unscoped_context():
+            sub = OpenEndedSubmission.objects.select_related('question_version').get(
+                pk=submission_id
+            )
     except OpenEndedSubmission.DoesNotExist:
         logger.warning('evaluate_openended_submission: %s topilmadi', submission_id)
         return {'status': 'not_found'}

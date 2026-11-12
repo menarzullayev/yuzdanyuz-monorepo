@@ -35,7 +35,7 @@ from django.utils.translation import gettext_lazy as _
 from simple_history.models import HistoricalRecords
 
 from core.managers import GlobalManager, TenantManager
-from core.mixins import AuditUserMixin, SoftDeleteMixin, TenantTimestampMixin
+from core.mixins import AuditUserMixin, RLSRowMixin, SoftDeleteMixin, TenantTimestampMixin
 
 # ── 1. Wallet + WalletTransaction ─────────────────────────────────────────────
 
@@ -432,7 +432,7 @@ class SubscriptionPlan(models.Model):
         return self.price_uzs
 
 
-class OrganizationSubscription(AuditUserMixin, models.Model):
+class OrganizationSubscription(RLSRowMixin, AuditUserMixin, models.Model):
     """Org'ning aktiv subscription'i.
 
     Tenant scope (ISSUE-110 W1): `organization` FK org-scoped, lekin tarixiy sabablar
