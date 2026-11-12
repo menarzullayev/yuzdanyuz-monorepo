@@ -22,10 +22,14 @@ class AIParserService:
 
         from .ai_providers import ProviderFactory
 
-        configs = AIProviderConfig.objects.filter(
-            is_active=True,
-            use_for__in=[AIProviderConfig.UseFor.PARSER, AIProviderConfig.UseFor.ALL],
-        ).order_by('priority')
+        configs = (
+            AIProviderConfig.objects.filter(
+                is_active=True,
+                use_for__in=[AIProviderConfig.UseFor.PARSER, AIProviderConfig.UseFor.ALL],
+            )
+            .exclude(extra_options__purpose='stt')
+            .order_by('priority')
+        )
 
         if not configs.exists():
             if getattr(settings, 'LLM_BACKEND', '') == 'claude_cli':

@@ -1,6 +1,28 @@
 {{- if .Values.backup.enabled }}
-# Daily WAL-G full base backup. WAL streaming is enabled separately at the
-# postgres level (see scripts/backup/wal-g-config.sh + docs/deployment/backup.md).
+{{- if not .Values.backup.destination }}
+{{- fail "backup.enabled=true but backup.destination is empty: set the rclone remote:path where encrypted dumps go (e.g. dest:yuzdanyuz-backups/postgres). See docs/operations/backup-restore.md." }}
+{{- end }}
+{{- if not .Values.backup.gpgPublicKey }}
+{{- fail "backup.enabled=true but backup.gpgPublicKey is empty: set the ASCII-armored PUBLIC key that backups are encrypted to. See docs/operations/backup-restore.md." }}
+{{- end }}
+{{- if not .Values.backup.rcloneSecret }}
+{{- fail "backup.enabled=true but backup.rcloneSecret is empty: name the Secret holding RCLONE_CONFIG_<REMOTE>_* settings." }}
+{{- end }}
+# Public key only: anyone with cluster access can encrypt, nobody can decrypt.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-backup-gpg
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+data:
+  public.asc: |
+    {{- .Values.backup.gpgPublicKey | nindent 4 }}
+---
+# Daily encrypted logical backup (pg_dump -> gpg -> rclone), image docker/Dockerfile.backup.
+# Works against any reachable PostgreSQL (managed or another release); needs no access
+# to the database's volume. Restore: docs/operations/backup-restore.md.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -16,34 +38,58 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      activeDeadlineSeconds: {{ .Values.backup.activeDeadlineSeconds }}
       template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: backup
         spec:
-          restartPolicy: OnFailure
+          restartPolicy: Never
           securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
           {{- with $.Values.global.imagePullSecrets }}
           imagePullSecrets: {{- toYaml . | nindent 12 }}
           {{- end }}
           containers:
-            - name: walg
-              image: {{ .Values.backup.image }}
-              command: ["/bin/sh", "-c"]
-              args:
-                - |
-                  set -euo pipefail
-                  echo "[backup] starting full base backup at $(date -u)"
-                  wal-g backup-push /var/lib/postgresql/data
-                  echo "[backup] retention: keep last 7 full backups"
-                  wal-g delete retain FULL 7 --confirm
-                  echo "[backup] done at $(date -u)"
+            - name: backup
+              image: {{ include "yuzdanyuz.backupImage" . }}
+              imagePullPolicy: {{ .Values.backup.image.pullPolicy }}
+              env:
+                - name: PGHOST
+                  value: {{ .Values.externalServices.postgres.host | quote }}
+                - name: PGPORT
+                  value: {{ .Values.externalServices.postgres.port | quote }}
+                - name: PGDATABASE
+                  value: {{ .Values.externalServices.postgres.name | quote }}
+                - name: PGUSER
+                  value: {{ .Values.externalServices.postgres.user | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secretRef.name }}
+                      key: DB_PASSWORD
+                - name: BACKUP_DESTINATION
+                  value: {{ .Values.backup.destination | quote }}
+                - name: BACKUP_RETENTION_DAYS
+                  value: {{ .Values.backup.retentionDays | quote }}
+                - name: BACKUP_GPG_PUBLIC_KEY_FILE
+                  value: /etc/backup-gpg/public.asc
               envFrom:
                 - secretRef:
-                    name: walg-credentials
+                    name: {{ .Values.backup.rcloneSecret }}
+              resources: {{- toYaml .Values.backup.resources | nindent 16 }}
+              securityContext: {{- toYaml .Values.containerSecurityContext | nindent 16 }}
               volumeMounts:
-                - name: pgdata
-                  mountPath: /var/lib/postgresql/data
+                - name: work
+                  mountPath: /work
+                - name: gpg
+                  mountPath: /etc/backup-gpg
                   readOnly: true
           volumes:
-            - name: pgdata
-              persistentVolumeClaim:
-                claimName: postgres-pvc
+            - name: work
+              emptyDir:
+                sizeLimit: {{ .Values.backup.workDirSizeLimit }}
+            - name: gpg
+              configMap:
+                name: {{ include "yuzdanyuz.fullname" . }}-backup-gpg
 {{- end }}

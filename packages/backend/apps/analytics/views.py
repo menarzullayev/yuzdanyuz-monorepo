@@ -17,15 +17,18 @@ Tenant isolation: request.org via TenantMiddleware.
 
 import logging
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Count, Q
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import services
-from .models import ReportExport
+from .models import QuestionQualityStat, ReportExport
 from .tasks import generate_export
 
 logger = logging.getLogger(__name__)
@@ -141,6 +144,76 @@ class ReportExportDetailView(APIView):
         if request.query_params.get('download') == '1' and report.file:
             return FileResponse(report.file.open('rb'), as_attachment=True)
         return Response(_serialize_report(report))
+
+
+class QuestionQualityView(APIView):
+    """
+    GET /api/analytics/question-quality/
+        ?flag=ALL_WRONG|ALL_RIGHT|OFTEN_SKIPPED  ?preliminary=true|false
+        ?subject=<uuid>  ?question_type=SC|MC|...  ?page=N
+
+    Lists question versions flagged as problematic (no flag filter → every row with at
+    least one flag). `counts` is per flag over the set filtered by everything except
+    `flag` itself, so the UI can show tabs with totals.
+    """
+
+    def get(self, request):
+        org = _require_org(request)
+        params = request.query_params
+
+        qs = QuestionQualityStat.objects.filter(organization=org).select_related(
+            'question_version__question__subject'
+        )
+        prelim = params.get('preliminary')
+        if prelim is not None:
+            if prelim.lower() not in ('true', 'false'):
+                raise ValidationError({'preliminary': 'true|false'})
+            qs = qs.filter(is_preliminary=prelim.lower() == 'true')
+        if params.get('subject'):
+            try:
+                qs = qs.filter(question_version__question__subject_id=params['subject'])
+            except (ValueError, TypeError, DjangoValidationError):
+                raise ValidationError({'subject': 'uuid'}) from None
+        if params.get('question_type'):
+            qs = qs.filter(question_version__question__type=params['question_type'])
+
+        counts = qs.aggregate(
+            **{
+                f.value: Count('id', filter=Q(flags__contains=[f.value]))
+                for f in QuestionQualityStat.Flag
+            }
+        )
+
+        flag = params.get('flag')
+        if flag:
+            if flag not in QuestionQualityStat.Flag.values:
+                raise ValidationError({'flag': f'one of {QuestionQualityStat.Flag.values}'})
+            qs = qs.filter(flags__contains=[flag])
+        else:
+            qs = qs.exclude(flags=[])
+
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(qs.order_by('-attempts', 'id'), request, view=self)
+        resp = paginator.get_paginated_response([_serialize_quality(s) for s in page])
+        resp.data['counts'] = counts
+        return resp
+
+
+def _serialize_quality(stat: QuestionQualityStat) -> dict:
+    question = stat.question_version.question
+    return {
+        'question_version_id': str(stat.question_version_id),
+        'question_id': str(question.id),
+        'subject_id': str(question.subject_id) if question.subject_id else None,
+        'subject_name': question.subject.name if question.subject_id else None,
+        'question_type': question.type,
+        'attempts': stat.attempts,
+        'correct_rate': round(stat.correct_rate, 4),
+        'skip_rate': round(stat.skip_rate, 4),
+        'flags': stat.flags,
+        'is_preliminary': stat.is_preliminary,
+        'computed_at': stat.computed_at,
+    }
 
 
 def _serialize_report(report: ReportExport) -> dict:

@@ -32,7 +32,8 @@ class ProviderFactory:
         klass = getattr(module, class_name)
 
         return klass(
-            api_key=config.api_key,
+            api_key=config.get_api_key(),
             model=config.model,
             base_url=config.base_url,
+            extra_options=config.extra_options or {},
         )

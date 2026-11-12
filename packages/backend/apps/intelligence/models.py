@@ -191,6 +191,8 @@ class OpenEndedSubmission(SoftDeleteMixin, models.Model):
         HUMAN_APPROVED = 'human_approved', _('Inson tasdiqlagan')
         DISPUTED = 'disputed', _("Bahsli (admin ko'radi)")
         FAILED = 'failed', _('AI xato')
+        # Speaking without a speech-to-text provider: the AI step is skipped.
+        AWAITING_HUMAN = 'awaiting_human', _("Inson baholashi kutilmoqda (AI o'tkazib yuborildi)")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # ISSUE-103: SET_NULL bilan — User.delete() audit'ni yo'q qilmaydi (AI grading saqlanadi)
@@ -230,6 +232,8 @@ class OpenEndedSubmission(SoftDeleteMixin, models.Model):
         related_name='openended_reviews',
     )
     human_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # Final per-criterion scores from the teacher; same keys as ai_feedback (calibration input).
+    human_criteria = models.JSONField(default=dict, blank=True)
     human_notes = models.TextField(blank=True)
 
     submitted_at = models.DateTimeField(auto_now_add=True)

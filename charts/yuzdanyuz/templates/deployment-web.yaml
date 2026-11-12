@@ -1,3 +1,4 @@
+{{- include "yuzdanyuz.assertNoCommand" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,13 +35,14 @@ spec:
         - name: web
           image: {{ include "yuzdanyuz.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: {{ .Values.web.command }}
+          args: {{- toYaml .Values.web.args | nindent 12 }}
           ports:
             - name: http
               containerPort: 8000
               protocol: TCP
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
           env:
+            {{- include "yuzdanyuz.podIPEnv" . | nindent 12 }}
             {{- range $key, $value := .Values.web.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
@@ -49,6 +51,7 @@ spec:
             httpGet:
               path: /health/
               port: http
+              {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
@@ -57,6 +60,7 @@ spec:
             httpGet:
               path: /health/ready/
               port: http
+              {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5

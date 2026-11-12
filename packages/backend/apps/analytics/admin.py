@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ExamEvent, ReportExport
+from .models import ExamEvent, Expense, ReportExport
 
 
 @admin.register(ExamEvent)
@@ -31,3 +31,10 @@ class ReportExportAdmin(admin.ModelAdmin):
     list_filter = ('status', 'fmt', 'report_type')
     raw_id_fields = ('user', 'organization')
     readonly_fields = ('file', 'requested_at', 'completed_at', 'error')
+
+
+@admin.register(Expense)
+class ExpenseAdmin(admin.ModelAdmin):
+    list_display = ('date', 'type', 'amount_uzs', 'created_by', 'is_deleted')
+    list_filter = ('type', 'is_deleted')
+    raw_id_fields = ('created_by',)

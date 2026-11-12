@@ -41,7 +41,7 @@ class AIProviderConfigAdmin(admin.ModelAdmin):
         (
             'Ulanish',
             {
-                'fields': ('api_key', 'base_url'),
+                'fields': ('api_key', 'base_url', 'extra_options'),
                 'description': (
                     'API kalit: Claude → console.anthropic.com | OpenAI → platform.openai.com | '
                     'Gemini → aistudio.google.com.<br>'

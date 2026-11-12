@@ -54,6 +54,7 @@ app.conf.task_routes = {
     'engagement.leagues_weekly_recalc': {'queue': 'batch'},
     'commerce.auto_renew_subscriptions': {'queue': 'batch'},
     'analytics.generate_export': {'queue': 'batch'},
+    'analytics.refresh_question_quality': {'queue': 'batch'},
     'exams.publish_scheduled_mocks': {'queue': 'batch'},
     'exams.quarantine_check': {'queue': 'batch'},
     'intelligence.check_ai_token_expiry': {'queue': 'batch'},
@@ -65,6 +66,11 @@ app.conf.beat_schedule = {
     'ai-token-expiry-daily': {
         'task': 'intelligence.check_ai_token_expiry',
         'schedule': crontab(hour=9, minute=0),
+    },
+    # Question quality stats (savol sifati) for every organization.
+    'question-quality-daily': {
+        'task': 'analytics.refresh_question_quality',
+        'schedule': crontab(hour=3, minute=30),
     },
 }
 

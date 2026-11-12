@@ -117,11 +117,28 @@ def _serialize_feedback(fb: AIFeedback) -> dict:
 # ─── Open-Ended Submission ───────────────────────────────────────────────────
 
 
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
+AUDIO_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.ogg', '.oga', '.webm', '.flac', '.mp4')
+
+
+def _validate_audio(audio, transcript: str) -> None:
+    """Speaking needs an audio file (or, for tests/imports, a ready transcript)."""
+    if audio is None:
+        if not transcript.strip():
+            raise ValidationError({'audio': 'audio file is required'})
+        return
+    if audio.size > MAX_AUDIO_BYTES:
+        raise ValidationError({'audio': 'file is larger than 25 MB'})
+    if not audio.name.lower().endswith(AUDIO_EXTENSIONS):
+        raise ValidationError({'audio': f'allowed formats: {", ".join(AUDIO_EXTENSIONS)}'})
+
+
 class OpenEndedSubmitView(APIView):
     def post(self, request):
         qv_id = request.data.get('question_version')
         sub_type = request.data.get('submission_type', 'essay')
-        content = request.data.get('content', '')
+        content = request.data.get('content', '') or ''
+        audio = request.FILES.get('audio')
 
         if not qv_id:
             raise ValidationError({'question_version': 'required'})
@@ -129,6 +146,8 @@ class OpenEndedSubmitView(APIView):
             raise ValidationError({'submission_type': "'essay' yoki 'audio'"})
         if sub_type == 'essay' and not content.strip():
             raise ValidationError({'content': "essay bo'sh bo'lmasligi kerak"})
+        if sub_type == 'audio':
+            _validate_audio(audio, content)
 
         qv = get_object_or_404(QuestionVersion, pk=qv_id)
 
@@ -153,6 +172,7 @@ class OpenEndedSubmitView(APIView):
             question_version=qv,
             submission_type=sub_type,
             content=content,
+            audio_file=audio if sub_type == 'audio' else None,
             status=OpenEndedSubmission.Status.PENDING,
         )
         evaluate_openended_submission.delay(str(sub.id))
@@ -200,14 +220,26 @@ class OpenEndedQAView(APIView):
 
 
 def _serialize_submission(sub: OpenEndedSubmission) -> dict:
+    # The AI score is an estimate until a teacher sets the final score; students must be able
+    # to tell the two apart, so `score` says which one it is.
+    if sub.human_score is not None:
+        score = {'value': float(sub.human_score), 'is_final': True, 'label': 'final'}
+    elif sub.ai_score is not None:
+        score = {'value': float(sub.ai_score), 'is_final': False, 'label': 'AI estimate'}
+    else:
+        score = None
+    feedback = sub.ai_feedback or {}
     return {
         'id': str(sub.id),
         'submission_type': sub.submission_type,
         'status': sub.status,
         'content': sub.content[:500] + '...' if len(sub.content) > 500 else sub.content,
+        'score': score,
         'ai_score': float(sub.ai_score) if sub.ai_score is not None else None,
         'ai_feedback': sub.ai_feedback,
+        'ai_not_assessed': feedback.get('not_assessed', []),
         'human_score': float(sub.human_score) if sub.human_score is not None else None,
+        'human_criteria': sub.human_criteria or {},
         'human_notes': sub.human_notes,
         'submitted_at': sub.submitted_at,
         'ai_completed_at': sub.ai_completed_at,

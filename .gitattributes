@@ -1,0 +1,5 @@
+# Shell scripts and nginx templates run inside Linux images. A CRLF checkout on
+# Windows (core.autocrlf=true) bakes CRLF into the image and the shebang fails with
+# "env: 'bash\r': No such file or directory".
+*.sh text eol=lf
+docker/nginx/** text eol=lf
