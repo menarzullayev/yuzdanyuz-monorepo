@@ -17,6 +17,11 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
+      # Immutable image built by build-and-push.yml only after CI passed on that commit
+      # (the chart refuses `latest`/empty tags). Bump with scripts/bump-image-tag.sh prod <sha> in a PR, then sync manually.
+      parameters:
+        - name: image.tag
+          value: sha-402e821
   destination:
     server: https://kubernetes.default.svc
     namespace: yuzdanyuz-prod

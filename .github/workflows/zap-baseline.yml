@@ -1,0 +1,75 @@
+name: ZAP baseline
+
+# OWASP ZAP passive scan (audit C21) of the backend running with production settings
+# (loadtest/compose.yml: core.settings.prod, gunicorn, Postgres, Redis). ZAP talks
+# HTTPS to the `edge` service (Caddy with a local CA), which proxies to the web
+# replicas with X-Forwarded-Proto/-For the way the ingress does. Two passes, both
+# passive (no attack traffic):
+#   - zap-baseline.py: spider from /admin/login/ (/ redirects to the Next.js frontend)
+#     and passive rules;
+#   - zap-api-scan.py -S: every endpoint of the OpenAPI schema, safe mode (passive only);
+#     -O pins the host, so a `servers:` entry in the schema can never send ZAP elsewhere.
+# FAIL-level findings fail the job; triaged rules live in loadtest/zap/rules.tsv.
+# Results: the "zap-reports" artifact. Runbook: docs/security/zap-baseline.md.
+on:
+  schedule:
+    - cron: '30 2 * * 1'   # Mondays 02:30 UTC (07:30 Tashkent)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-baseline
+  cancel-in-progress: false
+
+env:
+  ZAP_IMAGE: zaproxy/zap-stable:2.17.0
+  COMPOSE: docker compose -p zap -f loadtest/compose.yml
+
+jobs:
+  zap:
+    name: ZAP baseline + API (passive)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start the stack (prod settings, HTTPS edge)
+        run: |
+          $COMPOSE up -d --build --wait web edge
+          mkdir -p loadtest/out/zap && chmod 777 loadtest/out/zap
+
+      - name: Baseline scan (spider + passive rules)
+        run: |
+          set +e
+          docker run --rm --network zap_default -v "$PWD/loadtest:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t https://edge.yuzdanyuz.test/admin/login/ -m 3 -I -j -c zap/rules.tsv \
+            -r out/zap/baseline.html -J out/zap/baseline.json -w out/zap/baseline.md
+          echo "BASELINE_RC=$?" >> "$GITHUB_ENV"
+
+      - name: API scan from the OpenAPI schema (safe mode, passive)
+        run: |
+          set +e
+          docker run --rm --network zap_default -v "$PWD/loadtest:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t https://edge.yuzdanyuz.test/api/schema/ -f openapi -S -I -c zap/rules.tsv \
+            -O https://edge.yuzdanyuz.test \
+            -r out/zap/api.html -J out/zap/api.json -w out/zap/api.md
+          echo "API_RC=$?" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: zap-reports
+          path: loadtest/out/zap/
+          retention-days: 30
+
+      - name: Fail on FAIL-level findings
+        run: |
+          # zap-*.py: 0 = clean, 1 = FAIL findings, 2 = WARN only (-I ignores), 3 = error
+          echo "baseline rc=${BASELINE_RC} api rc=${API_RC}"
+          test "${BASELINE_RC}" = 0 && test "${API_RC}" = 0
+
+      - name: Stop the stack
+        if: always()
+        run: $COMPOSE down -v

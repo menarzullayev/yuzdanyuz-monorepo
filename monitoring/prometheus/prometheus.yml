@@ -1,17 +1,15 @@
-# Prometheus config — used by docker-compose and K8s (kube-prometheus-stack).
-#
-# In K8s, prefer ServiceMonitor CRDs (see charts/yuzdanyuz/templates/servicemonitor.yaml).
-# This file is the standalone fallback / dev-mode scrape config.
+# Prometheus config for the local compose monitoring stack:
+#   docker compose --profile monitoring up -d
+# In Kubernetes the chart's ServiceMonitor/PodMonitor/PrometheusRule replace this file
+# (docs/deployment/monitoring.md). Job names match the chart's relabelled `job` labels,
+# which the alert rules select on.
 
 global:
-  scrape_interval:     30s
+  scrape_interval: 15s
   evaluation_interval: 30s
-  external_labels:
-    cluster: yuzdanyuz
-    env: ${ENV:-dev}
 
 rule_files:
-  - /etc/prometheus/alerts/*.yml
+  - /etc/prometheus/rules/prometheus-rules.yml   # charts/yuzdanyuz/files/prometheus-rules.yml
 
 alerting:
   alertmanagers:
@@ -19,41 +17,22 @@ alerting:
         - targets: ['alertmanager:9093']
 
 scrape_configs:
-  # ── Django backend (web pods) ──────────────────────────────────────────────
-  - job_name: 'yuzdanyuz-backend'
+  - job_name: yuzdanyuz-backend
     metrics_path: /metrics
-    scrape_interval: 30s
-    scrape_timeout: 10s
     static_configs:
       - targets: ['backend:8000']
-        labels:
-          component: web
+        labels: {namespace: compose}
 
-  # ── Celery worker (exposes its own metrics if django-prometheus instrumented) ─
-  - job_name: 'yuzdanyuz-celery'
-    metrics_path: /metrics
-    scrape_interval: 30s
+  - job_name: yuzdanyuz-celery-worker
     static_configs:
-      - targets: ['celery-worker:8000']
-        labels:
-          component: worker
+      - targets: ['celery-worker:9540', 'celery-ai:9540']
+        labels: {namespace: compose}
 
-  # ── PostgreSQL exporter (run separately) ───────────────────────────────────
-  - job_name: 'postgres-exporter'
+  - job_name: yuzdanyuz-celery-exporter
     static_configs:
-      - targets: ['postgres-exporter:9187']
+      - targets: ['celery-exporter:9808']
+        labels: {namespace: compose}
 
-  # ── Redis exporter ─────────────────────────────────────────────────────────
-  - job_name: 'redis-exporter'
-    static_configs:
-      - targets: ['redis-exporter:9121']
-
-  # ── Node exporter (host-level) ─────────────────────────────────────────────
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
-
-  # ── Self-scrape ────────────────────────────────────────────────────────────
-  - job_name: 'prometheus'
+  - job_name: prometheus
     static_configs:
       - targets: ['localhost:9090']

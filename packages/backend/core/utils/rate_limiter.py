@@ -151,7 +151,9 @@ def check(identifier: str, tier: RateTier) -> None:
     count_key = f'rl:count:{tier.name}:{identifier}'
     pipe = r.pipeline()
     pipe.incr(count_key)
-    pipe.expire(count_key, tier.window)
+    # Fixed window: only the first request sets the TTL (NX). Refreshing it on every
+    # request meant a steady user's counter never reset (load test 2026-11-12).
+    pipe.expire(count_key, tier.window, nx=True)
     count, _ = pipe.execute()
 
     # 3) Limit oshganmi?
@@ -187,7 +189,7 @@ def check_with_org_aggregate(
     count_key = f'rl:count:{org_tier.name}:{org_identifier}'
     pipe = r.pipeline()
     pipe.incr(count_key)
-    pipe.expire(count_key, org_tier.window)
+    pipe.expire(count_key, org_tier.window, nx=True)
     count, _ = pipe.execute()
 
     if count > org_tier.limit:

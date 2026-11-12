@@ -1,0 +1,20 @@
+{{- if .Values.prometheusRule.enabled }}
+# Alert rules from files/prometheus-rules.yml (the same file the compose monitoring
+# stack loads; CI runs promtool check/test on it). Picked up by the Prometheus
+# Operator when its ruleSelector matches prometheusRule.labels.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- $rules := .Files.Get "files/prometheus-rules.yml" | fromYaml }}
+  {{- if not $rules.groups }}
+  {{- fail "files/prometheus-rules.yml has no rule groups" }}
+  {{- end }}
+  groups: {{- toYaml $rules.groups | nindent 4 }}
+{{- end }}

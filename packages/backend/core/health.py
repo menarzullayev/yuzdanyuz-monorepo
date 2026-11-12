@@ -8,10 +8,14 @@ ISSUE-105: tashqi servis check'lar qo'shildi (Anthropic, Telegram, Payme).
 Har biri optional — config'da yoqilgan bo'lsa tekshiriladi. Stub mode'dagi
 servislar skip qilinadi.
 
-Cheap, dependency-free, no auth — exposed on the internal port; restrict at
-ingress/network policy level if needed.
+Quick mode is cheap, dependency-free and public (kubelet probes, uptime checks).
+Deep mode (`?deep=1`) calls third-party APIs, so it needs `X-Health-Token:
+<HEALTH_DEEP_TOKEN>` or a staff session; anyone else gets 403. Failures are
+logged by exception type only: an httpx error message contains the request URL,
+and the Telegram URL contains the bot token.
 """
 
+import hmac
 import logging
 
 from django.conf import settings
@@ -67,7 +71,7 @@ def _check_anthropic() -> bool | None:
             resp = client.head('https://api.anthropic.com/')
             return resp.status_code < 500
     except Exception as exc:
-        logger.warning('readiness: anthropic check failed: %s', exc)
+        logger.warning('readiness: anthropic check failed: %s', type(exc).__name__)
         return False
 
 
@@ -83,7 +87,7 @@ def _check_telegram() -> bool | None:
             resp = client.get(f'https://api.telegram.org/bot{token}/getMe')
             return resp.status_code == 200 and resp.json().get('ok') is True
     except Exception as exc:
-        logger.warning('readiness: telegram check failed: %s', exc)
+        logger.warning('readiness: telegram check failed: %s', type(exc).__name__)
         return False
 
 
@@ -102,8 +106,17 @@ def _check_payments() -> bool | None:
                     return False
         return True
     except Exception as exc:
-        logger.warning('readiness: payments check failed: %s', exc)
+        logger.warning('readiness: payments check failed: %s', type(exc).__name__)
         return False
+
+
+def _deep_allowed(request) -> bool:
+    expected = getattr(settings, 'HEALTH_DEEP_TOKEN', '')
+    given = request.headers.get('X-Health-Token', '')
+    if expected and given and hmac.compare_digest(given.encode(), expected.encode()):
+        return True
+    user = getattr(request, 'user', None)
+    return bool(user is not None and user.is_authenticated and user.is_staff)
 
 
 def readiness(request):
@@ -115,6 +128,8 @@ def readiness(request):
     Prometheus blackbox exporter har 1 daqiqada ishlatishi mumkin.
     """
     deep = request.GET.get('deep') == '1'
+    if deep and not _deep_allowed(request):
+        return JsonResponse({'status': 'forbidden', 'mode': 'deep'}, status=403)
 
     checks: dict[str, bool | None] = {
         'database': _check_database(),

@@ -26,7 +26,7 @@ resource "cloudflare_record" "root" {
   name    = "@"
   value   = var.origin_ip
   type    = "A"
-  ttl     = 1            # Auto when proxied
+  ttl     = 1 # Auto when proxied
   proxied = true
   comment = "Apex — Cloudflare proxy hides origin IP (DDoS protection)"
 }
@@ -56,7 +56,7 @@ resource "cloudflare_record" "wildcard" {
 resource "cloudflare_zone_settings_override" "settings" {
   zone_id = var.zone_id
   settings {
-    ssl                      = "strict"        # Origin must serve valid cert (cert-manager)
+    ssl                      = "strict" # Origin must serve valid cert (cert-manager)
     always_use_https         = "on"
     automatic_https_rewrites = "on"
     min_tls_version          = "1.2"
@@ -66,12 +66,12 @@ resource "cloudflare_zone_settings_override" "settings" {
     websockets               = "on"
     brotli                   = "on"
     early_hints              = "on"
-    security_level           = "medium"        # bot fight + JS challenge for suspicious
+    security_level           = "medium" # bot fight + JS challenge for suspicious
     challenge_ttl            = 1800
     browser_check            = "on"
     privacy_pass             = "on"
     server_side_exclude      = "on"
-    hotlink_protection       = "off"           # student avatars must load on mobile
+    hotlink_protection       = "off" # student avatars must load on mobile
   }
 }
 
@@ -128,8 +128,8 @@ resource "cloudflare_ruleset" "waf_custom" {
 
   # Geo-fence admin endpoints to UZ + RU + CIS
   rules {
-    action     = "block"
-    expression = "(http.request.uri.path contains \"/admin\") and (ip.geoip.country ne \"UZ\") and (ip.geoip.country ne \"RU\") and (ip.geoip.country ne \"KZ\") and (ip.geoip.country ne \"KG\") and (ip.geoip.country ne \"TJ\") and (ip.geoip.country ne \"TM\")"
+    action      = "block"
+    expression  = "(http.request.uri.path contains \"/admin\") and (ip.geoip.country ne \"UZ\") and (ip.geoip.country ne \"RU\") and (ip.geoip.country ne \"KZ\") and (ip.geoip.country ne \"KG\") and (ip.geoip.country ne \"TJ\") and (ip.geoip.country ne \"TM\")"
     description = "Restrict /admin to CIS region"
     enabled     = true
   }

@@ -39,24 +39,42 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/*
 Image reference — combines registry + repository + tag.
 */}}
+{{/*
+Image tags must be immutable and come from CI (audit H02): build-and-push.yml pushes
+sha-<full git sha> only after the CI workflow passed on that commit, and vX.Y.Z for
+release tags. `latest`, branch names and empty tags are refused at render time.
+*/}}
+{{- define "yuzdanyuz.checkedTag" -}}
+{{- $tag := toString . -}}
+{{- if not $tag -}}
+{{- fail "image.tag is empty: deploy an immutable tag built by CI from a green commit, e.g. --set image.tag=sha-<40-char git sha> (docs/deployment/argocd.md, \"Image tags\")" -}}
+{{- end -}}
+{{- if not (regexMatch `^(sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$` $tag) -}}
+{{- fail (printf "image tag %q is mutable or unknown: only sha-<git sha> or vX.Y.Z tags (pushed by build-and-push.yml after CI passed) may be deployed" $tag) -}}
+{{- end -}}
+{{- $tag -}}
+{{- end -}}
+
 {{- define "yuzdanyuz.image" -}}
 {{- $registry := .Values.global.imageRegistry | default "" -}}
+{{- $tag := include "yuzdanyuz.checkedTag" .Values.image.tag -}}
 {{- if $registry -}}
-{{- printf "%s/%s:%s" $registry .Values.image.repository .Values.image.tag -}}
+{{- printf "%s/%s:%s" $registry .Values.image.repository $tag -}}
 {{- else -}}
-{{- printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+{{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Nginx image reference.
+Nginx image reference (same commit as the backend unless nginx.image.tag is set).
 */}}
 {{- define "yuzdanyuz.nginxImage" -}}
 {{- $registry := .Values.global.imageRegistry | default "" -}}
+{{- $tag := include "yuzdanyuz.checkedTag" (.Values.nginx.image.tag | default .Values.image.tag) -}}
 {{- if $registry -}}
-{{- printf "%s/%s:%s" $registry .Values.nginx.image.repository .Values.nginx.image.tag -}}
+{{- printf "%s/%s:%s" $registry .Values.nginx.image.repository $tag -}}
 {{- else -}}
-{{- printf "%s:%s" .Values.nginx.image.repository .Values.nginx.image.tag -}}
+{{- printf "%s:%s" .Values.nginx.image.repository $tag -}}
 {{- end -}}
 {{- end -}}
 
@@ -188,7 +206,7 @@ Backup image reference (docker/Dockerfile.backup).
 */}}
 {{- define "yuzdanyuz.backupImage" -}}
 {{- $registry := .Values.global.imageRegistry | default "" -}}
-{{- $tag := .Values.backup.image.tag | default .Values.image.tag -}}
+{{- $tag := include "yuzdanyuz.checkedTag" (.Values.backup.image.tag | default .Values.image.tag) -}}
 {{- if $registry -}}
 {{- printf "%s/%s:%s" $registry .Values.backup.image.repository $tag -}}
 {{- else -}}

@@ -177,6 +177,46 @@ services:
       - staticdata:/var/www/static:ro
       - mediadata:/var/www/media:ro
 
+  # ── Monitoring (opt-in): docker compose --profile monitoring up -d ──────────
+  # Prometheus :9090, Alertmanager :9093, Grafana :3001, with the same rules and
+  # dashboards the Helm chart ships (charts/yuzdanyuz/files/).
+  celery-exporter:
+    profiles: [monitoring]
+    image: danihodovic/celery-exporter:0.12.2
+    command:
+      - --broker-url=redis://:${REDIS_PASSWORD:-yuzdanyuz_dev_redis}@redis:6379/0
+      - --retry-interval=5
+    depends_on: [redis]
+
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v3.16.0
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./charts/yuzdanyuz/files/prometheus-rules.yml:/etc/prometheus/rules/prometheus-rules.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    profiles: [monitoring]
+    image: prom/alertmanager:v0.35.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/tmp/am"]
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # telegram-bot-token + telegram-chat-id (gitignored)
+      - ./monitoring/alertmanager:/etc/alertmanager/secrets:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:12.4.15
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./charts/yuzdanyuz/files/dashboards:/var/lib/grafana/dashboards/yuzdanyuz:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+
 volumes:
   pgdata:
   redisdata:

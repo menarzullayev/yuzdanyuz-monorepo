@@ -24,6 +24,17 @@ run() {
     fi
 }
 
+# Prometheus multiprocess mode (audit G03): gunicorn and celery prefork run several
+# processes, each with its own in-memory counters, so a scrape used to see one random
+# process. With PROMETHEUS_MULTIPROC_DIR set, prometheus_client writes per-process
+# files there and /metrics (django-prometheus, core.celery worker server) sums them.
+# The directory must start empty on every container start.
+prepare_metrics_dir() {
+    export PROMETHEUS_MULTIPROC_DIR="${PROMETHEUS_MULTIPROC_DIR:-/tmp/prometheus-multiproc}"
+    rm -rf "$PROMETHEUS_MULTIPROC_DIR"
+    mkdir -p "$PROMETHEUS_MULTIPROC_DIR"
+}
+
 case "$CMD" in
     web)
         # Run migrate-on-boot only when explicitly opted in; in K8s use a dedicated
@@ -35,19 +46,24 @@ case "$CMD" in
         if [[ "${COLLECTSTATIC_ON_BOOT:-false}" == "true" ]]; then
             python manage.py collectstatic --noinput
         fi
+        prepare_metrics_dir
+        # No gunicorn access log: core.middleware.request_id writes one JSON access
+        # line per request (request id, user id, status, latency).
         run gunicorn core.wsgi:application \
             --bind 0.0.0.0:8000 \
             --workers "${GUNICORN_WORKERS:-4}" \
             --threads "${GUNICORN_THREADS:-2}" \
             --timeout "${GUNICORN_TIMEOUT:-30}" \
             --graceful-timeout "${GUNICORN_GRACEFUL_TIMEOUT:-30}" \
-            --access-logfile - \
             --error-logfile -
         ;;
     asgi)
         run daphne -b 0.0.0.0 -p 8000 core.asgi:application
         ;;
     worker)
+        prepare_metrics_dir
+        # Worker metrics (yz_* counters incremented inside tasks) on :CELERY_METRICS_PORT.
+        export CELERY_METRICS_PORT="${CELERY_METRICS_PORT:-9540}"
         # -O fair: even task distribution among workers. The default covers every
         # routed queue except `ai`, which runs on its own capped worker.
         run celery -A core worker -l "${CELERY_LOG_LEVEL:-info}" \

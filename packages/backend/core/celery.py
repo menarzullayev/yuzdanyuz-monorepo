@@ -16,6 +16,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
@@ -143,6 +144,25 @@ app.conf.beat_schedule = {
         'schedule': crontab(minute=20),
     },
 }
+
+
+@worker_ready.connect
+def start_worker_metrics_server(**kwargs):
+    """Serve worker-side Prometheus metrics (yz_* counters bumped inside tasks).
+
+    Runs once in the worker's main process. The prefork children write their samples
+    to PROMETHEUS_MULTIPROC_DIR (set by docker/entrypoint.sh); this server sums them.
+    Celery's own task/queue metrics come from celery-exporter, not from here.
+    """
+    port = os.getenv('CELERY_METRICS_PORT', '')
+    if not port or not os.getenv('PROMETHEUS_MULTIPROC_DIR'):
+        return
+    from prometheus_client import CollectorRegistry, start_http_server
+    from prometheus_client.multiprocess import MultiProcessCollector
+
+    registry = CollectorRegistry()
+    MultiProcessCollector(registry)
+    start_http_server(int(port), registry=registry)
 
 
 @app.task(bind=True, ignore_result=True)

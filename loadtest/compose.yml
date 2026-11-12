@@ -1,0 +1,138 @@
+# Production-settings stack for load tests (k6) and the OWASP ZAP baseline scan.
+# Nothing persists: Postgres runs on tmpfs, Redis without snapshots.
+#
+#   docker compose -p yuzdanyuz-loadtest -f loadtest/compose.yml up -d --wait
+#   docker compose -p yuzdanyuz-loadtest -f loadtest/compose.yml exec web \
+#     python /loadtest/seed_loadtest.py --users 400 --mocks 40 --questions 10
+#   ... run k6 / ZAP (docs/operations/load-testing.md) ...
+#   docker compose -p yuzdanyuz-loadtest -f loadtest/compose.yml down -v
+#
+# Same image, entrypoint and settings module as the Helm chart (core.settings.prod,
+# gunicorn 4 workers x 2 threads, Prometheus multiprocess). Each web container gets
+# the chart's per-pod CPU/memory limit (1 CPU, 1Gi); scale like the chart with
+# `up -d --scale web=3` (values.yaml web.replicas).
+
+x-backend: &backend
+  image: ${BACKEND_IMAGE:-yuzdanyuz-backend:loadtest}
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.backend
+  environment: &env
+    DJANGO_SETTINGS_MODULE: core.settings.prod
+    DJANGO_ENV: prod
+    SECRET_KEY: loadtest-only-secret-key-0123456789abcdefghijklmnopqrstuv
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_NAME: yuzdanyuz
+    DB_USER: yuzdanyuz
+    DB_PASSWORD: loadtest
+    REDIS_URL: redis://redis:6379/1
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CHANNELS_REDIS_URL: redis://redis:6379/2
+    ALLOWED_HOSTS: web,web:8000,edge.yuzdanyuz.test,localhost
+    TELEGRAM_WEBHOOK_SECRET: loadtest
+    # No frontend here: / redirects to <FRONTEND_BASE_URL>/login, keep it on the edge host.
+    FRONTEND_BASE_URL: https://edge.yuzdanyuz.test/frontend
+    # k6/ZAP run inside this network and act as the ingress: their X-Forwarded-For
+    # is believed, so each virtual user has its own client IP for rate limiting.
+    TRUSTED_PROXY_CIDRS: 192.168.250.0/24
+    OTEL_ENABLED: "false"
+    LLM_BACKEND: anthropic_api
+    LOG_LEVEL: WARNING
+    ACCESS_LOG_LEVEL: WARNING
+  volumes:
+    - ./:/loadtest
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: yuzdanyuz
+      POSTGRES_USER: yuzdanyuz
+      POSTGRES_PASSWORD: loadtest
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB"]
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "yuzdanyuz", "-d", "yuzdanyuz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *backend
+    command: ["migrate"]
+    restart: "no"
+
+  web:
+    <<: *backend
+    command: ["web"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    cpus: 1.0
+    mem_limit: 1g
+    # No host port, so `--scale web=N` works; k6 and ZAP reach http://web:8000 inside
+    # the network (Docker DNS round-robins connections across the replicas).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+    environment:
+      <<: *env
+      CELERY_QUEUES: default,celery,critical,realtime,batch,ai
+      CELERY_CONCURRENCY: "4"
+    # The image HEALTHCHECK probes gunicorn; a worker serves only its metrics port.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9540/metrics', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # HTTPS in front of the web replicas, like the ingress (used by the ZAP scan).
+  edge:
+    image: caddy:2.11.9
+    volumes:
+      - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+    # A dotted name: Java (ZAP) sends no TLS SNI for single-label hosts like "edge".
+    networks:
+      default:
+        aliases: [edge.yuzdanyuz.test]
+    depends_on:
+      web:
+        condition: service_healthy
+
+  celery-exporter:
+    image: danihodovic/celery-exporter:0.12.2
+    command: ["--broker-url=redis://redis:6379/0", "--retry-interval=5"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.250.0/24

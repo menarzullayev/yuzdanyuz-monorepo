@@ -9,6 +9,7 @@ from core.infra import (
     database_options,
     redis_connection_kwargs,
 )
+from core.observability import quiet_url_loggers
 
 load_dotenv()
 
@@ -64,6 +65,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     # Prometheus — must be FIRST (before) and LAST (after) for accurate timing
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
+    # G01: X-Request-ID, JSON access log, Sentry request_id tag + user id
+    'core.middleware.request_id.RequestIdMiddleware',
     'core.middleware.fix_prefix.ForceScriptNameMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # C14: Content-Security-Policy (before WhiteNoise so static responses get it too)
@@ -130,6 +133,10 @@ TRUSTED_PROXY_CIDRS = [
     c.strip() for c in os.getenv('TRUSTED_PROXY_CIDRS', '').split(',') if c.strip()
 ]
 
+# /health/ready/?deep=1 calls Telegram/Anthropic/payment APIs. It needs this token in
+# the X-Health-Token header (or a staff session); empty = deep checks disabled.
+HEALTH_DEEP_TOKEN = os.getenv('HEALTH_DEEP_TOKEN', '')
+
 # Per-account password-login backoff (core/utils/login_throttle.py).
 LOGIN_FAILURE_FREE_ATTEMPTS = int(os.getenv('LOGIN_FAILURE_FREE_ATTEMPTS', '5'))
 # After the free attempts: 1 min, then 5 min, then 15 min (cap) per further failure.
@@ -159,6 +166,10 @@ CELERY_TIMEZONE = 'Asia/Tashkent'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 300  # 5 daqiqa hard limit
 CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 daqiqada SoftTimeLimitExceeded
+# G03: task events feed celery-exporter (charts/yuzdanyuz/templates/celery-exporter.yaml),
+# which serves celery_task_*_total, celery_task_runtime and celery_queue_length.
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
 
 # Delivery guarantees (F10): ack after the task finishes, so a worker killed by a
 # rolling deploy or OOM puts the task back on the queue instead of losing it.
@@ -375,7 +386,9 @@ ASGI_APPLICATION = 'core.asgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        # django-prometheus wrapper: emits django_db_* (query latency, connections) for
+        # the Django dashboard; otherwise identical to django.db.backends.postgresql.
+        'ENGINE': 'django_prometheus.db.backends.postgresql',
         'NAME': os.getenv('DB_NAME', 'yuzdanyuz_db'),
         'USER': os.getenv('DB_USER', 'postgres'),
         'PASSWORD': os.getenv('DB_PASSWORD', ''),
@@ -449,24 +462,32 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'plain': {
-            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+            '()': 'core.observability.RedactingFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s',
         },
         'json': {
-            '()': 'pythonjsonlogger.json.JsonFormatter',
+            '()': 'core.observability.RedactingJsonFormatter',
             'format': '%(asctime)s %(name)s %(levelname)s %(message)s',
         },
+    },
+    'filters': {
+        'request_id': {'()': 'core.middleware.request_id.RequestIdFilter'},
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'plain',
+            'filters': ['request_id'],
         },
         'json_console': {
             'class': 'logging.StreamHandler',
             'formatter': 'json',
+            'filters': ['request_id'],
         },
     },
     'loggers': {
+        # G01: httpx & co. log full request URLs (Telegram bot token is in the path).
+        **quiet_url_loggers(),
         # ISSUE-X06: structured events — JSON handler so aggregators index
         # fields as top-level keys (event, user_id, org_id, …).
         'yuzdanyuz.events': {

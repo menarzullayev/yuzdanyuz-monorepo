@@ -9,13 +9,27 @@ DEBUG = False
 # Sentry — DSN env-driven; safe no-op if SENTRY_DSN missing.
 init_sentry()
 
-# Production'da SECRET_KEY env'dan kelishi shart — base.py'dagi insecure default
-# prod muhitida ishlasa, JWT/session imzolari aniq qiymat bilan yaratiladi va
-# loyihani ekspozitsiya qiladi. Fail-loud o'rnatish o'rniga sukut bilan o'tib ketmaslik.
-if not os.environ.get('SECRET_KEY'):
+# Fail fast (audit A01): base.py falls back to dev-friendly defaults (insecure
+# SECRET_KEY, empty DB password, no webhook secret, trust-nothing proxy list) that
+# must never reach production silently. Every missing key is reported at once.
+REQUIRED_ENV = (
+    'SECRET_KEY',
+    'DB_PASSWORD',
+    'DB_HOST',
+    'REDIS_URL',
+    'CELERY_BROKER_URL',
+    'ALLOWED_HOSTS',
+    # Telegram webhook requests are authenticated only by this header secret.
+    'TELEGRAM_WEBHOOK_SECRET',
+    # Empty = every client shares the ingress pod's IP for rate limiting.
+    'TRUSTED_PROXY_CIDRS',
+)
+_missing_env = [k for k in REQUIRED_ENV if not os.environ.get(k, '').strip()]
+if _missing_env:
     raise ImproperlyConfigured(
-        'SECRET_KEY environment variable is required in production. '
-        'See .env.example for the expected format.'
+        'Missing required environment variables for production: '
+        + ', '.join(_missing_env)
+        + '. See packages/backend/.env.example.'
     )
 SECRET_KEY = os.environ['SECRET_KEY']
 

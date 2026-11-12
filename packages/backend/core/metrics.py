@@ -80,3 +80,11 @@ SMS_BALANCE = Gauge(
     'Current SMS provider balance in UZS (low → OTP auth blocked)',
     ['backend'],  # backend=playmobile|eskiz
 )
+
+# ── Celery dead-letter queue (apps/analytics/dlq.py) ────────────────────────
+# Incremented in the worker; scraped from the worker metrics server (core.celery).
+TASK_DLQ = Counter(
+    'yz_task_dlq_total',
+    'Failed Celery tasks routed to the dead-letter queue',
+    ['task_name'],
+)

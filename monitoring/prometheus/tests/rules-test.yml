@@ -1,0 +1,112 @@
+# promtool unit tests for charts/yuzdanyuz/files/prometheus-rules.yml
+#   promtool test rules monitoring/prometheus/tests/rules-test.yml
+# Each alert is checked both ways: it fires on the bad series and stays quiet on a healthy one.
+rule_files:
+  - ../../../charts/yuzdanyuz/files/prometheus-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: backend down vs up
+    interval: 1m
+    input_series:
+      - series: 'up{job="yuzdanyuz-backend", instance="web-1"}'
+        values: '0x5'
+      - series: 'up{job="yuzdanyuz-backend", instance="web-2"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BackendDown
+        exp_alerts:
+          - exp_labels: {alertname: BackendDown, severity: critical, component: backend, job: yuzdanyuz-backend, instance: web-1}
+            exp_annotations:
+              summary: "Backend target web-1 is down"
+      - eval_time: 3m
+        alertname: BackendNotScraped
+        exp_alerts: []
+
+  - name: backend never scraped
+    interval: 1m
+    input_series:
+      - series: 'up{job="something-else"}'
+        values: '1x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: BackendNotScraped
+        exp_alerts:
+          - exp_labels: {alertname: BackendNotScraped, severity: critical, component: monitoring, job: yuzdanyuz-backend}
+            exp_annotations:
+              summary: "Prometheus has no yuzdanyuz-backend target (ServiceMonitor missing or not selected)"
+
+  - name: beat missed runs fires when the probe task stops
+    interval: 1m
+    input_series:
+      # received 1 run every 5 minutes for 30m, then nothing for 40m
+      - series: 'celery_task_received_total{name="ops.run_health_probe", queue_name="batch", hostname="w1"}'
+        values: '0 0 0 0 0 1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6+0x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CeleryBeatMissedRuns
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: CeleryBeatMissedRuns
+        exp_alerts:
+          - exp_labels: {alertname: CeleryBeatMissedRuns, severity: critical, component: celery-beat}
+            exp_annotations:
+              summary: "No scheduled ops.run_health_probe run in 20 minutes: celery beat is not scheduling"
+
+  - name: beat missed runs fires when the metric never existed
+    interval: 1m
+    input_series:
+      - series: 'up{job="yuzdanyuz-celery-exporter"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CeleryBeatMissedRuns
+        exp_alerts:
+          - exp_labels: {alertname: CeleryBeatMissedRuns, severity: critical, component: celery-beat}
+            exp_annotations:
+              summary: "No scheduled ops.run_health_probe run in 20 minutes: celery beat is not scheduling"
+
+  - name: per-queue backlog thresholds
+    interval: 1m
+    input_series:
+      - series: 'celery_queue_length{queue_name="critical"}'
+        values: '80x10'
+      - series: 'celery_queue_length{queue_name="default"}'
+        values: '80x10'
+      - series: 'celery_queue_length{queue_name="batch"}'
+        values: '80x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: CeleryCriticalQueueBacklog
+        exp_alerts:
+          - exp_labels: {alertname: CeleryCriticalQueueBacklog, severity: critical, component: celery, queue_name: critical}
+            exp_annotations:
+              summary: "critical queue backlog 80 (exam finalize / payments are delayed)"
+      - eval_time: 10m
+        alertname: CeleryDefaultQueueBacklog
+        exp_alerts: []
+
+  - name: dead-lettered and failed critical tasks
+    interval: 1m
+    input_series:
+      - series: 'yz_task_dlq_total{task_name="exams.finalize_attempt_score", namespace="prod"}'
+        values: '0 0 1 1 1'
+      - series: 'celery_task_failed_total{name="exams.finalize_attempt_score", queue_name="critical", namespace="prod", hostname="w1", exception="ValueError"}'
+        values: '0 0 1 1 1'
+      - series: 'celery_task_failed_total{name="analytics.generate_export", queue_name="batch", namespace="prod", hostname="w1", exception="ValueError"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TasksDeadLettered
+        exp_alerts:
+          - exp_labels: {alertname: TasksDeadLettered, severity: warning, component: celery, namespace: prod, task_name: exams.finalize_attempt_score}
+            exp_annotations:
+              summary: "1 exams.finalize_attempt_score task(s) went to the DLQ (apps.analytics FailedTask)"
+      - eval_time: 4m
+        alertname: CeleryCriticalTaskFailed
+        exp_alerts:
+          - exp_labels: {alertname: CeleryCriticalTaskFailed, severity: critical, component: celery, namespace: prod, name: exams.finalize_attempt_score}
+            exp_annotations:
+              summary: "critical task exams.finalize_attempt_score failed (exam score / payment not finalized)"
