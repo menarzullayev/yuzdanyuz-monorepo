@@ -158,4 +158,3 @@ def test_unscoped_bypass_never_reaches_another_client(org, org2, release_pool):
     finally:
         e.close()
         f.close()
-
