@@ -38,6 +38,7 @@ from django.utils import timezone
 
 from apps.accounts.models import CustomUser, DeviceSession
 from apps.accounts.services.user_agents import parse_user_agent
+from core.infra import redis_from_url
 
 # ── Settings ────────────────────────────────────────────────
 ACCESS_TOKEN_TTL = timedelta(minutes=15)
@@ -52,7 +53,7 @@ _redis_client: redis.Redis | None = None
 def _redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.Redis.from_url(
+        _redis_client = redis_from_url(
             getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
             decode_responses=True,
         )

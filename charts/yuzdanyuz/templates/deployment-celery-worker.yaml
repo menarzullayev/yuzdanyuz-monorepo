@@ -76,6 +76,11 @@ spec:
             {{- end }}
             - name: CELERY_QUEUES
               value: {{ $w.queues | quote }}
+            {{- if $.Values.pgbouncer.enabled }}
+            # PgBouncer pool with the task-length statement_timeout
+            - name: DB_NAME
+              value: {{ printf "%s_worker" $.Values.externalServices.postgres.name | quote }}
+            {{- end }}
           # Liveness via celery inspect (covers stuck event loops)
           livenessProbe:
             exec:
@@ -89,4 +94,17 @@ spec:
             failureThreshold: 3
           resources: {{- toYaml $w.cfg.resources | nindent 12 }}
           securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          # F13: report exports and other task-written files must land on the shared
+          # media volume that web and nginx serve, not on the worker's ephemeral disk.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: media
+              mountPath: /app/media
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ include "yuzdanyuz.fullname" $ }}-media
 {{- end }}

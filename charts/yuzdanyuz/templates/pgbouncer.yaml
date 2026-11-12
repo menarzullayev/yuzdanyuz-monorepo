@@ -1,0 +1,181 @@
+{{- if .Values.pgbouncer.enabled }}
+{{- /*
+PgBouncer in transaction pooling mode (audit E05). Two pools on the same database:
+  <db>         web + channels (short statement_timeout)
+  <db>_worker  Celery workers (statement_timeout = task hard limit)
+*/ -}}
+{{- $pg := .Values.externalServices.postgres -}}
+{{- $pb := .Values.pgbouncer -}}
+{{- $perReplica := add $pb.maxDbConnections $pb.workerMaxDbConnections -}}
+{{- $budget := sub $pg.maxConnections $pb.reservedConnections -}}
+{{- if gt (mul $perReplica $pb.replicas) $budget }}
+{{- fail (printf "pgbouncer: replicas (%d) x (maxDbConnections + workerMaxDbConnections = %d) exceeds externalServices.postgres.maxConnections - pgbouncer.reservedConnections (%d)" (int $pb.replicas) (int $perReplica) (int $budget)) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-pgbouncer
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+data:
+  pgbouncer.ini: |
+    [databases]
+    {{ $pg.name }} = host={{ $pg.host }} port={{ $pg.port }} dbname={{ $pg.name }} max_db_connections={{ $pb.maxDbConnections }} connect_query='SET statement_timeout = {{ $pb.statementTimeoutMs }}'
+    {{ $pg.name }}_worker = host={{ $pg.host }} port={{ $pg.port }} dbname={{ $pg.name }} max_db_connections={{ $pb.workerMaxDbConnections }} connect_query='SET statement_timeout = {{ $pb.workerStatementTimeoutMs }}'
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    unix_socket_dir =
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer-run/userlist.txt
+    pool_mode = transaction
+    max_client_conn = {{ $pb.maxClientConn }}
+    default_pool_size = {{ $pb.defaultPoolSize }}
+    reserve_pool_size = {{ $pb.reservePoolSize }}
+    reserve_pool_timeout = 3
+    ignore_startup_parameters = extra_float_digits
+    server_tls_sslmode = {{ $pg.sslmode }}
+    {{- if and $pg.sslrootcert (ne $pg.sslrootcert "system") }}
+    server_tls_ca_file = {{ $pg.sslrootcert }}
+    {{- end }}
+    server_connect_timeout = 5
+    server_login_retry = 5
+    server_idle_timeout = 300
+    server_lifetime = 3600
+    client_login_timeout = 30
+    query_wait_timeout = {{ $pb.queryWaitTimeout }}
+    idle_transaction_timeout = {{ $pb.idleTransactionTimeout }}
+    tcp_keepalive = 1
+    log_connections = 0
+    log_disconnections = 0
+    stats_period = 60
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-pgbouncer
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  replicas: {{ $pb.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pgbouncer
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: pgbouncer
+      annotations:
+        checksum/pgbouncer: {{ $pb | toJson | sha256sum }}
+        checksum/postgres: {{ $pg | toJson | sha256sum }}
+    spec:
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # clients reconnect quickly; give in-flight transactions time to finish
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: pgbouncer
+          image: "{{ $pb.image.repository }}:{{ $pb.image.tag }}"
+          imagePullPolicy: {{ $pb.image.pullPolicy }}
+          ports:
+            - name: pgbouncer
+              containerPort: 6432
+              protocol: TCP
+          env:
+            # the image entrypoint writes these into AUTH_FILE (never into the ConfigMap)
+            - name: AUTH_TYPE
+              value: scram-sha-256
+            - name: AUTH_FILE
+              value: /etc/pgbouncer-run/userlist.txt
+            - name: DB_USER
+              value: {{ $pg.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretRef.name }}
+                  key: DB_PASSWORD
+          lifecycle:
+            preStop:
+              # the Service drops this endpoint before SIGTERM reaches PgBouncer
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+          readinessProbe:
+            tcpSocket:
+              port: pgbouncer
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: pgbouncer
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources: {{- toYaml $pb.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pgbouncer/pgbouncer.ini
+              subPath: pgbouncer.ini
+              readOnly: true
+            - name: run
+              mountPath: /etc/pgbouncer-run
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "yuzdanyuz.fullname" . }}-pgbouncer
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "yuzdanyuz.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: pgbouncer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-pgbouncer
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "yuzdanyuz.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 6432
+      targetPort: pgbouncer
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "yuzdanyuz.fullname" . }}-pgbouncer
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  minAvailable: {{ $pb.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pgbouncer
+{{- end }}

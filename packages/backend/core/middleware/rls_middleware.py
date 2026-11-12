@@ -1,66 +1,35 @@
 """
 PostgreSQL Row Level Security (RLS) Middleware
-Sets organization context for database-level multi-tenant isolation
+
+The RLS variable `app.current_org_id` is no longer set here with a session-level
+`SET`: that leaked between pooled clients under PgBouncer transaction pooling
+(audit E05). `core.db_rls` now attaches it, transaction-local, to every statement
+issued inside a tenant context. This middleware only guarantees that the tenant
+context matches `request.org` for the rest of the request.
 """
 
 import logging
 
 from django.conf import settings
-from django.db import connection
-from django.http import HttpResponseServerError
 from django.utils.deprecation import MiddlewareMixin
+
+from core.tenant import get_current_org, set_current_org
 
 logger = logging.getLogger(__name__)
 
 
 class RLSMiddleware(MiddlewareMixin):
-    """
-    Set PostgreSQL session variables for RLS policies.
+    """Keep the tenant context (and so the per-statement RLS variable) on request.org.
 
-    Usage:
-    1. Enable in settings.MIDDLEWARE
-    2. Assumes request.org is set by TenantMiddleware
-    3. Automatically filters tenant-aware queries
-
-    Defense-in-depth: agar RLS session variable o'rnatib bo'lmasa,
-    request to'xtaydi (HTTP 500). L3 himoya qatlami yumshoq xato bilan
-    o'tib ketishi xavfli (L1/L2 yetarli emas degan tushuncha).
+    Assumes request.org is set by TenantMiddleware. Superuser/staff bypass is handled
+    in the app layer (`unscoped_context()` / `is_unscoped_allowed()`), not via RLS.
     """
 
     def process_request(self, request):
-        """Set organization context for RLS policies"""
-        if not self._is_rls_enabled():
+        if not getattr(settings, 'ENABLE_RLS', True):
             return None
-
-        # Get organization from request (set by TenantMiddleware)
         org = getattr(request, 'org', None)
-
-        try:
-            with connection.cursor() as cursor:
-                # Set organization context for RLS policies
-                if org:
-                    org_id = str(org.id)
-                    cursor.execute('SET app.current_org_id = %s;', [org_id])
-                    logger.debug(f'RLS: Set org context to {org_id}')
-                else:
-                    # No org context (anonymous or platform admin)
-                    cursor.execute('RESET app.current_org_id;')
-                    logger.debug('RLS: Cleared org context (platform admin)')
-
-                # ISSUE-110 W6: ilgari `SET app.is_admin = ...` chaqirilardi, lekin
-                # hech bir RLS policy uni o'qimasdi. Dead code olib tashlandi.
-                # Superuser/staff bypass app qatlamida `TenantManager`'ning
-                # `unscoped_context()` yoki `is_unscoped_allowed()` orqali hal qilinadi.
-
-        except Exception as e:
-            logger.error('RLS middleware error: %s', e, exc_info=True)
-            # Defense-in-depth: L3 (RLS) muvaffaqiyatsiz bo'lsa, request rad etiladi.
-            # Yumshoq xato bilan o'tib ketish L1/L2 qatlamlariga to'liq ishonib qoladi.
-            return HttpResponseServerError('Database security context error')
-
+        if org is not None and get_current_org() != org:
+            logger.warning('RLS: tenant context differed from request.org; realigned')
+            set_current_org(org)
         return None
-
-    @staticmethod
-    def _is_rls_enabled():
-        """Check if RLS is enabled in settings"""
-        return getattr(settings, 'ENABLE_RLS', True)

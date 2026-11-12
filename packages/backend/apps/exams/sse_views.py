@@ -10,9 +10,13 @@ saqlanadi — frontend SSE'ga ko'chgandan keyin deprecate qilinadi.
 
 from __future__ import annotations
 
-import time
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import nullcontext
 
+from asgiref.sync import sync_to_async
+from django.core.handlers.wsgi import WSGIRequest
+from django.db import close_old_connections
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -22,14 +26,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.sse import sse_format, sse_response
-from core.tenant import unscoped_context
+from core.tenant import tenant_context, unscoped_context
 
 from .models import AntiCheatEvent, ExamAttempt
 
 # Periodic timer interval (production'da 5s yetadi — frontend timer'i o'z-o'zi ham hisoblaydi).
 _TIMER_PUSH_INTERVAL = 5
 
-# Stream lifecycle uchun cheklov — Apache `Timeout 300` bilan moslangan.
+# Stream lifecycle uchun cheklov — nginx/ingress proxy_read_timeout 300s ichida.
 # Bu vaqtdan keyin browser EventSource avtomatik reconnect qiladi (Last-Event-ID bilan davom).
 _STREAM_MAX_DURATION = 240  # 4 daqiqa
 
@@ -60,57 +64,99 @@ def _load_attempt(user, attempt_id) -> tuple[ExamAttempt | None, JsonResponse | 
     return attempt, None
 
 
+def _poll_attempt(attempt_pk, org) -> dict | None:
+    """One status read for the stream, in a worker thread.
+
+    Runs on the shared executor (not a per-request thread), so N open streams use a
+    bounded number of threads and DB connections; close_old_connections() drops a
+    connection that went stale between ticks. `org` re-enters the tenant context:
+    the stream outlives TenantMiddleware, and RLS needs the org on each statement.
+    """
+    close_old_connections()
+    try:
+        with tenant_context(org) if org is not None else nullcontext(), unscoped_context():
+            return (
+                ExamAttempt.objects.filter(pk=attempt_pk)
+                .values('status', 'cancel_reason', 'started_at', 'exam__duration_minutes')
+                .first()
+            )
+    finally:
+        close_old_connections()
+
+
+def _row_seconds_left(row: dict) -> int:
+    if not row['started_at']:
+        return 0
+    elapsed = (timezone.now() - row['started_at']).total_seconds()
+    total = (row['exam__duration_minutes'] or 0) * 60
+    return max(0, int(total - elapsed))
+
+
+async def _event_stream(attempt: ExamAttempt, org) -> AsyncIterator[str]:
+    # Initial timer event darhol jo'natiladi — frontend timer ko'rsatishi uchun.
+    seconds = _seconds_left(attempt)
+    yield sse_format('timer', {'seconds_left': seconds}, event_id=1, retry_ms=3000)
+    if seconds <= 0:
+        yield sse_format('expired', {}, event_id=2)
+        return
+
+    poll = sync_to_async(_poll_attempt, thread_sensitive=False)
+    event_id = 2
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _STREAM_MAX_DURATION
+    while loop.time() < deadline:
+        # awaits instead of blocking: the event loop keeps serving other streams
+        await asyncio.sleep(_TIMER_PUSH_INTERVAL)
+        fresh = await poll(attempt.pk, org)
+        if fresh is None:
+            yield sse_format('error', {'message': 'attempt vanished'}, event_id=event_id)
+            return
+        seconds = _row_seconds_left(fresh)
+        if seconds <= 0:
+            yield sse_format('expired', {}, event_id=event_id)
+            return
+        if fresh['status'] == ExamAttempt.Status.CANCELLED:
+            yield sse_format(
+                'cancelled',
+                {'reason': fresh['cancel_reason'] or 'unknown'},
+                event_id=event_id,
+            )
+            return
+        if fresh['status'] != ExamAttempt.Status.IN_PROGRESS:
+            # Submitted yoki disputed — stream tugaydi
+            yield sse_format('status_changed', {'status': fresh['status']}, event_id=event_id)
+            return
+        yield sse_format('timer', {'seconds_left': seconds}, event_id=event_id)
+        event_id += 1
+
+
 @csrf_exempt
 @require_http_methods(['GET'])
-def attempt_event_stream(request, attempt_id):
-    """SSE stream — server→client: timer, expired, cancelled.
+async def attempt_event_stream(request, attempt_id):
+    """SSE stream — server→client: timer, expired, cancelled, status_changed, error.
+
+    Served by the ASGI (Daphne) service: nginx routes `.../events/` there (F17). An
+    async view holds no worker thread while waiting, unlike the old sync generator
+    that slept inside a gunicorn thread for up to 240 s.
 
     Authentication via existing JWTAuthMiddleware (cookie-based, see ISSUE-108).
     CSRF exempt — `GET` so'rov, va EventSource brauzeri default'da CSRF cookie yubormaydi.
     """
-    attempt, error = _load_attempt(request.user, attempt_id)
+    # request.user is lazy and may hit the DB: resolve it in a thread
+    attempt, error = await sync_to_async(_load_attempt)(request.user, attempt_id)
     if error is not None:
         return error
     if attempt.status != ExamAttempt.Status.IN_PROGRESS:
         return JsonResponse({'error': 'attempt_not_active', 'status': attempt.status}, status=409)
-
-    def event_generator() -> Iterator[str]:
-        # Initial timer event darhol jo'natiladi — frontend timer ko'rsatishi uchun.
+    if isinstance(request, WSGIRequest):
+        # Reached gunicorn (nginx route missing): never hold a WSGI thread. Send the
+        # first event and close; EventSource reconnects after `retry`.
         seconds = _seconds_left(attempt)
-        yield sse_format('timer', {'seconds_left': seconds}, event_id=1, retry_ms=3000)
+        first = [sse_format('timer', {'seconds_left': seconds}, event_id=1, retry_ms=3000)]
         if seconds <= 0:
-            yield sse_format('expired', {}, event_id=2)
-            return
-
-        event_id = 2
-        deadline = time.monotonic() + _STREAM_MAX_DURATION
-        while time.monotonic() < deadline:
-            time.sleep(_TIMER_PUSH_INTERVAL)
-            # Har push'da DB'dan freshattempt o'qiymiz — status o'zgargan bo'lishi mumkin
-            with unscoped_context():
-                fresh = ExamAttempt.objects.select_related('exam').filter(pk=attempt.pk).first()
-            if fresh is None:
-                yield sse_format('error', {'message': 'attempt vanished'}, event_id=event_id)
-                return
-            seconds = _seconds_left(fresh)
-            if seconds <= 0:
-                yield sse_format('expired', {}, event_id=event_id)
-                return
-            if fresh.status == ExamAttempt.Status.CANCELLED:
-                yield sse_format(
-                    'cancelled',
-                    {'reason': fresh.cancel_reason or 'unknown'},
-                    event_id=event_id,
-                )
-                return
-            if fresh.status != ExamAttempt.Status.IN_PROGRESS:
-                # Submitted yoki disputed — stream tugaydi
-                yield sse_format('status_changed', {'status': fresh.status}, event_id=event_id)
-                return
-            yield sse_format('timer', {'seconds_left': seconds}, event_id=event_id)
-            event_id += 1
-
-    return sse_response(event_generator())
+            first.append(sse_format('expired', {}, event_id=2))
+        return sse_response(iter(first))
+    return sse_response(_event_stream(attempt, getattr(request, 'org', None)))
 
 
 class HeartbeatView(APIView):

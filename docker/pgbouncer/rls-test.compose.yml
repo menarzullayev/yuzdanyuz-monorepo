@@ -1,0 +1,56 @@
+# E05: proves RLS stays correct through PgBouncer transaction pooling.
+#
+#   docker compose -f docker/pgbouncer/rls-test.compose.yml -p rls-test run --rm tests
+#   docker compose -f docker/pgbouncer/rls-test.compose.yml -p rls-test down -v
+#
+# Nothing touches disk (tmpfs). The tests image is the CI-like backend test image
+# (python:3.12 + requirements/development.txt); override with TEST_IMAGE.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: yuzdanyuz_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 30
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    volumes:
+      - ./rls-test.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./rls-test-userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  tests:
+    image: ${TEST_IMAGE:-yuzdanyuz-backend-test:py312}
+    working_dir: /repo/packages/backend
+    volumes:
+      - ../..:/repo
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.test
+      SECRET_KEY: rls-pooling-test
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: yuzdanyuz_test
+      TEST_DB_NAME: yuzdanyuz_test
+      REDIS_URL: redis://redis:6379/1
+      ENABLE_RLS: "true"
+      PGBOUNCER_RLS_TEST_HOST: pgbouncer
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      - pgbouncer
+      - redis
+    command: ["python", "-m", "pytest", "tests/pooling", "-p", "no:cacheprovider", "--create-db", "-v"]

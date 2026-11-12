@@ -63,6 +63,8 @@ spec:
                   value: {{ .Values.externalServices.postgres.name | quote }}
                 - name: PGUSER
                   value: {{ .Values.externalServices.postgres.user | quote }}
+                - name: PGSSLMODE
+                  value: {{ .Values.externalServices.postgres.sslmode | quote }}
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:

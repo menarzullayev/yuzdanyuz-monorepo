@@ -92,10 +92,12 @@ resource "cloudflare_page_rule" "cache_static" {
   target   = "*${var.domain}/static/*"
   priority = 5
   status   = "active"
+  # No forced TTLs: hashed names already carry `immutable, max-age=1y` from the origin
+  # and unhashed ones `max-age=300` (docker/nginx/default.conf). A forced 30-day edge
+  # TTL kept serving the old copy of an unhashed file after every deploy (F05).
   actions {
-    cache_level    = "cache_everything"
-    edge_cache_ttl = 2592000   # 30 days
-    browser_cache_ttl = 2592000
+    cache_level       = "cache_everything"
+    browser_cache_ttl = 0 # 0 = respect the origin's Cache-Control
   }
 }
 

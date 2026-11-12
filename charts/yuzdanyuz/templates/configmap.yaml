@@ -15,7 +15,20 @@ data:
   {{- if $proxies }}
   TRUSTED_PROXY_CIDRS: {{ $proxies | join "," | quote }}
   {{- end }}
-  DB_HOST: {{ .Values.externalServices.postgres.host | quote }}
-  DB_PORT: {{ .Values.externalServices.postgres.port | quote }}
-  DB_NAME: {{ .Values.externalServices.postgres.name | quote }}
-  DB_USER: {{ .Values.externalServices.postgres.user | quote }}
+  {{- $pg := .Values.externalServices.postgres }}
+  {{- if .Values.pgbouncer.enabled }}
+  # E05: app pods reach Postgres only through PgBouncer (templates/pgbouncer.yaml)
+  DB_HOST: {{ printf "%s-pgbouncer" (include "yuzdanyuz.fullname" .) | quote }}
+  DB_PORT: "6432"
+  DB_POOLER: pgbouncer
+  DB_SSLMODE: {{ .Values.pgbouncer.clientSslmode | quote }}
+  {{- else }}
+  DB_HOST: {{ $pg.host | quote }}
+  DB_PORT: {{ $pg.port | quote }}
+  DB_SSLMODE: {{ $pg.sslmode | quote }}
+  {{- with $pg.sslrootcert }}
+  DB_SSLROOTCERT: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  DB_NAME: {{ $pg.name | quote }}
+  DB_USER: {{ $pg.user | quote }}

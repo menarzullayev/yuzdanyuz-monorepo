@@ -3,6 +3,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from core.infra import (
+    celery_broker_ssl,
+    channel_layer_hosts,
+    database_options,
+    redis_connection_kwargs,
+)
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -99,6 +106,19 @@ SITE_ID = 1
 
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 
+# Shared cache for every replica and worker (allauth, throttles, ...). LocMem would
+# give each gunicorn process its own copy. DB 3 keeps it apart from tokens (1) and
+# Channels (2); timeouts so a stuck Redis fails the cache call instead of the request.
+REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', REDIS_URL.rsplit('/', 1)[0] + '/3')
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_CACHE_URL,
+        'KEY_PREFIX': 'cache',
+        'OPTIONS': redis_connection_kwargs(REDIS_CACHE_URL),
+    }
+}
+
 # ── Client IP / brute-force protection ────────────────────────
 # Comma-separated CIDRs of our own reverse proxies (ingress/nginx, and
 # Cloudflare ranges if they can reach the origin). CF-Connecting-IP and
@@ -138,6 +158,34 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 300  # 5 daqiqa hard limit
 CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 daqiqada SoftTimeLimitExceeded
 
+# Delivery guarantees (F10): ack after the task finishes, so a worker killed by a
+# rolling deploy or OOM puts the task back on the queue instead of losing it.
+# Tasks must therefore be idempotent (see docs/operations/celery.md).
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# Broker timeouts (F06). visibility_timeout: Redis redelivers a task nobody acked
+# within this window, so it must stay above the longest task time limit.
+CELERY_BROKER_CONNECTION_TIMEOUT = 5
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'socket_timeout': 5,
+    'socket_connect_timeout': 5,
+    'socket_keepalive': True,
+    'retry_on_timeout': True,
+    'health_check_interval': 25,
+    'visibility_timeout': 3600,
+}
+# `.delay()` inside a request: give up after ~1 s rather than hang the request.
+CELERY_TASK_PUBLISH_RETRY_POLICY = {
+    'max_retries': 3,
+    'interval_start': 0,
+    'interval_step': 0.2,
+    'interval_max': 0.5,
+}
+CELERY_BROKER_USE_SSL = celery_broker_ssl(CELERY_BROKER_URL)
+
 # ── Django REST Framework ─────────────────────────────────────
 # JWT cookie auth allaqachon JWTAuthMiddleware tomonidan handle qilinadi —
 # request.user view'ga yetib kelguncha autentifikatsiya qilingan bo'ladi.
@@ -149,7 +197,10 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             # Channels uchun alohida Redis db (token sessions DB=1, channels DB=2)
-            'hosts': [os.getenv('CHANNELS_REDIS_URL', 'redis://127.0.0.1:6379/2')],
+            # rediss:// URLs get TLS with certificate checks (core/infra.py).
+            'hosts': channel_layer_hosts(
+                os.getenv('CHANNELS_REDIS_URL', 'redis://127.0.0.1:6379/2')
+            ),
         },
     },
 }
@@ -316,6 +367,12 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', '5432'),
         'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '60')),
         'CONN_HEALTH_CHECKS': True,
+        # connect_timeout, statement_timeout, sslmode (DB_SSLMODE=require/verify-full
+        # in prod), TCP keepalives — core/infra.py.
+        'OPTIONS': database_options(),
+        # PgBouncer transaction pooling (E05) cannot keep a named cursor open across
+        # transactions; .iterator() falls back to client-side fetching.
+        'DISABLE_SERVER_SIDE_CURSORS': True,
     }
 }
 
@@ -347,6 +404,12 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Content-hashed names (app.3f2a9c1b4d5e.css) + gzip/brotli: nginx and the CDN may
+# cache them immutably, and every deploy gets new URLs (F05).
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

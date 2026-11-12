@@ -26,6 +26,15 @@ celeryWorker:
 celeryBeat:
   replicas: 1
 
+# TLS to Postgres is mandatory in prod (C19). Switch to verify-full + sslrootcert
+# once the provider's CA is known.
+externalServices:
+  postgres:
+    sslmode: require
+
+pgbouncer:
+  replicas: 2
+
 env:
   DJANGO_ENV: prod
   LOG_LEVEL: INFO

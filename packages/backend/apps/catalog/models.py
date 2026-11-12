@@ -136,6 +136,12 @@ class Question(AuditUserMixin, TenantTimestampMixin):
     class Meta:
         verbose_name = _('Savol')
         verbose_name_plural = _('Savollar')
+        indexes = [
+            # every tenant query filters organization; banks/plans add subject + is_active
+            models.Index(
+                fields=['organization', 'subject', 'is_active'], name='catalog_q_org_subj_active'
+            ),
+        ]
 
     def __str__(self):
         return f'[{self.type}] {self.id} (v{self.current_version})'

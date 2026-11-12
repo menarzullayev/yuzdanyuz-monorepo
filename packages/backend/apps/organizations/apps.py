@@ -6,4 +6,9 @@ class OrganizationsConfig(AppConfig):
     name = 'apps.organizations'
 
     def ready(self):
+        from core import db_rls
+
         from . import signals  # noqa: F401
+
+        # RLS org variable rides on every statement inside a tenant context (E05)
+        db_rls.connect_signal()

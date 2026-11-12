@@ -312,6 +312,11 @@ class AntiCheatEventView(APIView):
         ser.is_valid(raise_exception=True)
 
         with transaction.atomic():
+            # Row lock: parallel reports must each add a strike (no lost update), and
+            # none may land after another report has already cancelled the attempt.
+            attempt = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+            if attempt.status != ExamAttempt.Status.IN_PROGRESS:
+                raise ValidationError(f'Attempt holati: {attempt.status}')
             AntiCheatEvent.objects.create(
                 organization=attempt.organization,
                 attempt=attempt,

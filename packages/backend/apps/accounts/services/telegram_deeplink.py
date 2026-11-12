@@ -24,15 +24,16 @@ import uuid
 from django.conf import settings
 from django.db import transaction
 
+from core.infra import redis_from_url
+
 log = logging.getLogger(__name__)
 
 SESSION_TTL = 300  # 5 daqiqa
 
 
 def _redis():
-    import redis as _r
 
-    return _r.Redis.from_url(
+    return redis_from_url(
         getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
         decode_responses=True,
     )
