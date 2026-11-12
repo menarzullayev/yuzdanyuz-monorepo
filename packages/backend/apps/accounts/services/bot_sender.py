@@ -13,9 +13,35 @@ log = logging.getLogger(__name__)
 TELEGRAM_API = 'https://api.telegram.org/bot{token}/sendMessage'
 
 
+def _token() -> str:
+    """Bot token: apps.ops DB settings first, environment as the fallback."""
+    from apps.ops.services import bot_config
+
+    return bot_config.get_token()
+
+
+def call_api(method: str, payload: dict | None = None, *, token: str | None = None) -> dict:
+    """Generic Bot API call. Returns the decoded JSON (``{'ok': False, ...}`` on failure).
+
+    The token never appears in the returned value or in logs.
+    """
+    token = token or _token()
+    if not token:
+        return {'ok': False, 'description': 'bot token is not configured'}
+    try:
+        resp = requests.post(
+            f'https://api.telegram.org/bot{token}/{method}', json=payload or {}, timeout=10
+        )
+        data = resp.json()
+        return data if isinstance(data, dict) else {'ok': False, 'description': 'bad response'}
+    except (requests.RequestException, ValueError) as e:
+        log.error('Bot API %s failed: %s', method, type(e).__name__)
+        return {'ok': False, 'description': 'Bot API request failed'}
+
+
 def send_message(telegram_id: int, text: str) -> bool:
     """Bot orqali Telegram foydalanuvchiga xabar yuboradi."""
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    token = _token()
     if not token:
         log.error('TELEGRAM_BOT_TOKEN sozlanmagan')
         return False
@@ -44,7 +70,7 @@ def send_contact_request(telegram_id: int, requester: str = '') -> bool:
     Foydalanuvchiga "Telefon raqamni ulash" tugmali klaviatura yuboradi.
     Telegram foydalanuvchi ulashgan raqam unga tegishliligini kafolatlaydi.
     """
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    token = _token()
     if not token:
         return False
 
@@ -86,7 +112,7 @@ def send_contact_request(telegram_id: int, requester: str = '') -> bool:
 
 def send_success_message(telegram_id: int) -> bool:
     """Tasdiqlash muvaffaqiyatli — klaviaturani olib tashlab xabar yuboradi."""
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    token = _token()
     if not token:
         return False
     brand = settings.PROJECT_BRAND_NAME
@@ -112,7 +138,7 @@ def send_link_confirmation(telegram_id: int, account_label: str, token: str) -> 
     The account is named in the message so someone who was handed another person's
     link can see it is not their account and press "No".
     """
-    bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    bot_token = _token()
     if not bot_token:
         return False
     try:
@@ -144,7 +170,7 @@ def send_link_confirmation(telegram_id: int, account_label: str, token: str) -> 
 
 
 def answer_callback(callback_query_id: str, text: str) -> bool:
-    bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    bot_token = _token()
     if not bot_token:
         return False
     try:

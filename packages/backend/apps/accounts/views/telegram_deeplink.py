@@ -160,7 +160,9 @@ class BotWebhookView(View):
 
     def post(self, request):
         # Fail closed: without a configured secret anyone could forge updates.
-        secret = getattr(settings, 'TELEGRAM_WEBHOOK_SECRET', '') or ''
+        from apps.ops.services import bot_config
+
+        secret = bot_config.get_webhook_secret()
         received = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
         if not secret or not hmac.compare_digest(received.encode(), secret.encode()):
             return JsonResponse({'error': 'Forbidden'}, status=403)

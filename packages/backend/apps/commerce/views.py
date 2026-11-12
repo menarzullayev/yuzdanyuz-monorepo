@@ -225,6 +225,14 @@ def _process_webhook(provider_name: str, request) -> Response:
                 intent.amount_uzs,
                 parsed.get('amount_uzs'),
             )
+            from apps.ops.services import security as sec
+
+            sec.record(
+                sec.SecurityEvent.Type.PAYMENT_MISMATCH,
+                request=request,
+                user=intent.user,
+                reason=f'{provider_name} intent={intent.id}',
+            )
             return Response(
                 {
                     'detail': 'Incorrect amount',

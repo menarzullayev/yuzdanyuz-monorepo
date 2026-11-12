@@ -58,6 +58,7 @@ urlpatterns = [
     path('api/v1/catalog/', include('apps.catalog.api_urls', namespace='catalog-api-v1')),
     path('api/v1/', include('apps.commerce.urls', namespace='commerce-v1')),
     path('api/v1/analytics/', include('apps.analytics.urls', namespace='analytics-v1')),
+    path('api/v1/', include('apps.ops.urls', namespace='ops')),
     # Eski (unversioned) — deprecate kelajakda
     path('api/exams/', include('apps.exams.urls', namespace='exams')),
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),

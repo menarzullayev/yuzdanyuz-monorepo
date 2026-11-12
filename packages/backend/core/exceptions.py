@@ -91,6 +91,10 @@ def _extract_message(response) -> str:
 
 def _extract_details(response) -> dict | None:
     data = response.data
-    if isinstance(data, dict) and 'detail' not in data:
-        return data
+    if isinstance(data, dict):
+        if 'detail' not in data:
+            return data
+        # Extra machine-readable keys next to ``detail`` (e.g. onboarding ``missing``).
+        extra = {k: v for k, v in data.items() if k != 'detail'}
+        return extra or None
     return None

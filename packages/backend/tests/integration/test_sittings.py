@@ -23,6 +23,7 @@ from apps.exams.sitting_models import add_years
 from apps.exams.sitting_service import certificate_issued
 from apps.organizations.models import Membership, MembershipStatus, OrgRole
 from core.tenant import tenant_context, unscoped_context
+from tests.integration._onboarding import complete_onboarding
 
 User = get_user_model()
 N_QUESTIONS = 6
@@ -32,7 +33,7 @@ CORRECT_COUNTS = [6, 5, 5, 4, 4, 3, 2, 1, 0]
 pytestmark = pytest.mark.integration
 
 
-def _member(org, username, role_name, **extra):
+def _member(org, username, role_name, onboarded=False, **extra):
     u = User.objects.create_user(
         username=username, email=f'{username}@example.com', password='pass123', **extra
     )
@@ -41,6 +42,8 @@ def _member(org, username, role_name, **extra):
         user=u, organization=org, role=role, status=MembershipStatus.ACTIVE, is_primary=True
     )
     m.activate()
+    if onboarded:
+        complete_onboarding(u)
     return u
 
 
@@ -102,12 +105,19 @@ def _submit_attempt(org, mock, qvs, user, n_correct, *, status=ExamAttempt.Statu
 class Env:
     """org + admin + one student per entry of CORRECT_COUNTS + an open->closed sitting."""
 
-    def __init__(self, org, subject):
+    def __init__(self, org, subject, onboarded=True):
         self.org = org
         self.admin = _member(org, 'admin1', 'owner', first_name='Ad', last_name='Min')
         self.mock, self.qvs = _make_exam(org, self.admin, subject)
         self.students = [
-            _member(org, f'stud{i}', 'student', first_name=f'Name{i}', last_name=f'Fam{i}')
+            _member(
+                org,
+                f'stud{i}',
+                'student',
+                onboarded=onboarded,
+                first_name=f'Name{i}',
+                last_name=f'Fam{i}',
+            )
             for i in range(len(CORRECT_COUNTS))
         ]
         self.attempts = [
@@ -452,7 +462,9 @@ class TestPublicVerification:
 class TestCrossTenant:
     @pytest.fixture
     def other(self, org2):
-        return _member(org2, 'otheradmin', 'owner'), _member(org2, 'otherstudent', 'student')
+        return _member(org2, 'otheradmin', 'owner'), _member(
+            org2, 'otherstudent', 'student', onboarded=True
+        )
 
     def test_other_org_cannot_see_or_drive_sitting(self, env, other):
         env.run_to('calculate')

@@ -42,6 +42,7 @@ from .models import (
     QuestionDispute,
     UserAnswer,
 )
+from .onboarding_gate import missing_for, require_onboarding
 from .serializers import (
     AntiCheatEventCreateSerializer,
     ExamAttemptSerializer,
@@ -69,6 +70,20 @@ def _get_user_attempt_or_404(user, attempt_id):
     if attempt.user_id != user.id:
         raise PermissionDenied('Bu sizning attempt emas.')
     return attempt
+
+
+RESULT_FIELDS = ('score', 'correct_count', 'total_points')
+
+
+def _attempt_payload(user, attempt) -> dict:
+    """Attempt JSON; the result fields are withheld until onboarding is complete."""
+    data = ExamAttemptSerializer(attempt).data
+    missing = missing_for(user)
+    if missing:
+        data = {k: (None if k in RESULT_FIELDS else v) for k, v in data.items()}
+        data['onboarding_required'] = True
+        data['missing'] = missing
+    return data
 
 
 def _get_user_session_or_404(user, session_id):
@@ -195,6 +210,8 @@ class AttemptDetailView(APIView):
 
     def get(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
+        if attempt.status != ExamAttempt.Status.IN_PROGRESS:
+            require_onboarding(request.user)  # a finished attempt shows the result
         return Response(ExamAttemptSerializer(attempt).data)
 
 
@@ -243,7 +260,7 @@ class SubmitAttemptView(APIView):
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
         if attempt.status == ExamAttempt.Status.SUBMITTED:
-            return Response(ExamAttemptSerializer(attempt).data)
+            return Response(_attempt_payload(request.user, attempt))
         if attempt.status != ExamAttempt.Status.IN_PROGRESS:
             raise ValidationError(f"Attempt holati: {attempt.status} — yakunlab bo'lmaydi.")
 
@@ -255,7 +272,7 @@ class SubmitAttemptView(APIView):
         finalize_attempt_score.delay(str(attempt.id))
 
         attempt.refresh_from_db()
-        return Response(ExamAttemptSerializer(attempt).data)
+        return Response(_attempt_payload(request.user, attempt))
 
 
 class AntiCheatEventView(APIView):
