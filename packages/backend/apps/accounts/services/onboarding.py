@@ -114,7 +114,7 @@ def state(user: CustomUser) -> dict:
                 'level': c.level,
                 'date': c.date,
             }
-            for c in user.certificates.all()
+            for c in user.external_certificates.all()
         ],
         'org_consents': [
             {

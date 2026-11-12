@@ -58,7 +58,7 @@ class Migration(migrations.Migration):
                 ('subject', models.CharField(blank=True, max_length=60)),
                 ('level', models.CharField(max_length=20)),
                 ('date', models.DateField()),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='certificates', to=settings.AUTH_USER_MODEL)),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='external_certificates', to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 'verbose_name': 'Sertifikat',
