@@ -35,7 +35,7 @@ def test_search_query_plan_uses_the_index(org, subject):
         # Search runs as the owner of app_search_question_versions (ops.0003), a BYPASSRLS
         # role: under RLS the planner may not use this index for a LIKE (security barrier).
         cur.execute(
-            "SELECT pg_get_userbyid(proowner) FROM pg_proc "
+            'SELECT pg_get_userbyid(proowner) FROM pg_proc '
             "WHERE proname = 'app_search_question_versions'"
         )
         cur.execute(f'SET LOCAL ROLE {cur.fetchone()[0]}')
