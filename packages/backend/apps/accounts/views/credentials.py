@@ -186,7 +186,7 @@ def _known_device(request, user: CustomUser) -> bool:
     return bool(device_id) and DeviceSession.objects.filter(user=user, device_id=device_id).exists()
 
 
-def _register_failure(keys, target: CustomUser | None) -> None:
+def _register_failure(request, keys, target: CustomUser | None) -> None:
     """Count one failure on the (account, IP) bucket and the account-wide bucket."""
     ip_key, global_key = keys
     locked_for = max(
@@ -195,6 +195,18 @@ def _register_failure(keys, target: CustomUser | None) -> None:
             global_key, free=getattr(settings, 'LOGIN_GLOBAL_FREE_ATTEMPTS', 20)
         ),
     )
+    from apps.ops.services import security as sec
+
+    sec.record(
+        sec.SecurityEvent.Type.LOGIN_FAILED, request=request, user=target, reason='bad_credentials'
+    )
+    if locked_for:
+        sec.record(
+            sec.SecurityEvent.Type.ACCOUNT_LOCKED,
+            request=request,
+            user=target,
+            reason=f'lock_{locked_for}s',
+        )
     if locked_for and target is not None:
         notify_account_locked(target, locked_for)
 
@@ -236,7 +248,7 @@ def authenticate_login(request, data):
         _burn_password_check(password)
 
     if user is None or not user.is_active:
-        _register_failure(keys, target)
+        _register_failure(request, keys, target)
         return None, keys, api_error('invalid_credentials', MSG_INVALID, 400)
 
     # Second factor: password alone never signs in an account that has 2FA.
@@ -245,7 +257,7 @@ def authenticate_login(request, data):
         if not code:
             return None, keys, Response({'need_code': True})
         if not two_factor.verify_second_factor(user, code):
-            _register_failure(keys, user)
+            _register_failure(request, keys, user)
             return None, keys, api_error('invalid_code', 'Kod noto\u02bbg\u02bbri.', 400)
 
     return user, keys, None

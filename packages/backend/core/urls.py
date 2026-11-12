@@ -64,6 +64,7 @@ urlpatterns = [
         'api/v1/partnerships/',
         include('apps.organizations.partnership_urls', namespace='partnerships-v1'),
     ),
+    path('api/v1/', include('apps.ops.urls', namespace='ops')),
     # Eski (unversioned) — deprecate kelajakda
     path('api/exams/', include('apps.exams.urls', namespace='exams')),
     path('api/leaderboard/', include('apps.engagement.urls', namespace='engagement')),

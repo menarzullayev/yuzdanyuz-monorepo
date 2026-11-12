@@ -58,6 +58,8 @@ app.conf.task_routes = {
     'exams.publish_scheduled_mocks': {'queue': 'batch'},
     'exams.quarantine_check': {'queue': 'batch'},
     'intelligence.check_ai_token_expiry': {'queue': 'batch'},
+    'ops.run_health_probe': {'queue': 'batch'},
+    'ops.cleanup_old_records': {'queue': 'batch'},
 }
 
 # Static schedules; DatabaseScheduler copies them into django-celery-beat on start.
@@ -71,6 +73,15 @@ app.conf.beat_schedule = {
     'question-quality-daily': {
         'task': 'analytics.refresh_question_quality',
         'schedule': crontab(hour=3, minute=30),
+    },
+    # Status page: DB + Redis (+AI) probe every 5 minutes; alerts on state change only.
+    'ops-health-probe': {
+        'task': 'ops.run_health_probe',
+        'schedule': crontab(minute='*/5'),
+    },
+    'ops-cleanup-daily': {
+        'task': 'ops.cleanup_old_records',
+        'schedule': crontab(hour=4, minute=15),
     },
 }
 

@@ -20,7 +20,7 @@ Public:
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
-from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -28,6 +28,7 @@ from core.tenant import unscoped_context
 
 from . import sitting_service
 from .models import MockExam
+from .onboarding_gate import ResultsOnboardingGate
 from .sitting_models import Certificate, ExamSitting, GradeScale, SittingResult
 from .sitting_serializers import (
     CertificateSerializer,
@@ -168,6 +169,8 @@ def _own_published_results(user):
 
 
 class MyResultsView(APIView):
+    permission_classes = [IsAuthenticated, ResultsOnboardingGate]
+
     def get(self, request):
         return Response(
             StudentResultSerializer(_own_published_results(request.user), many=True).data
@@ -175,6 +178,8 @@ class MyResultsView(APIView):
 
 
 class MyResultView(APIView):
+    permission_classes = [IsAuthenticated, ResultsOnboardingGate]
+
     def get(self, request, pk):
         # Not published -> 404 (do not even confirm that a result exists).
         result = get_object_or_404(_own_published_results(request.user), sitting_id=pk)
@@ -182,6 +187,8 @@ class MyResultView(APIView):
 
 
 class MyCertificatesView(APIView):
+    permission_classes = [IsAuthenticated, ResultsOnboardingGate]
+
     def get(self, request):
         if request.user.is_anonymous:  # pragma: no cover - IsAuthenticated default
             raise PermissionDenied()

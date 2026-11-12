@@ -26,6 +26,7 @@ from apps.exams.models import (
     UserAnswer,
 )
 from core.tenant import tenant_context, unscoped_context
+from tests.integration._onboarding import complete_onboarding
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,7 @@ class TestMockListAndStart:
 @pytest.mark.integration
 class TestAnswerAndSubmit:
     def test_answer_correct_then_submit_score_100(self, db, org, user, member, subject):
+        complete_onboarding(user)  # the score is only shown after onboarding
         qv = _make_qv(org, subject)
         mock = _make_published_mock(org, user, qvs=[qv])
 
@@ -144,6 +146,7 @@ class TestAnswerAndSubmit:
         assert body['correct_count'] == 1
 
     def test_answer_wrong_score_zero(self, db, org, user, member, subject):
+        complete_onboarding(user)
         qv = _make_qv(org, subject)
         mock = _make_published_mock(org, user, qvs=[qv])
 

@@ -147,7 +147,14 @@ def confirm_reset(token: str, new_password: str) -> CustomUser:
     revoke_user_sessions(user, reason='password')
     login_throttle.reset(login_throttle.account_key(f'user:{user.pk}'))
     notify(user, 'password_changed')
+    _record_reset(user, 'recovery_link')
     return user
+
+
+def _record_reset(user: CustomUser, how: str) -> None:
+    from apps.ops.services import security as sec
+
+    sec.record(sec.SecurityEvent.Type.PASSWORD_RESET, user=user, reason=how)
 
 
 def generate_temporary_password() -> str:
@@ -176,6 +183,7 @@ def set_temporary_password(user: CustomUser, password: str | None = None) -> str
     revoke_user_sessions(user, reason='password')
     login_throttle.reset(login_throttle.account_key(f'user:{user.pk}'))
     notify(user, 'password_changed')
+    _record_reset(user, 'admin_temporary_password')
     return password
 
 

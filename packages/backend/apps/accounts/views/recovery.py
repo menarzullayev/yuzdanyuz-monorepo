@@ -17,6 +17,7 @@ from apps.accounts.services import recovery
 from apps.accounts.services import usernames as un
 from apps.accounts.views.base import AuthAPIView, PublicAPIView, api_error, field_errors
 from apps.accounts.views.credentials import raw_text_field, text_field
+from apps.ops.services import security as sec
 from core.utils.client_ip import get_client_ip
 
 ACCEPTED = {
@@ -30,6 +31,7 @@ class TelegramRecoveryView(PublicAPIView):
 
     def post(self, request):
         name = un.normalize_username(text_field(request.data, 'username'))
+        sec.record(sec.SecurityEvent.Type.RECOVERY_REQUEST, request=request, reason='telegram')
         if name and recovery.allow_request(
             f'ip:{get_client_ip(request)}', recovery.IP_REQUESTS_PER_HOUR
         ):
@@ -64,6 +66,7 @@ class AdminQueueRequestView(PublicAPIView):
     def post(self, request):
         name = un.normalize_username(text_field(request.data, 'username'))
         contact = text_field(request.data, 'contact')
+        sec.record(sec.SecurityEvent.Type.RECOVERY_REQUEST, request=request, reason='admin_queue')
         if (
             name
             and recovery.allow_request(

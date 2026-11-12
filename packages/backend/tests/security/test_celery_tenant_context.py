@@ -32,6 +32,7 @@ TASK_FILES = [
     'apps/engagement/tasks.py',
     'apps/engagement/notifications_service.py',
     'apps/accounts/tasks.py',
+    'apps/ops/tasks.py',
 ]
 
 # ── Allow-list ──────────────────────────────────────────────────────────────
@@ -51,6 +52,10 @@ EXPECTED_TASKS = {
     'cleanup_old_webhook_deliveries': 'unscoped',  # cross-tenant retention sweep
     'check_sms_balance': 'stateless',  # provider API + gauge, no tenant data
     'send_security_notice': 'stateless',  # Telegram message only, no DB access
+    # apps/ops/tasks.py (platform-level tables only: probes, security events, alert state)
+    'run_health_probe': 'stateless',  # DB/Redis ping + ProbeResult row, no tenant data
+    'send_admin_alert': 'stateless',  # Telegram message only
+    'cleanup_old_records': 'stateless',  # retention sweep of non-tenant tables
     # apps/engagement/tasks.py
     'archive_leaderboards': 'unscoped',  # global/region/tenant scan
     'check_broken_streaks_task': 'stateless',  # UserStreak user-scoped

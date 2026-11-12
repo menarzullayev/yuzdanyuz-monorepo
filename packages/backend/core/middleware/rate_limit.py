@@ -154,12 +154,25 @@ class RateLimitMiddleware:
         try:
             rl.check(identifier, tier)
         except rl.RateLimitExceeded as e:
+            self._record_429(request, e)
             return self._too_many_requests(e)
         except Exception as e:
             # Redis ishlamayotgan bo'lsa, request'ni o'tkazib yuboramiz (fail-open)
             log.error('Rate limit middleware error: %s', e)
 
         return self.get_response(request)
+
+    @staticmethod
+    def _record_429(request, exc) -> None:
+        # Observability only; one row per source+path per 10 s so a flood cannot flood the DB.
+        from apps.ops.services import security as sec
+
+        sec.record(
+            sec.SecurityEvent.Type.RATE_LIMITED,
+            request=request,
+            reason=f'tier={exc.tier}',
+            sample_seconds=10,
+        )
 
     @staticmethod
     def _too_many_requests(exc: rl.RateLimitExceeded):

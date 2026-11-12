@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'apps.engagement',  # Streak, League, Badge, Notification
     'apps.analytics',  # ClickHouseEvent, Report, B2BDashboard
     'apps.webhooks',  # ISSUE-405: B2B outgoing webhooks (HMAC-signed, retry + DLQ)
+    'apps.ops',  # Status page, security dashboard, audit journal, bot admin
 ]
 
 MIDDLEWARE = [
@@ -219,6 +220,16 @@ ENABLE_RLS = os.getenv('ENABLE_RLS', 'true').lower() == 'true'
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '')  # @ siz, masalan: milsert_bot
 TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '')  # ixtiyoriy xavfsizlik token
+
+# apps.ops: DB-stored bot settings override these; the env values are the fallback.
+OPS_ADMIN_CHAT_IDS = [
+    int(x)
+    for x in os.getenv('OPS_ADMIN_CHAT_IDS', '').split(',')
+    if x.strip().lstrip('-').isdigit()
+]
+OPS_TELEGRAM_CHANNEL_ID = os.getenv('OPS_TELEGRAM_CHANNEL_ID', '')
+# Include the AI provider in the 5-minute health probe (informational, never counts as downtime).
+OPS_PROBE_AI = os.getenv('OPS_PROBE_AI', 'false').lower() == 'true'
 
 # Next.js app origin (OAuth redirects, recovery links, anonymous home redirect).
 FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')
