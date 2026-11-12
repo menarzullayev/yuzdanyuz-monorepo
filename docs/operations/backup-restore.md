@@ -83,11 +83,13 @@ purpose, so production never runs with a backup that silently does nothing.
 
 ### Database role
 
-The job connects as the app's database user, which owns the tables. 17 tables use
-row-level security (not `FORCE`), which the owner bypasses. If you ever point the
-job at a different role, that role needs `BYPASSRLS`; otherwise `pg_dump` fails
-with `query would be affected by row-level security policy for table ...` (measured
-on 2026-11-12) — the job fails loudly rather than producing a partial dump.
+The job connects as `yuzdanyuz_backup` (`externalServices.postgres.backupUser`, password
+key `DB_BACKUP_PASSWORD`), a read-only role with `BYPASSRLS`. Every RLS table uses
+`FORCE ROW LEVEL SECURITY` (audit B15), so even the table owner is filtered, and
+`pg_dump` fails with `query would be affected by row-level security policy for table ...`
+for any role without `BYPASSRLS` (measured on 2026-11-12) — the job fails loudly rather
+than producing a partial dump. Creating the role:
+[database-roles.md](../../packages/backend/docs/deployment/database-roles.md).
 
 ## Restore
 
@@ -132,7 +134,7 @@ Run this on an operator workstation (or a throwaway pod) that has `rclone`,
    ```bash
    psql -d yuzdanyuz_restore -c "select count(*) from django_migrations;"
    psql -d yuzdanyuz_restore -c "select count(*) from accounts_customuser;"
-   psql -d yuzdanyuz_restore -c "select count(*) from pg_class where relrowsecurity;"   # expect 17+
+   psql -d yuzdanyuz_restore -c "select count(*) from pg_class where relrowsecurity and relforcerowsecurity;"   # expect 35+
    ```
 
    Compare with the numbers you expect (or with the old database, if it is still

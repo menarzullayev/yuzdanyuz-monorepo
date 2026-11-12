@@ -41,6 +41,7 @@ spec:
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
           env:
             {{- include "yuzdanyuz.podIPEnv" . | nindent 12 }}
+            {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "channels") | nindent 12 }}
           # ASGI workers must support websocket — use TCP probe instead of HTTP
           # to avoid noisy 404s on /health/ from daphne (URLConf still resolves it)
           livenessProbe:
@@ -57,3 +58,5 @@ spec:
             periodSeconds: 10
           resources: {{- toYaml .Values.channels.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts: {{- include "yuzdanyuz.tmpMount" . | nindent 12 }}
+      volumes: {{- include "yuzdanyuz.tmpVolume" . | nindent 8 }}

@@ -49,6 +49,7 @@ EXPECTED_TASKS = {
     # apps/accounts/tasks.py
     'cleanup_expired_sessions': 'stateless',  # django_session is not tenant data
     'cleanup_used_otp_codes': 'stateless',  # OTPCode has no org FK
+    'process_due_erasures': 'unscoped',  # GDPR erasure: one user's rows in every org
     'cleanup_old_webhook_deliveries': 'unscoped',  # cross-tenant retention sweep
     'check_sms_balance': 'stateless',  # provider API + gauge, no tenant data
     'send_security_notice': 'stateless',  # Telegram message only, no DB access

@@ -76,6 +76,10 @@ spec:
             {{- end }}
             - name: CELERY_QUEUES
               value: {{ $w.queues | quote }}
+            # claude CLI keeps its state here; the root filesystem is read-only
+            - name: CLAUDE_CONFIG_DIR
+              value: /tmp/claude
+            {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "worker") | nindent 12 }}
           # Liveness via celery inspect (covers stuck event loops)
           livenessProbe:
             exec:
@@ -89,4 +93,6 @@ spec:
             failureThreshold: 3
           resources: {{- toYaml $w.cfg.resources | nindent 12 }}
           securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          volumeMounts: {{- include "yuzdanyuz.tmpMount" $ | nindent 12 }}
+      volumes: {{- include "yuzdanyuz.tmpVolume" $ | nindent 8 }}
 {{- end }}

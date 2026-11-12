@@ -1,4 +1,7 @@
 {{- if .Values.migrate.enabled }}
+{{- if eq .Values.externalServices.postgres.migrateUser .Values.externalServices.postgres.user }}
+{{- fail "externalServices.postgres.migrateUser must differ from externalServices.postgres.user: the runtime role must not own the tables (audit B15, docs/deployment/database-roles.md)" }}
+{{- end }}
 # One-shot Job that runs migrations + collectstatic on each Helm release.
 # Helm hook ensures it completes before main deployments are upgraded.
 apiVersion: batch/v1
@@ -33,6 +36,22 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          env:
+            # Owner role (audit B15): only this Job may change the schema. DB_RUNTIME_ROLE
+            # gets DML grants after every migrate (core/db_roles.py).
+            - name: DB_USER
+              value: {{ .Values.externalServices.postgres.migrateUser | quote }}
+            - name: DB_RUNTIME_ROLE
+              value: {{ .Values.externalServices.postgres.user | quote }}
+            # Runtime-only settings (bot webhook secret, payment keys) are not given to this
+            # Job, so their system checks are skipped here; the static files ship in the image.
+            - name: MIGRATE_SKIP_CHECKS
+              value: "true"
+            - name: MIGRATE_COLLECTSTATIC
+              value: "false"
+            {{- include "yuzdanyuz.secretEnv" (dict "root" $ "keys" .Values.secretRef.migrate "as" (dict "DB_PASSWORD" "DB_MIGRATE_PASSWORD")) | nindent 12 }}
           resources: {{- toYaml .Values.migrate.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts: {{- include "yuzdanyuz.tmpMount" . | nindent 12 }}
+      volumes: {{- include "yuzdanyuz.tmpVolume" . | nindent 8 }}
 {{- end }}

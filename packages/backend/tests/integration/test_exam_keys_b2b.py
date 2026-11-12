@@ -337,7 +337,7 @@ class TestCrossTenantIsolation:
             rows = dict(cur.fetchall())
             cur.execute(
                 'SELECT count(*) FROM pg_policies WHERE tablename IN '
-                "('commerce_examkey','commerce_examkeybatch')"
+                "('commerce_examkey','commerce_examkeybatch') AND policyname <> 'rls_bypass'"
             )
             n_policies = cur.fetchone()[0]
         assert rows == {'commerce_examkey': True, 'commerce_examkeybatch': True}

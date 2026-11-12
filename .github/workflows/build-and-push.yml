@@ -149,6 +149,10 @@ jobs:
           python scripts/check-helm-deploy-path.py \
             --external-secret yuzdanyuz-secrets --external-secret yuzdanyuz-backup-rclone \
             /tmp/rendered-default.yaml /tmp/rendered.yaml /tmp/rendered-keda.yaml /tmp/rendered-all.yaml
+      - name: Least privilege (per-pod secrets, split DB roles, read-only root filesystems)
+        run: |
+          bash scripts/test-check-helm-least-privilege.sh /tmp/rendered.yaml
+          python scripts/check-helm-least-privilege.py             /tmp/rendered-default.yaml /tmp/rendered.yaml /tmp/rendered-keda.yaml /tmp/rendered-all.yaml
       - name: Chart refuses unsafe values
         run: |
           # expect_fail <must-contain> <helm args...>
@@ -163,6 +167,7 @@ jobs:
           }
           expect_fail "web.command is set" --set 'web.command={web}'
           expect_fail "celeryWorker.command is set" --set 'celeryWorker.command={worker}'
+          expect_fail "migrateUser must differ" --set externalServices.postgres.migrateUser=yuzdanyuz
           expect_fail "backup.destination is empty" --values charts/yuzdanyuz/values-prod.yaml \
             --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
           expect_fail "backup.gpgPublicKey is empty" --values charts/yuzdanyuz/values-prod.yaml \

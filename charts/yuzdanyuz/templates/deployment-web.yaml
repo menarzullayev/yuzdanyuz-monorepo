@@ -43,6 +43,10 @@ spec:
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
           env:
             {{- include "yuzdanyuz.podIPEnv" . | nindent 12 }}
+            {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "web") | nindent 12 }}
+            # claude CLI keeps its state here; the root filesystem is read-only
+            - name: CLAUDE_CONFIG_DIR
+              value: /tmp/claude
             {{- range $key, $value := .Values.web.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
@@ -68,13 +72,11 @@ spec:
           resources: {{- toYaml .Values.web.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+            {{- include "yuzdanyuz.tmpMount" . | nindent 12 }}
             - name: media
               mountPath: /app/media
       volumes:
-        - name: tmp
-          emptyDir: {}
+        {{- include "yuzdanyuz.tmpVolume" . | nindent 8 }}
         - name: media
           persistentVolumeClaim:
             claimName: {{ include "yuzdanyuz.fullname" . }}-media

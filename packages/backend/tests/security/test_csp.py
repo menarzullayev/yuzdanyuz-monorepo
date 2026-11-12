@@ -40,7 +40,7 @@ def _inline_scripts_without_nonce(html: str, nonce: str) -> list[str]:
 @pytest.mark.django_db
 class TestApi:
     def test_json_api_response_has_strict_enforced_csp(self, client):
-        resp = client.get('/api/v1/exams/')
+        resp = client.get('/api/auth/me/')  # 401, JSON
         csp = _directives(resp[ENFORCED])
         assert csp['default-src'] == "'none'"
         assert csp['frame-ancestors'] == "'none'"
@@ -61,7 +61,6 @@ class TestAdmin:
         'url',
         [
             '/admin/',
-            '/admin/login/',
             '/admin/accounts/customuser/',
             '/admin/catalog/aiproviderconfig/add/',
         ],
@@ -77,6 +76,13 @@ class TestAdmin:
         assert csp['frame-ancestors'] == "'none'"
         assert csp['object-src'] == "'none'"
         assert csp['base-uri'] in ("'self'", "'none'")
+        assert _inline_scripts_without_nonce(resp.content.decode(), nonce) == []
+
+    def test_admin_login_page_is_covered_too(self, client):
+        resp = client.get('/admin/login/')
+        assert resp.status_code == 200
+        csp = _directives(resp[ENFORCED])
+        nonce = re.search(r"'nonce-([^']+)'", csp['script-src']).group(1)
         assert _inline_scripts_without_nonce(resp.content.decode(), nonce) == []
 
     def test_nonce_changes_per_request(self, admin_client):
@@ -117,11 +123,12 @@ def _has(name):
 class TestEdgeConfigs:
     def test_nginx_sets_csp_on_its_own_responses(self):
         conf = (REPO / 'docker/nginx/default.conf').read_text()
-        assert 'Content-Security-Policy' in conf
+        assert '$upstream_http_content_security_policy' in conf  # only when Django sent none
         assert "frame-ancestors 'none'" in conf
         # static/media: files are served by nginx itself, so the header must be there
+        assert "default-src 'none'" in conf
         snippet = (REPO / 'docker/nginx/security-headers.conf').read_text()
-        assert "default-src 'none'" in snippet or "frame-ancestors 'none'" in snippet
+        assert 'Content-Security-Policy $csp_fallback always' in snippet
         for loc in ('location /static/', 'location /media/'):
             block = conf.split(loc, 1)[1].split('}', 1)[0]
             assert 'security-headers.conf' in block, loc

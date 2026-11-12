@@ -17,7 +17,10 @@ def _rls_state(table):
     with connection.cursor() as cur:
         cur.execute('SELECT rowsecurity FROM pg_tables WHERE tablename = %s', [table])
         row = cur.fetchone()
-        cur.execute('SELECT cmd FROM pg_policies WHERE tablename = %s', [table])
+        cur.execute(
+            "SELECT cmd FROM pg_policies WHERE tablename = %s AND policyname <> 'rls_bypass'",
+            [table],
+        )
         return (row[0] if row else None), {r[0] for r in cur.fetchall()}
 
 

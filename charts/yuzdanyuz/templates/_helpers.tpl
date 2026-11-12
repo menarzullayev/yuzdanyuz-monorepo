@@ -61,13 +61,63 @@ Nginx image reference.
 {{- end -}}
 
 {{/*
-Render env vars from .Values.env (ConfigMap-style) + secret refs.
+Non-secret settings (ConfigMap). Secrets are never imported wholesale: see secretEnv.
 */}}
 {{- define "yuzdanyuz.envFrom" -}}
 - configMapRef:
     name: {{ include "yuzdanyuz.fullname" . }}-env
-- secretRef:
-    name: {{ .Values.secretRef.name }}
+{{- end -}}
+
+{{/*
+One secretKeyRef per key (audit B15: least privilege). Call with
+  (dict "root" $ "keys" (list ...) "as" (dict "ENV_NAME" "SECRET_KEY_NAME"))
+`as` maps an env var to a differently named key (e.g. DB_PASSWORD <- DB_MIGRATE_PASSWORD).
+Keys in .Values.secretRef.required must exist; the rest are optional.
+*/}}
+{{- define "yuzdanyuz.secretEnv" -}}
+{{- $root := .root -}}
+{{- $seen := dict -}}
+{{- range $env, $key := (.as | default dict) }}
+{{- $_ := set $seen $env true }}
+- name: {{ $env }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.secretRef.name }}
+      key: {{ $key }}
+      optional: {{ not (has $key $root.Values.secretRef.required) }}
+{{- end }}
+{{- range $key := (.keys | uniq) }}
+{{- if not (hasKey $seen $key) }}
+- name: {{ $key }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.secretRef.name }}
+      key: {{ $key }}
+      optional: {{ not (has $key $root.Values.secretRef.required) }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Secret env for a backend workload: common keys + the workload's own list.
+Call with (dict "root" $ "workload" "web").
+*/}}
+{{- define "yuzdanyuz.backendSecretEnv" -}}
+{{- $keys := concat .root.Values.secretRef.common (index .root.Values.secretRef .workload) -}}
+{{- include "yuzdanyuz.secretEnv" (dict "root" .root "keys" $keys) -}}
+{{- end -}}
+
+{{/*
+Writable scratch space for a read-only root filesystem.
+*/}}
+{{- define "yuzdanyuz.tmpMount" -}}
+- name: tmp
+  mountPath: /tmp
+{{- end -}}
+{{- define "yuzdanyuz.tmpVolume" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: 1Gi
 {{- end -}}
 
 {{/*

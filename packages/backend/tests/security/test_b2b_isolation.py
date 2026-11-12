@@ -59,7 +59,10 @@ def _rls_state(table):
     with connection.cursor() as cur:
         cur.execute('SELECT rowsecurity FROM pg_tables WHERE tablename = %s', [table])
         row = cur.fetchone()
-        cur.execute('SELECT cmd FROM pg_policies WHERE tablename = %s', [table])
+        cur.execute(
+            "SELECT cmd FROM pg_policies WHERE tablename = %s AND policyname <> 'rls_bypass'",
+            [table],
+        )
         return (row[0] if row else None), {r[0] for r in cur.fetchall()}
 
 
@@ -80,6 +83,8 @@ class TestRls:
             cur.execute(f'CREATE ROLE {role} NOLOGIN')
             cur.execute(f'GRANT SELECT ON {", ".join(TABLES)} TO {role}')
             cur.execute(f'SET LOCAL ROLE {role}')
+            # the policies themselves, as with RLS_ENFORCE_ORG_SESSIONS (core/db_roles.py)
+            cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
             try:
                 for current, expected_title in ((org, 'L-a'), (org2, 'L-b')):
                     cur.execute(

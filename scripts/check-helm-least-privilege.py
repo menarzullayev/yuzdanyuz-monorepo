@@ -81,6 +81,7 @@ def env_value(c, name):
 def check_docs(docs, app_secret: str) -> list[str]:
     errors = []
     db_users = {}
+    config_maps = {d['metadata']['name']: d.get('data') or {} for d in docs if d.get('kind') == 'ConfigMap'}
     for name, component, spec in pod_specs(docs):
         volumes = {v['name']: v for v in spec.get('volumes') or []}
         for c in list(spec.get('initContainers') or []) + list(spec.get('containers') or []):
@@ -102,6 +103,10 @@ def check_docs(docs, app_secret: str) -> list[str]:
                 errors.append(f'{where}: only the migrate Job may read the DB owner password')
             if component in POLICY and component != 'nginx' and component != 'backup':
                 user = env_value(c, 'DB_USER')
+                if user is None:  # falls back to the ConfigMap the pod imports
+                    for ef in c.get('envFrom') or []:
+                        cm = (ef.get('configMapRef') or {}).get('name')
+                        user = user or config_maps.get(cm, {}).get('DB_USER')
                 if user:
                     db_users.setdefault(component, set()).add(user)
 

@@ -33,7 +33,7 @@ spec:
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
               protocol: TCP
           env:
             # docker/nginx/templates/upstreams.conf.template; must match templates/services.yaml
@@ -55,6 +55,7 @@ spec:
               {{- include "yuzdanyuz.probeHeaders" . | nindent 14 }}
             initialDelaySeconds: 5
             periodSeconds: 5
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           resources:
             requests: { cpu: "50m",  memory: "64Mi" }
             limits:   { cpu: "300m", memory: "256Mi" }
@@ -64,8 +65,7 @@ spec:
               readOnly: true
             - name: cache
               mountPath: /var/cache/nginx
-            - name: run
-              mountPath: /var/run
+            {{- include "yuzdanyuz.tmpMount" . | nindent 12 }}
             # the image entrypoint renders the upstreams here; the pod runs non-root
             - name: upstreams
               mountPath: /etc/nginx/upstreams
@@ -75,8 +75,7 @@ spec:
             claimName: {{ include "yuzdanyuz.fullname" . }}-media
         - name: cache
           emptyDir: {}
-        - name: run
-          emptyDir: {}
+        {{- include "yuzdanyuz.tmpVolume" . | nindent 8 }}
         - name: upstreams
           emptyDir: {}
 {{- end }}

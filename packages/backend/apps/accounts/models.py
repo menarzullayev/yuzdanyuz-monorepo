@@ -699,3 +699,53 @@ class OrgResultsConsent(models.Model):
 
     def __str__(self):
         return f'{self.user_id} -> {self.organization_id}'
+
+
+class ErasureRequest(models.Model):
+    """GDPR art. 17 erasure request and its audit record (C22).
+
+    Lifecycle: PENDING (waiting for the Telegram code) -> SCHEDULED (confirmed; runs after
+    the cooling-off) -> COMPLETED, or CANCELLED by the user / FAILED (error kept, admin
+    reschedules). The row is kept after erasure as the audit entry; it holds no PII.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending confirmation'
+        SCHEDULED = 'scheduled', 'Scheduled'
+        COMPLETED = 'completed', 'Completed'
+        CANCELLED = 'cancelled', 'Cancelled'
+        FAILED = 'failed', 'Failed'
+
+    class ConfirmVia(models.TextChoices):
+        PASSWORD = 'password', 'Password re-authentication'
+        TELEGRAM = 'telegram', 'Telegram code'
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='erasure_requests',
+    )
+    user_ref = models.UUIDField(db_index=True)  # survives a later hard delete of the user
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    confirm_via = models.CharField(max_length=10, choices=ConfirmVia.choices)
+    code_hash = models.CharField(max_length=64, blank=True)
+    code_expires_at = models.DateTimeField(null=True, blank=True)
+    code_attempts = models.PositiveSmallIntegerField(default=0)
+    requested_at = models.DateTimeField(default=timezone.now)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True, db_index=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    redacted = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-requested_at']
+        verbose_name = "Ma'lumotni o'chirish so'rovi"
+        verbose_name_plural = "Ma'lumotni o'chirish so'rovlari"
+        indexes = [models.Index(fields=['status', 'scheduled_for'])]
+
+    def __str__(self):
+        return f'erasure {self.user_ref} {self.status}'

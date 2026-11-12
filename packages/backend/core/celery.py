@@ -60,6 +60,7 @@ app.conf.task_routes = {
     'intelligence.check_ai_token_expiry': {'queue': 'batch'},
     'ops.run_health_probe': {'queue': 'batch'},
     'ops.cleanup_old_records': {'queue': 'batch'},
+    'accounts.process_due_erasures': {'queue': 'batch'},
 }
 
 # Static schedules; DatabaseScheduler copies them into django-celery-beat on start.
@@ -82,6 +83,11 @@ app.conf.beat_schedule = {
     'ops-cleanup-daily': {
         'task': 'ops.cleanup_old_records',
         'schedule': crontab(hour=4, minute=15),
+    },
+    # GDPR erasure requests whose cooling-off has ended (apps/accounts/services/erasure.py).
+    'gdpr-erasure-hourly': {
+        'task': 'accounts.process_due_erasures',
+        'schedule': crontab(minute=20),
     },
 }
 

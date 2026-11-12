@@ -5,9 +5,9 @@ to a plain role with SET LOCAL ROLE inside the test transaction (rolled back aft
 
 * every RLS table has FORCE ROW LEVEL SECURITY, so even the table owner is filtered;
 * the runtime role created by core.db_roles owns nothing and only gets DML grants;
-* policies never raise when no organisation is set. A session with an org is always
-  filtered; an org-less session (workers, platform admin, anonymous) sees everything only
-  while the explicit `app.rls_bypass` flag is on (set per connection, see core.db_roles).
+* policies never raise when no organisation is set; the `app.rls_bypass` flag (set per
+  connection, core.db_roles) decides who passes: 'all' (default), 'on' (org sessions
+  filtered, enabled by RLS_ENFORCE_ORG_SESSIONS) or 'off'.
 """
 
 import uuid
@@ -25,8 +25,8 @@ T = 'webhooks_webhookendpoint'
 
 def _rls_tables(cur):
     cur.execute(
-        "SELECT c.relname, c.relforcerowsecurity FROM pg_class c "
-        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        'SELECT c.relname, c.relforcerowsecurity FROM pg_class c '
+        'JOIN pg_namespace n ON n.oid = c.relnamespace '
         "WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity"
     )
     return dict(cur.fetchall())
@@ -47,6 +47,8 @@ def _role(cur, *, owner_of=None):
     name = f'p1_probe_{uuid.uuid4().hex[:8]}'
     cur.execute(f'CREATE ROLE {name} NOLOGIN')
     if owner_of:
+        cur.execute('SET CONSTRAINTS ALL IMMEDIATE')  # ALTER TABLE refuses pending FK checks
+        cur.execute(f'GRANT CREATE ON SCHEMA public TO {name}')  # a new owner needs it
         cur.execute(f'ALTER TABLE {owner_of} OWNER TO {name}')
     return name
 
@@ -191,37 +193,91 @@ class TestRuntimeRole:
         with override_settings(DB_RUNTIME_ROLE=role):
             db_roles.post_migrate_grants(sender=None, using='default')
         with connection.cursor() as cur:
-            cur.execute("SELECT has_table_privilege(%s, %s, 'SELECT,INSERT,UPDATE,DELETE')", [role, T])
+            cur.execute(
+                "SELECT has_table_privilege(%s, %s, 'SELECT,INSERT,UPDATE,DELETE')", [role, T]
+            )
             assert cur.fetchone()[0] is True
             cur.execute("SELECT has_table_privilege(%s, %s, 'TRUNCATE')", [role, T])
             assert cur.fetchone()[0] is False
 
 
+def _flag_after_connect():
+    from core.db_roles import on_connection_created
+
+    on_connection_created(sender=None, connection=connection)
+    with connection.cursor() as cur:
+        cur.execute("SELECT current_setting('app.rls_bypass', true)")
+        return cur.fetchone()[0]
+
+
 @pytest.mark.django_db
 class TestBypassFlag:
-    def test_new_connections_start_with_bypass_on(self, db):
-        from core.db_roles import on_connection_created
+    def test_default_lets_every_session_through(self, db):
+        """Org-session enforcement is opt-in (RLS_ENFORCE_ORG_SESSIONS): see the next class."""
+        assert _flag_after_connect() == 'all'
 
-        on_connection_created(sender=None, connection=connection)
-        with connection.cursor() as cur:
-            cur.execute("SELECT current_setting('app.rls_bypass', true)")
-            assert cur.fetchone()[0] == 'on'
+    @override_settings(RLS_ENFORCE_ORG_SESSIONS=True)
+    def test_enforcement_mode_filters_org_sessions(self, db):
+        assert _flag_after_connect() == 'on'
 
-    def test_bypass_never_applies_once_an_org_is_set(self, two_orgs_rows, org):
-        """RLSMiddleware sets the org for tenant requests; the flag cannot widen that."""
+    @override_settings(RLS_ENFORCE_ORG_SESSIONS=True, RLS_BYPASS_WITHOUT_ORG=False)
+    def test_fail_closed_mode(self, db):
+        assert _flag_after_connect() == 'off'
+
+    def test_all_passes_an_org_session_and_on_does_not(self, two_orgs_rows, org, org2):
         with connection.cursor() as cur:
             role = _role(cur, owner_of=T)
             cur.execute(f'SET LOCAL ROLE {role}')
             try:
+                assert _orgs_seen(cur, org.id, bypass='all') == {org.id, org2.id}
                 assert _orgs_seen(cur, org.id, bypass='on') == {org.id}
             finally:
                 cur.execute('RESET ROLE')
 
-    @override_settings(RLS_BYPASS_WITHOUT_ORG=False)
-    def test_fail_closed_mode_turns_the_default_off(self, db):
-        from core.db_roles import on_connection_created
 
-        on_connection_created(sender=None, connection=connection)
+@pytest.mark.django_db
+class TestEnforcementBlocker:
+    """Why RLS_ENFORCE_ORG_SESSIONS is off: under enforcement another org's public mock
+    exam questions are invisible. When the policies learn about shared content this test
+    fails; then flip the default and update docs/deployment/database-roles.md."""
+
+    def test_public_mock_questions_of_another_org_are_hidden(self, org, org2, subject, superuser):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.catalog.models import Question, QuestionVersion
+        from apps.exams.models import MockExam, MockExamQuestion
+
+        now = timezone.now()
+        with tenant_context(org):
+            q = Question.objects.create(organization=org, subject=subject, type='SC')
+            qv = QuestionVersion.objects.create(
+                question=q, version_number=1, content={'text': 'q'}, options=[]
+            )
+            exam = MockExam.objects.create(
+                organization=org,
+                title='public',
+                duration_minutes=60,
+                is_public=True,
+                scheduled_at=now - timedelta(hours=1),
+                closes_at=now + timedelta(hours=1),
+                status=MockExam.Status.PUBLISHED,
+                created_by=superuser,
+            )
+            MockExamQuestion.objects.create(mock_exam=exam, question_version=qv, order=1)
         with connection.cursor() as cur:
-            cur.execute("SELECT current_setting('app.rls_bypass', true)")
-            assert cur.fetchone()[0] == 'off'
+            role = _role(cur)
+            cur.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}')
+            cur.execute(f'SET LOCAL ROLE {role}')
+            try:
+                cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
+                cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org2.id)])
+                cur.execute('SELECT count(*) FROM exams_mockexam WHERE id = %s', [str(exam.id)])
+                assert cur.fetchone()[0] == 1  # the public exam itself is visible
+                cur.execute(
+                    'SELECT count(*) FROM catalog_questionversion WHERE id = %s', [str(qv.id)]
+                )
+                assert cur.fetchone()[0] == 0  # ...its questions are not
+            finally:
+                cur.execute('RESET ROLE')
