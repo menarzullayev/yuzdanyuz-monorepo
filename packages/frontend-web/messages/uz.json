@@ -82,7 +82,9 @@
     "changeTitle": "Yangi parol oʻrnating",
     "changeHelp": "Hisobingiz vaqtinchalik parol bilan ochilgan. Davom etish uchun oʻzingizning parolingizni tanlang.",
     "newPassword": "Yangi parol",
-    "changeSubmit": "Parolni saqlash va kirish"
+    "changeSubmit": "Parolni saqlash va kirish",
+    "oauthLinkRequired": "Bu pochta bilan hisob allaqachon bor. Avval Telegram yoki parol bilan kiring, keyin profilda Googleʼni ulang.",
+    "oauthAccountDisabled": "Bu hisob faol emas. Yordam uchun qoʻllab-quvvatlash xizmatiga yozing."
   },
   "register": {
     "title": "Hisob yaratish",

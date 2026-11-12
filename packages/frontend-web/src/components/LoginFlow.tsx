@@ -16,11 +16,23 @@ import { TelegramLogin } from './TelegramLogin';
 
 type Step = 'main' | 'code' | 'change';
 
+// Errors the backend puts in /login?error=... when a Google sign-in is stopped.
+const OAUTH_ERRORS = {
+  link_required: 'oauthLinkRequired',
+  account_disabled: 'oauthAccountDisabled',
+} as const;
+
 export function LoginFlow() {
   const t = useTranslations('login');
   const errors = useErrors();
   const router = useRouter();
-  const next = safeNext(useSearchParams().get('next'));
+  const params = useSearchParams();
+  const next = safeNext(params.get('next'));
+  const oauthCode = params.get('error');
+  const oauthError =
+    oauthCode && oauthCode in OAUTH_ERRORS
+      ? t(OAUTH_ERRORS[oauthCode as keyof typeof OAUTH_ERRORS])
+      : '';
 
   const [step, setStep] = useState<Step>('main');
   const [username, setUsername] = useState('');
@@ -161,7 +173,7 @@ export function LoginFlow() {
         <span className="h-px flex-1 bg-line" />
       </div>
       <form onSubmit={submitCredentials} className="space-y-4">
-        {error && <ErrorBox>{error}</ErrorBox>}
+        {(error || oauthError) && <ErrorBox>{error || oauthError}</ErrorBox>}
         <Field label={t('username')} error={fieldErr.username}>
           {(p) => (
             <input

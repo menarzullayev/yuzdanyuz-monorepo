@@ -550,6 +550,12 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
 CLAUDE_CLI_PATH = os.getenv('CLAUDE_CLI_PATH', '')  # empty -> `claude` on PATH
 CLAUDE_CLI_TIMEOUT = int(os.getenv('CLAUDE_CLI_TIMEOUT', '300'))
+# AIProviderConfig.base_url may only reach public HTTPS hosts (SSRF, audit C07). Self-hosted
+# models on the private network (Ollama, vLLM) are allowed here by the operator, never from
+# the admin panel: comma-separated `host:port` (or bare `host` for any port), e.g. ollama:11434.
+AI_PROVIDER_PRIVATE_HOSTS = [
+    h.strip().lower() for h in os.getenv('AI_PROVIDER_PRIVATE_HOSTS', '').split(',') if h.strip()
+]
 # Fernet keys for secrets stored in the DB (core/crypto.py): comma-separated, first one encrypts,
 # all decrypt (rotation: prepend the new key, run `manage.py rotate_field_encryption`, drop the
 # old one). FIELD_ENCRYPTION_KEY is the older single-key name. Empty -> derived from SECRET_KEY
