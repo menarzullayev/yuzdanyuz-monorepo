@@ -32,5 +32,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: {{- toYaml .Values.celeryBeat.args | nindent 12 }}
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          env: {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "beat") | nindent 12 }}
           resources: {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts: {{- include "yuzdanyuz.tmpMount" . | nindent 12 }}
+      volumes: {{- include "yuzdanyuz.tmpVolume" . | nindent 8 }}

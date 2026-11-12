@@ -41,7 +41,7 @@ spec:
         - protocol: TCP
           port: 8000
         - protocol: TCP
-          port: 80
+          port: 8080
         # app pods -> PgBouncer
         - protocol: TCP
           port: 6432

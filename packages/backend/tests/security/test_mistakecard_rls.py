@@ -17,11 +17,13 @@ def test_rls_enabled():
 def test_org_policies_for_every_command():
     with connection.cursor() as cursor:
         cursor.execute(
-            'SELECT cmd, qual, with_check FROM pg_policies WHERE tablename = %s', [TABLE]
+            'SELECT cmd, qual, with_check FROM pg_policies WHERE tablename = %s'
+            " AND policyname <> 'rls_bypass'",
+            [TABLE],
         )
         rows = {cmd: (qual or '') + (check or '') for cmd, qual, check in cursor.fetchall()}
     assert set(rows) == {'SELECT', 'INSERT', 'UPDATE', 'DELETE'}
-    assert all('app.current_org_id' in expr for expr in rows.values())
+    assert all('app_current_org_id()' in expr for expr in rows.values())
 
 
 def test_check_catches_missing_policy():

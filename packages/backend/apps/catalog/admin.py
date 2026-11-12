@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 
@@ -14,8 +15,51 @@ from .models import (
 )
 
 
+class AIProviderConfigForm(forms.ModelForm):
+    """The stored key is never rendered (neither plaintext nor ciphertext).
+
+    A blank field keeps the current key; 'clear' removes it.
+    """
+
+    api_key = forms.CharField(
+        required=False,
+        strip=True,
+        label='API kalit',
+        widget=forms.PasswordInput(render_value=False, attrs={'autocomplete': 'new-password'}),
+        help_text="Yangi kalit kiriting. Bo'sh qoldirilsa, joriy kalit saqlanadi.",
+    )
+    clear_api_key = forms.BooleanField(required=False, label="Kalitni o'chirish")
+
+    class Meta:
+        model = AIProviderConfig
+        fields = (
+            'name',
+            'provider',
+            'model',
+            'use_for',
+            'priority',
+            'is_active',
+            'api_key',
+            'base_url',
+            'extra_options',
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initial['api_key'] = ''
+
+    def clean(self):
+        data = super().clean()
+        if data.get('clear_api_key'):
+            data['api_key'] = ''
+        elif not data.get('api_key'):
+            data['api_key'] = self.instance.api_key if self.instance.pk else ''
+        return data
+
+
 @admin.register(AIProviderConfig)
 class AIProviderConfigAdmin(admin.ModelAdmin):
+    form = AIProviderConfigForm
     list_display = (
         'priority',
         'name',
@@ -29,7 +73,7 @@ class AIProviderConfigAdmin(admin.ModelAdmin):
     list_editable = ('priority',)
     list_filter = ('provider', 'use_for', 'is_active')
     ordering = ('priority',)
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('api_key_masked', 'created_at', 'updated_at')
 
     fieldsets = (
         (
@@ -41,7 +85,13 @@ class AIProviderConfigAdmin(admin.ModelAdmin):
         (
             'Ulanish',
             {
-                'fields': ('api_key', 'base_url', 'extra_options'),
+                'fields': (
+                    'api_key_masked',
+                    'api_key',
+                    'clear_api_key',
+                    'base_url',
+                    'extra_options',
+                ),
                 'description': (
                     'API kalit: Claude → console.anthropic.com | OpenAI → platform.openai.com | '
                     'Gemini → aistudio.google.com.<br>'
@@ -57,6 +107,10 @@ class AIProviderConfigAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    @admin.display(description='Joriy kalit')
+    def api_key_masked(self, obj):
+        return f'••••{obj.api_key_hint}' if obj and obj.api_key else '—'
 
     @admin.display(description='Provayder')
     def provider_badge(self, obj):

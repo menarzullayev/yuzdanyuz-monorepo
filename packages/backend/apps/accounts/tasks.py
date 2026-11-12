@@ -108,3 +108,22 @@ def send_security_notice(telegram_id: int, event: str, ctx: dict | None = None) 
     from apps.accounts.services.security_notifications import render
 
     return send_message(telegram_id, render(event, **(ctx or {})))
+
+
+@shared_task(name='accounts.process_due_erasures')
+def process_due_erasures(now: str | None = None) -> dict:
+    """Run GDPR erasures whose cooling-off has ended. A failed erasure is rolled back,
+    recorded on its ErasureRequest and logged with its traceback; the task then fails too,
+    so it shows up in Celery monitoring instead of passing quietly."""
+    from datetime import datetime
+
+    from .services import erasure
+
+    with single_runner_lock('accounts.process_due_erasures', expire=1800) as acquired:
+        if not acquired:
+            return {'status': 'skipped_lock_busy'}
+        with unscoped_context():
+            stats = erasure.run_due(datetime.fromisoformat(now) if now else None)
+    if stats['failed']:
+        raise RuntimeError(f'{stats["failed"]} GDPR erasure(s) failed; see ErasureRequest.error')
+    return stats

@@ -64,6 +64,7 @@ app.conf.task_routes = {
     'accounts.cleanup_used_otp_codes': {'queue': 'batch'},
     'accounts.cleanup_old_webhook_deliveries': {'queue': 'batch'},
     'accounts.check_sms_balance': {'queue': 'batch'},
+    'accounts.process_due_erasures': {'queue': 'batch'},
 }
 
 # Static schedules; DatabaseScheduler copies them into django-celery-beat on start.
@@ -135,6 +136,11 @@ app.conf.beat_schedule = {
     'accounts-check-sms-balance': {
         'task': 'accounts.check_sms_balance',
         'schedule': crontab(minute=10),
+    },
+    # GDPR erasure requests whose cooling-off has ended (apps/accounts/services/erasure.py).
+    'gdpr-erasure-hourly': {
+        'task': 'accounts.process_due_erasures',
+        'schedule': crontab(minute=20),
     },
 }
 

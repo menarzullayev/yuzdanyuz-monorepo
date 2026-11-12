@@ -63,8 +63,17 @@ case "$CMD" in
         run celery -A core flower --port=5555
         ;;
     migrate)
-        python manage.py migrate --noinput
-        python manage.py collectstatic --noinput
+        # The Helm migrate Job runs as the DB owner role with only the secrets it needs:
+        # runtime-only system checks (bot webhook secret, payment keys) cannot pass there,
+        # and the static files are already collected into the image (read-only root fs).
+        if [[ "${MIGRATE_SKIP_CHECKS:-false}" == "true" ]]; then
+            python manage.py migrate --noinput --skip-checks
+        else
+            python manage.py migrate --noinput
+        fi
+        if [[ "${MIGRATE_COLLECTSTATIC:-true}" == "true" ]]; then
+            python manage.py collectstatic --noinput
+        fi
         ;;
     shell)
         exec python manage.py shell

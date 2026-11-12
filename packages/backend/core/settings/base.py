@@ -66,6 +66,8 @@ MIDDLEWARE = [
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'core.middleware.fix_prefix.ForceScriptNameMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # C14: Content-Security-Policy (before WhiteNoise so static responses get it too)
+    'core.middleware.csp.CSPMiddleware',
     # WhiteNoise — serve /static/ in WSGI without nginx (works under gunicorn/daphne)
     'whitenoise.middleware.WhiteNoiseMiddleware',
     # CORS — must come BEFORE CommonMiddleware to add headers on every response
@@ -267,6 +269,19 @@ CORS_ALLOW_CREDENTIALS = True
 # ── PostgreSQL Row Level Security (RLS) ────────────────────────────
 # Multi-tenant isolation at database level (defense in depth)
 ENABLE_RLS = os.getenv('ENABLE_RLS', 'true').lower() == 'true'
+# B15 (core/db_roles.py, docs/deployment/database-roles.md): database-level RLS for sessions
+# with an org. Off until the policies cover content shared across orgs (public mock exams).
+RLS_ENFORCE_ORG_SESSIONS = os.getenv('RLS_ENFORCE_ORG_SESSIONS', 'false').lower() == 'true'
+# With enforcement on: org-less sessions (workers, platform admin, anonymous) still pass.
+RLS_BYPASS_WITHOUT_ORG = os.getenv('RLS_BYPASS_WITHOUT_ORG', 'true').lower() == 'true'
+# Set only on the migrate Job (owner role): post_migrate grants DML on every table to this role.
+DB_RUNTIME_ROLE = os.getenv('DB_RUNTIME_ROLE', '')
+# C14 (core/middleware/csp.py): HTML under these paths gets the enforced nonce policy; other
+# HTML pages get it Report-Only. Optional report endpoint for violation reports.
+CSP_ENFORCED_HTML_PREFIXES = ['/admin/']
+CSP_REPORT_URI = os.getenv('CSP_REPORT_URI', '')
+# GDPR erasure: hours between confirmation and anonymisation (the user can cancel meanwhile).
+GDPR_ERASURE_COOLING_OFF_HOURS = int(os.getenv('GDPR_ERASURE_COOLING_OFF_HOURS', '72'))
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '')  # @ siz, masalan: milsert_bot
@@ -349,6 +364,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.middleware.csp.csp_nonce',
             ],
         },
     },
@@ -513,7 +529,13 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
 CLAUDE_CLI_PATH = os.getenv('CLAUDE_CLI_PATH', '')  # empty -> `claude` on PATH
 CLAUDE_CLI_TIMEOUT = int(os.getenv('CLAUDE_CLI_TIMEOUT', '300'))
-# Fernet key for secrets stored in the DB (AIProviderConfig.api_key); empty -> derived from SECRET_KEY.
+# Fernet keys for secrets stored in the DB (core/crypto.py): comma-separated, first one encrypts,
+# all decrypt (rotation: prepend the new key, run `manage.py rotate_field_encryption`, drop the
+# old one). FIELD_ENCRYPTION_KEY is the older single-key name. Empty -> derived from SECRET_KEY
+# (system check core.W010 under `check --deploy`).
+FIELD_ENCRYPTION_KEYS = [
+    k.strip() for k in os.getenv('FIELD_ENCRYPTION_KEYS', '').split(',') if k.strip()
+]
 FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', '')
 # YYYY-MM-DD: `claude setup-token` date + 1 year. Not secret. Drives the system check
 # (apps/intelligence/checks.py) and the daily intelligence.check_ai_token_expiry task.

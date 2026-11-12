@@ -20,7 +20,10 @@ def _rls_state(table):
             [table],
         )
         row = cur.fetchone()
-        cur.execute('SELECT cmd FROM pg_policies WHERE tablename = %s', [table])
+        cur.execute(
+            "SELECT cmd FROM pg_policies WHERE tablename = %s AND policyname <> 'rls_bypass'",
+            [table],
+        )
         return (row[0] if row else None), {r[0] for r in cur.fetchall()}
 
 
@@ -35,10 +38,12 @@ def test_rls_enabled_with_all_four_policies(db, table):
 def test_policies_filter_on_organization(db, table):
     with connection.cursor() as cur:
         cur.execute(
-            'SELECT qual FROM pg_policies WHERE tablename = %s AND qual IS NOT NULL', [table]
+            'SELECT qual FROM pg_policies WHERE tablename = %s AND qual IS NOT NULL'
+            " AND policyname <> 'rls_bypass'",
+            [table],
         )
         quals = [r[0] for r in cur.fetchall()]
-    assert quals and all('app.current_org_id' in q for q in quals)
+    assert quals and all('app_current_org_id()' in q for q in quals)
 
 
 @pytest.mark.security

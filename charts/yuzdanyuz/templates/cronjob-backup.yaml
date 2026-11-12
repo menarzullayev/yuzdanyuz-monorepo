@@ -61,15 +61,18 @@ spec:
                   value: {{ .Values.externalServices.postgres.port | quote }}
                 - name: PGDATABASE
                   value: {{ .Values.externalServices.postgres.name | quote }}
+                # BYPASSRLS read-only role: pg_dump refuses tables whose RLS would filter it
                 - name: PGUSER
-                  value: {{ .Values.externalServices.postgres.user | quote }}
+                  value: {{ .Values.externalServices.postgres.backupUser | quote }}
                 - name: PGSSLMODE
                   value: {{ .Values.externalServices.postgres.sslmode | quote }}
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: {{ .Values.secretRef.name }}
-                      key: DB_PASSWORD
+                      key: DB_BACKUP_PASSWORD
+                - name: HOME
+                  value: /tmp
                 - name: BACKUP_DESTINATION
                   value: {{ .Values.backup.destination | quote }}
                 - name: BACKUP_RETENTION_DAYS
@@ -84,10 +87,12 @@ spec:
               volumeMounts:
                 - name: work
                   mountPath: /work
+                {{- include "yuzdanyuz.tmpMount" . | nindent 16 }}
                 - name: gpg
                   mountPath: /etc/backup-gpg
                   readOnly: true
           volumes:
+            {{- include "yuzdanyuz.tmpVolume" . | nindent 12 }}
             - name: work
               emptyDir:
                 sizeLimit: {{ .Values.backup.workDirSizeLimit }}

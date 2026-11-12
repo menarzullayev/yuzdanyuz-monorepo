@@ -29,6 +29,7 @@ import uuid
 from django.conf import settings
 from django.db.backends.signals import connection_created
 
+from core.db_roles import bypass_default
 from core.tenant import get_current_org
 
 
@@ -36,14 +37,24 @@ class RLSStatementPrefix:
     """`connection.execute_wrappers` entry that scopes each statement to the current org."""
 
     def __call__(self, execute, sql, params, many, context):
+        if not getattr(settings, 'ENABLE_RLS', True):
+            return execute(sql, params, many, context)
         org = get_current_org()
-        if org is not None and getattr(settings, 'ENABLE_RLS', True):
+        # B15 (core/db_roles.py): with org-session enforcement on, every statement also
+        # carries the bypass flag; without it the flag is never sent and counts as 'all'.
+        flag = bypass_default() if getattr(settings, 'RLS_ENFORCE_ORG_SESSIONS', False) else None
+        if org is not None or flag is not None:
             raw_cursor = context['cursor'].cursor
             if getattr(raw_cursor, 'name', None) is None:
-                # UUID round-trip validates the value, so inlining it is injection-safe
-                # and keeps the user's parameter style (%s / %(name)s) untouched.
-                org_id = uuid.UUID(str(org.pk))
-                sql = f"SELECT set_config('app.current_org_id', '{org_id}', true); {sql}"
+                prefix = ''
+                if flag is not None:
+                    prefix = f"SELECT set_config('app.rls_bypass', '{flag}', true); "
+                if org is not None:
+                    # UUID round-trip validates the value, so inlining it is injection-safe
+                    # and keeps the user's parameter style (%s / %(name)s) untouched.
+                    org_id = uuid.UUID(str(org.pk))
+                    prefix += f"SELECT set_config('app.current_org_id', '{org_id}', true); "
+                sql = prefix + sql
         return execute(sql, params, many, context)
 
 

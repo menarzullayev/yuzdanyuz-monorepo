@@ -186,6 +186,9 @@ ingress:
     nginx.ingress.kubernetes.io/configuration-snippet: |
       more_set_headers "X-Frame-Options: DENY";
       more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      # C14: a second, framing-only policy; browsers enforce both, so it never loosens
+      # the CSP that Django / nginx / Next.js send and cannot break a page either.
+      add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'" always;
   tls:
     enabled: true
     secretName: yuzdanyuz-tls       # cert-manager populates this
@@ -240,15 +243,27 @@ env:
 # ── Secret keys (must be created out-of-band via kubectl create secret) ──────
 # Helm intentionally does NOT manage the Secret content — it only references it.
 # See: docs/deployment/secrets.md
+# Least privilege (audit B15): no pod imports the whole Secret. Each workload gets the
+# `common` keys plus its own list, one `secretKeyRef` per key (missing keys stay empty,
+# except `required`). scripts/check-helm-least-privilege.py enforces the split in CI.
 secretRef:
   name: yuzdanyuz-secrets
-  keys:
+  # a missing one keeps the pod from starting instead of running half-configured
+  required:
+    - SECRET_KEY
+    - DB_PASSWORD
+    - DB_MIGRATE_PASSWORD
+    - DB_BACKUP_PASSWORD
+  # every backend process (web, channels, workers, beat)
+  common:
     - SECRET_KEY
     - DB_PASSWORD
     - REDIS_URL
     - CHANNELS_REDIS_URL
     - CELERY_BROKER_URL
     - SENTRY_DSN
+    - FIELD_ENCRYPTION_KEYS        # core/crypto.py: Fernet keys for DB secrets
+  web:
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
     - YANDEX_CLIENT_ID
@@ -263,10 +278,26 @@ secretRef:
     - PLAYMOBILE_PASSWORD
     - PAYME_MERCHANT_ID
     - PAYME_MERCHANT_KEY
+    - PAYME_SECRET_KEY
     - CLICK_MERCHANT_ID
     - CLICK_SECRET_KEY
     - ANTHROPIC_API_KEY
-    - CLAUDE_CODE_OAUTH_TOKEN   # `claude setup-token`; used when LLM_BACKEND=claude_cli (default)
+    - CLAUDE_CODE_OAUTH_TOKEN     # `claude setup-token`; used when LLM_BACKEND=claude_cli (default)
+  channels: []
+  # all Celery workers: notifications (bot, SMS) and the AI queue
+  worker:
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_BOT_USERNAME
+    - PLAYMOBILE_LOGIN
+    - PLAYMOBILE_PASSWORD
+    - ANTHROPIC_API_KEY
+    - CLAUDE_CODE_OAUTH_TOKEN
+  beat: []
+  # the migrate Job: owner-role DB password (as DB_PASSWORD), Django and field-encryption keys
+  migrate:
+    - SECRET_KEY
+    - FIELD_ENCRYPTION_KEYS
+    - SENTRY_DSN
 
 # ── DB / Redis hostnames (assume managed services or separate Helm release) ──
 externalServices:
@@ -274,6 +305,7 @@ externalServices:
     host: postgres-primary
     port: 5432
     name: yuzdanyuz_db
+    # Runtime role: owns nothing, DML grants only, so RLS applies (audit B15).
     user: yuzdanyuz
     # TLS to Postgres (libpq sslmode). values-prod: require; verify-full once the CA is
     # known (sslrootcert "system" = the OS trust store, enough for a public-CA provider).
@@ -281,6 +313,12 @@ externalServices:
     sslrootcert: ""
     # The server's max_connections; the chart refuses pool sizes that would exceed it.
     maxConnections: 100
+    # Owner role: owns the schema; used only by the migrate Job (password key
+    # DB_MIGRATE_PASSWORD). Must differ from `user`. SQL: docs/deployment/database-roles.md
+    migrateUser: yuzdanyuz_owner
+    # BYPASSRLS read-only role for the backup CronJob (pg_dump refuses RLS-filtered
+    # tables); password key DB_BACKUP_PASSWORD.
+    backupUser: yuzdanyuz_backup
   redis:
     host: redis-master
     port: 6379
@@ -337,7 +375,9 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]
-  readOnlyRootFilesystem: false   # Django uses /tmp; set true after audit
+  # Every pod mounts writable emptyDirs where it needs them (/tmp; nginx also its cache
+  # and rendered upstreams); scripts/check-helm-least-privilege.py checks it.
+  readOnlyRootFilesystem: true
 
 # ── Network Policy ───────────────────────────────────────────────────────────
 networkPolicy:

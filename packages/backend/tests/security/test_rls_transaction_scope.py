@@ -80,6 +80,8 @@ def test_rls_filters_rows_for_a_non_owner_role(org, org2):
     for o in (org, org2, org, org2):
         with transaction.atomic(), connection.cursor() as cur:
             cur.execute(f'SET LOCAL ROLE {APP_ROLE}')
+            # the policies themselves, as with RLS_ENFORCE_ORG_SESSIONS (core/db_roles.py)
+            cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
             with tenant_context(o):
                 cur.execute('SELECT organization_id FROM webhooks_webhookendpoint')
                 seen = {str(r[0]) for r in cur.fetchall()}

@@ -81,6 +81,10 @@ spec:
             - name: DB_NAME
               value: {{ printf "%s_worker" $.Values.externalServices.postgres.name | quote }}
             {{- end }}
+            # claude CLI keeps its state here; the root filesystem is read-only
+            - name: CLAUDE_CONFIG_DIR
+              value: /tmp/claude
+            {{- include "yuzdanyuz.backendSecretEnv" (dict "root" $ "workload" "worker") | nindent 12 }}
           # Liveness via celery inspect (covers stuck event loops)
           livenessProbe:
             exec:
@@ -97,13 +101,11 @@ spec:
           # F13: report exports and other task-written files must land on the shared
           # media volume that web and nginx serve, not on the worker's ephemeral disk.
           volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+            {{- include "yuzdanyuz.tmpMount" $ | nindent 12 }}
             - name: media
               mountPath: /app/media
       volumes:
-        - name: tmp
-          emptyDir: {}
+        {{- include "yuzdanyuz.tmpVolume" $ | nindent 8 }}
         - name: media
           persistentVolumeClaim:
             claimName: {{ include "yuzdanyuz.fullname" $ }}-media

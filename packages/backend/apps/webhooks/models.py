@@ -16,6 +16,7 @@ import uuid
 
 from django.db import models
 
+from core.fields import EncryptedTextField
 from core.mixins import TenantTimestampMixin
 
 from .egress import validate_webhook_url
@@ -29,15 +30,14 @@ def _generate_secret() -> str:
 class WebhookEndpoint(TenantTimestampMixin):
     """Enterprise-registered outgoing webhook target.
 
-    `secret` is the HMAC-SHA256 key — displayed ONCE on create, never exposed
-    via API afterwards. Plaintext storage is intentional (admin needs to
-    re-display on rotation request); future hardening: encrypt-at-rest.
+    `secret` is the HMAC-SHA256 key, encrypted at rest (core.fields.EncryptedTextField):
+    plaintext only in memory for signing; the admin shows it once, on create.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
     url = models.URLField(max_length=500)
-    secret = models.CharField(max_length=64, default=_generate_secret)
+    secret = EncryptedTextField(default=_generate_secret)
     # List of event names this endpoint subscribes to, e.g.
     #   ["exam.submitted", "payment.completed"]
     events = models.JSONField(default=list)

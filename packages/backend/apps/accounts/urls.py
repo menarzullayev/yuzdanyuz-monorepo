@@ -1,6 +1,11 @@
 from django.urls import path
 
-from apps.accounts.gdpr import GDPRErasureView
+from apps.accounts.gdpr import (
+    GDPRErasureCancelView,
+    GDPRErasureConfirmView,
+    GDPRErasureView,
+    GDPRExportView,
+)
 from apps.accounts.views.auth import LogoutView, MeView, TelegramAuthView, TokenRefreshView
 from apps.accounts.views.credentials import (
     ForcedPasswordChangeView,
@@ -101,8 +106,17 @@ urlpatterns = [
     ),
     # Current user — frontend bootstrap on app load / post-login
     path('api/auth/me/', MeView.as_view(), name='me'),
-    # ISSUE-103: GDPR Article 17 erasure
+    # GDPR: erasure (confirm + cooling-off, apps/accounts/services/erasure.py) and export
     path('api/auth/gdpr/erasure/', GDPRErasureView.as_view(), name='gdpr_erasure'),
+    path(
+        'api/auth/gdpr/erasure/confirm/',
+        GDPRErasureConfirmView.as_view(),
+        name='gdpr_erasure_confirm',
+    ),
+    path(
+        'api/auth/gdpr/erasure/cancel/', GDPRErasureCancelView.as_view(), name='gdpr_erasure_cancel'
+    ),
+    path('api/auth/gdpr/export/', GDPRExportView.as_view(), name='gdpr_export'),
     # Telegram Bot webhook
     path('api/bot/webhook/', BotWebhookView.as_view(), name='bot_webhook'),
     # Onboarding profile

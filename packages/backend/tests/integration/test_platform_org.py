@@ -354,6 +354,8 @@ class TestCrossTenantIsolation:
             cur.execute(f'CREATE ROLE {role} NOLOGIN')
             cur.execute(f'GRANT SELECT ON organizations_group, organizations_lesson TO {role}')
             cur.execute(f'SET LOCAL ROLE {role}')
+            # the policies themselves, as with RLS_ENFORCE_ORG_SESSIONS (core/db_roles.py)
+            cur.execute("SELECT set_config('app.rls_bypass', 'on', true)")
             try:
                 for key, title in (('platform', 'L-platform'), ('real', 'L-real')):
                     cur.execute(

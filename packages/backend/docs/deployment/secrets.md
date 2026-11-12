@@ -9,7 +9,10 @@ va `values.yaml`'da faqat reference qilinadi.
 # Tartib: SECRET_KEY, DB password, Redis URL, OAuth credentials, payments, AI, ...
 kubectl -n yuzdanyuz-prod create secret generic yuzdanyuz-secrets \
   --from-literal=SECRET_KEY='<django secret key — 50+ random bytes>' \
-  --from-literal=DB_PASSWORD='<postgres password>' \
+  --from-literal=DB_PASSWORD='<runtime role password (yuzdanyuz)>' \
+  --from-literal=DB_MIGRATE_PASSWORD='<owner role password (yuzdanyuz_owner), migrate Job only>' \
+  --from-literal=DB_BACKUP_PASSWORD='<backup role password (yuzdanyuz_backup)>' \
+  --from-literal=FIELD_ENCRYPTION_KEYS='<Fernet key; see database-roles.md>' \
   --from-literal=REDIS_URL='redis://:<password>@redis-master:6379/1' \
   --from-literal=CHANNELS_REDIS_URL='redis://:<password>@redis-master:6379/2' \
   --from-literal=CELERY_BROKER_URL='redis://:<password>@redis-master:6379/0' \
@@ -33,6 +36,11 @@ kubectl -n yuzdanyuz-prod create secret generic yuzdanyuz-secrets \
   --from-literal=ANTHROPIC_API_KEY='<anthropic api key>' \
   --from-literal=CLAUDE_CODE_OAUTH_TOKEN='<token from: claude setup-token>'
 ```
+
+No pod imports the whole Secret: each workload reads only its keys (`secretRef.common`
+plus `secretRef.<workload>` in the chart values, one `secretKeyRef` per key), so a key a
+workload does not list is never in its environment. A new key therefore has to be added
+to the right list as well. Roles and passwords: [database-roles.md](database-roles.md).
 
 `CLAUDE_CODE_OAUTH_TOKEN` is valid for one year. Its expiry date is not secret:
 set `env.CLAUDE_CODE_OAUTH_TOKEN_EXPIRES` (YYYY-MM-DD) in the Helm values. The

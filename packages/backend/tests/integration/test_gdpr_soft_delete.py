@@ -104,31 +104,42 @@ class TestGDPRErasureEndpoint:
         )
         assert resp.status_code == 400
 
-    def test_erasure_anonymizes_user_pii(self, db, user, member):
-        """Erasure user.email/username/phone'ni redact qiladi."""
-        from django.contrib.auth import get_user_model
+    @staticmethod
+    def _erase(user):
+        """Request with password re-auth, then run the job after the cooling-off."""
+        from datetime import timedelta
 
-        User = get_user_model()
-        user_id = user.id
-        original_email = user.email
+        from django.utils import timezone
+
+        from apps.accounts.services import erasure
 
         client = Client()
         client.force_login(user)
         resp = client.post(
             reverse('accounts:gdpr_erasure'),
-            data={'confirm': True},
+            data={'password': 'pass123'},
             content_type='application/json',
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202, resp.content
+        return erasure.run_due(timezone.now() + timedelta(days=30), raise_errors=True)
 
-        data = resp.json()
-        assert 'redacted_models' in data
-        assert 'CustomUser' in data['redacted_models']
+    def test_erasure_anonymizes_user_pii(self, db, user, member):
+        """Erasure user.email/username/phone'ni redact qiladi (cooling-off'dan keyin)."""
+        from django.contrib.auth import get_user_model
 
-        # User PII anonimlashtirildi
+        from apps.accounts.models import ErasureRequest
+
+        User = get_user_model()
+        user_id = user.id
+        original_email = user.email
+
+        assert self._erase(user) == {'completed': 1, 'failed': 0}
+
+        req = ErasureRequest.objects.get(user_ref=user_id)
+        assert 'CustomUser' in req.redacted
         u = User.objects.get(id=user_id)
-        assert u.email != original_email
-        assert u.email.startswith('redacted-')
+        assert u.email != original_email and u.email is None
+        assert u.username.startswith('deleted-')
         assert u.is_active is False
 
     def test_erasure_preserves_wallet_audit(self, db, user, member):
@@ -140,13 +151,7 @@ class TestGDPRErasureEndpoint:
         tx_id = tx.id
         amount = tx.coins_delta
 
-        client = Client()
-        client.force_login(user)
-        client.post(
-            reverse('accounts:gdpr_erasure'),
-            data={'confirm': True},
-            content_type='application/json',
-        )
+        self._erase(user)
 
         # Audit row'i hali ham mavjud
         tx_after = WalletTransaction.objects.get(id=tx_id)
