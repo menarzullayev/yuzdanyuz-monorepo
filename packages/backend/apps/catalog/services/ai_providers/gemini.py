@@ -1,33 +1,53 @@
 import json
 
+from ._http import post_json
 from .base import SYSTEM_PROMPT, BaseAIProvider
+
+DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
 
 class GeminiProvider(BaseAIProvider):
-    """
-    Google Gemini — gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash, ...
-    O'rnatish: pip install google-generativeai
-    """
+    """Google Gemini (generateContent REST API): gemini-2.0-flash, gemini-1.5-pro, ..."""
 
-    def __init__(self, api_key: str, model: str, **_):
-        try:
-            import google.generativeai as genai
-        except ImportError:
-            raise ImportError(
-                "google-generativeai paketi o'rnatilmagan. pip install google-generativeai"
-            )
+    def __init__(self, api_key: str, model: str, base_url: str = '', **_):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip('/')
 
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=SYSTEM_PROMPT,
-            generation_config=genai.GenerationConfig(response_mime_type='application/json'),
+    def complete(
+        self,
+        prompt: str,
+        *,
+        system: str = '',
+        json_schema: dict | None = None,
+        max_tokens: int = 2048,
+    ) -> str:
+        body: dict = {
+            'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+            'generationConfig': {'maxOutputTokens': max_tokens},
+        }
+        if system:
+            body['systemInstruction'] = {'parts': [{'text': system}]}
+        if json_schema is not None:
+            body['generationConfig']['responseMimeType'] = 'application/json'
+        data = post_json(
+            f'{self.base_url}/models/{self.model}:generateContent',
+            json=body,
+            headers={'x-goog-api-key': self.api_key},
+            secret=self.api_key,
         )
+        try:
+            parts = data['candidates'][0]['content']['parts']
+            return ''.join(p.get('text', '') for p in parts)
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError('Unexpected Gemini response shape') from None
 
     def parse_text_block(self, text: str) -> dict:
         try:
-            response = self._model.generate_content(self._prompt(text))
-            return json.loads(response.text)
+            raw = self.complete(
+                self._prompt(text), system=SYSTEM_PROMPT, json_schema={'type': 'object'}
+            )
+            return json.loads(raw)
         except json.JSONDecodeError as exc:
             return {'error': f'JSON parse xatosi: {exc}', 'raw_text': text}
         except Exception as exc:
