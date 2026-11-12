@@ -19,6 +19,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 
+from apps.accounts.authentication import origin_allowed
 from apps.accounts.models import CustomUser, PreferredLang
 from apps.accounts.services.telegram_auth import (
     TelegramAuthError,
@@ -49,6 +50,8 @@ class TelegramAuthView(View):
     """
 
     def post(self, request):
+        if not origin_allowed(request):
+            return JsonResponse({'error': 'origin_not_allowed'}, status=403)
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -97,7 +100,8 @@ class TokenRefreshView(View):
 
         # The refresh token alone identifies the session; the access cookie is
         # normally already gone by the time we get here.
-        issued = rotate_refresh_token(old_refresh, request)
+        device_id = request.COOKIES.get('device_id', '')
+        issued = rotate_refresh_token(old_refresh, request, device_id=device_id)
         if issued is None:
             response = JsonResponse(
                 {'error': "Refresh token noto'g'ri yoki muddati o'tgan"}, status=401

@@ -26,6 +26,11 @@ TEXTS = {
         '{link}\n'
         "Siz so'ramagan bo'lsangiz, e'tibor bermang."
     ),
+    'recovery_link_admin': (
+        "<b>{brand}</b>: tashkilot administratori hisobingiz uchun parolni tiklashni so'radi. "
+        'Havola 15 daqiqa amal qiladi, bir marta ishlaydi:\n{link}\n'
+        "Buni kutmagan bo'lsangiz, e'tibor bermang."
+    ),
     'two_factor_disabled': (
         "<b>{brand}</b>: hisobingizda ikki bosqichli himoya o'chirildi. "
         "Bu siz bo'lmasangiz, parolni almashtiring."
@@ -46,5 +51,18 @@ def notify(user, event: str, **ctx) -> None:
     send_security_notice.delay(user.telegram_id, event, ctx)
 
 
+def _first_in_window(key: str, seconds: int) -> bool:
+    """True once per ``seconds`` for ``key`` (fails open without Redis)."""
+    try:
+        from core.utils import rate_limiter as rl
+
+        return bool(rl._redis().set(key, '1', nx=True, ex=seconds))
+    except Exception:
+        return True
+
+
 def notify_account_locked(user, retry_after: int) -> None:
+    # A stranger can trigger locks at will; never turn that into a message flood.
+    if not _first_in_window(f'notice:locked:{user.pk}', 3600):
+        return
     notify(user, 'account_locked', minutes=max(1, round(retry_after / 60)))

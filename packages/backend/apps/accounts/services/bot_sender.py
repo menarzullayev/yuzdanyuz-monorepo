@@ -39,7 +39,7 @@ def send_message(telegram_id: int, text: str) -> bool:
         return False
 
 
-def send_contact_request(telegram_id: int) -> bool:
+def send_contact_request(telegram_id: int, requester: str = '') -> bool:
     """
     Foydalanuvchiga "Telefon raqamni ulash" tugmali klaviatura yuboradi.
     Telegram foydalanuvchi ulashgan raqam unga tegishliligini kafolatlaydi.
@@ -54,7 +54,14 @@ def send_contact_request(telegram_id: int) -> bool:
             TELEGRAM_API.format(token=token),
             json={
                 'chat_id': telegram_id,
-                'text': (f'<b>{brand}</b> saytiga kirish uchun\ntelefon raqamingizni ulashing 👇'),
+                'text': (
+                    f'<b>{brand}</b> saytiga kirish uchun\ntelefon raqamingizni ulashing 👇'
+                    + (
+                        f"\n\nSo'rov: {requester}\nBu siz bo'lmasangiz, bekor qiling."
+                        if requester
+                        else ''
+                    )
+                ),
                 'parse_mode': 'HTML',
                 'reply_markup': {
                     'keyboard': [

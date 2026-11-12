@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 TOKEN_TTL = timedelta(minutes=15)
 REQUESTS_PER_HOUR = 3
+IP_REQUESTS_PER_HOUR = 10
 _TEMP_ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 
@@ -43,8 +44,8 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def allow_request(identifier: str) -> bool:
-    """At most REQUESTS_PER_HOUR recovery links per account per hour (fails open without Redis)."""
+def allow_request(identifier: str, limit: int = REQUESTS_PER_HOUR) -> bool:
+    """At most ``limit`` recovery requests per identifier per hour (fails open without Redis)."""
     key = f'recovery:req:{login_throttle.account_key(identifier)}'
     try:
         r = rl._redis()
@@ -52,32 +53,70 @@ def allow_request(identifier: str) -> bool:
         pipe.incr(key)
         pipe.expire(key, 3600, nx=True)
         count, _ = pipe.execute()
-        return int(count) <= REQUESTS_PER_HOUR
+        return int(count) <= limit
     except Exception as e:
         log.error('Recovery limiter unavailable: %s', e)
         return True
 
 
 def create_token(user: CustomUser) -> str:
-    """New one-time token; every earlier unused token of the user is invalidated."""
+    """New one-time token.
+
+    Earlier unused tokens stay valid: otherwise anyone who knows a username could keep
+    requesting links and invalidate the one the owner is about to use. The hourly limits
+    cap how many are live; using any token (or a password change) retires the rest.
+    """
     token = secrets.token_urlsafe(32)
-    now = timezone.now()
-    with transaction.atomic():
-        RecoveryToken.objects.filter(user=user, used_at__isnull=True).update(used_at=now)
-        RecoveryToken.objects.create(user=user, token_hash=_hash(token), expires_at=now + TOKEN_TTL)
+    RecoveryToken.objects.create(
+        user=user, token_hash=_hash(token), expires_at=timezone.now() + TOKEN_TTL
+    )
     return token
 
 
 def recovery_link(token: str) -> str:
-    return f'{settings.FRONTEND_BASE_URL}/reset-password?token={token}'
+    # In the fragment: it never reaches server logs, proxies or Referer headers.
+    return f'{settings.FRONTEND_BASE_URL}/reset-password#token={token}'
 
 
-def send_link_via_telegram(user: CustomUser) -> bool:
+def send_link_via_telegram(user: CustomUser, *, by_org_admin: bool = False) -> bool:
     """Create a token and queue the bot message. False when the account has no Telegram."""
     if not user.telegram_id or not user.is_active:
         return False
-    notify(user, 'recovery_link', link=recovery_link(create_token(user)))
+    event = 'recovery_link_admin' if by_org_admin else 'recovery_link'
+    notify(user, event, link=recovery_link(create_token(user)))
     return True
+
+
+# Higher number = more authority. Custom (non-system) roles rank between student and teacher.
+ROLE_RANK = {'owner': 100, 'manager': 80, 'teacher': 60, 'observer': 40, 'student': 20}
+CUSTOM_ROLE_RANK = 30
+
+
+def _rank(role) -> int:
+    return ROLE_RANK.get(role.name, CUSTOM_ROLE_RANK) if role.is_system_role else CUSTOM_ROLE_RANK
+
+
+def org_admin_may_reset(actor: CustomUser, target: CustomUser) -> bool:
+    """An org admin may start a reset only for a member with a STRICTLY lower role.
+
+    Needs ``members:manage`` in a shared organization, and the target must not hold an
+    equal or higher role in any organization the two share (an owner cannot be reset by
+    a manager, a manager not by another manager). Platform staff and self are excluded.
+    """
+    if actor.pk == target.pk or target.is_staff or target.is_superuser:
+        return False
+    from apps.organizations.models import Membership, MembershipStatus
+
+    active = Membership.objects.filter(status=MembershipStatus.ACTIVE).select_related('role')
+    mine = {m.organization_id: m for m in active.filter(user=actor)}
+    allowed = False
+    for t in active.filter(user=target, organization_id__in=list(mine)):
+        a = mine[t.organization_id]
+        if _rank(t.role) >= _rank(a.role):
+            return False
+        if a.role.has_permission('members:manage'):
+            allowed = True
+    return allowed
 
 
 def confirm_reset(token: str, new_password: str) -> CustomUser:

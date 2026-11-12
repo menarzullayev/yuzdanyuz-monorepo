@@ -23,18 +23,28 @@ def _allowed_origins(request) -> set[str]:
     return {o.rstrip('/') for o in allowed}
 
 
+def origin_allowed(request) -> bool:
+    """False only for a state-changing request carrying a foreign ``Origin`` header.
+
+    Requests without ``Origin`` (non-browser clients, same-origin GET navigations) pass;
+    browsers always send it on cross-site POSTs.
+    """
+    if request.method in SAFE_METHODS:
+        return True
+    origin = request.META.get('HTTP_ORIGIN')
+    if not origin:
+        return True
+    parts = urlsplit(origin)
+    return f'{parts.scheme}://{parts.netloc}' in _allowed_origins(request)
+
+
 class CookieJWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         user = getattr(request._request, 'user', None)
         if user is None or not user.is_authenticated:
             return None
-        if request.method not in SAFE_METHODS:
-            origin = request.META.get('HTTP_ORIGIN')
-            if origin:
-                parts = urlsplit(origin)
-                normalized = f'{parts.scheme}://{parts.netloc}'
-                if normalized not in _allowed_origins(request):
-                    raise PermissionDenied('Origin not allowed.', code='origin_not_allowed')
+        if not origin_allowed(request):
+            raise PermissionDenied('Origin not allowed.', code='origin_not_allowed')
         return (user, None)
 
     def authenticate_header(self, request):

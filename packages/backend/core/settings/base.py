@@ -111,6 +111,8 @@ TRUSTED_PROXY_CIDRS = [
 LOGIN_FAILURE_FREE_ATTEMPTS = int(os.getenv('LOGIN_FAILURE_FREE_ATTEMPTS', '5'))
 # After the free attempts: 1 min, then 5 min, then 15 min (cap) per further failure.
 LOGIN_LOCK_LADDER_SECONDS = (60, 300, 900)
+# Account-wide (all IPs) bucket tolerates far more failures; known devices bypass its lock.
+LOGIN_GLOBAL_FREE_ATTEMPTS = int(os.getenv('LOGIN_GLOBAL_FREE_ATTEMPTS', '20'))
 LOGIN_FAILURE_WINDOW_SECONDS = int(os.getenv('LOGIN_FAILURE_WINDOW_SECONDS', '3600'))
 
 # ── Device sessions (apps/accounts/services/token_service.py) ──

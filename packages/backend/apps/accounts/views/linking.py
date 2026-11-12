@@ -14,8 +14,10 @@ confirmation by the Telegram owner in the bot; never from a client-supplied numb
 The last remaining sign-in method cannot be unlinked.
 """
 
+from django.db import transaction
 from rest_framework.response import Response
 
+from apps.accounts.models import CustomUser
 from apps.accounts.services import linking
 from apps.accounts.services import telegram_deeplink as dl
 from apps.accounts.services.telegram_auth import TelegramAuthError, verify_init_data
@@ -68,12 +70,14 @@ class TelegramLinkView(AuthAPIView):
         return Response(linked_payload(request.user))
 
     def delete(self, request):
-        user = request.user
-        if not user.telegram_id:
-            return api_error('not_linked', 'Telegram is not linked.', 404)
-        if not linking.can_unlink(user, 'telegram'):
-            return api_error('last_method', "Oxirgi kirish usulini ajratib bo'lmaydi.", 400)
-        linking.unlink_telegram(user)
+        # Row lock: two parallel unlinks must not each see "another method remains".
+        with transaction.atomic():
+            user = CustomUser.objects.select_for_update().get(pk=request.user.pk)
+            if not user.telegram_id:
+                return api_error('not_linked', 'Telegram is not linked.', 404)
+            if not linking.can_unlink(user, 'telegram'):
+                return api_error('last_method', "Oxirgi kirish usulini ajratib bo'lmaydi.", 400)
+            linking.unlink_telegram(user)
         return Response(linked_payload(user))
 
 
@@ -86,11 +90,12 @@ class LinkTelegramStartView(AuthAPIView):
 
 class UnlinkGoogleView(AuthAPIView):
     def delete(self, request):
-        user = request.user
-        google = linking.google_account(user)
-        if google is None:
-            return api_error('not_linked', 'Google is not linked.', 404)
-        if not linking.can_unlink(user, 'google'):
-            return api_error('last_method', "Oxirgi kirish usulini ajratib bo'lmaydi.", 400)
-        google.delete()
+        with transaction.atomic():
+            user = CustomUser.objects.select_for_update().get(pk=request.user.pk)
+            google = linking.google_account(user)
+            if google is None:
+                return api_error('not_linked', 'Google is not linked.', 404)
+            if not linking.can_unlink(user, 'google'):
+                return api_error('last_method', "Oxirgi kirish usulini ajratib bo'lmaydi.", 400)
+            google.delete()
         return Response(linked_payload(user))

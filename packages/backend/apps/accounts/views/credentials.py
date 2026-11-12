@@ -8,7 +8,9 @@ Username + password auth (JSON API).
   POST /api/auth/password/change/      change (or first-time set) the password
 """
 
+import hashlib
 import logging
+import secrets
 import uuid
 
 from django.conf import settings
@@ -19,7 +21,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.response import Response
 
-from apps.accounts.models import CustomUser
+from apps.accounts.models import CustomUser, DeviceSession
 from apps.accounts.services import onboarding, two_factor
 from apps.accounts.services import usernames as un
 from apps.accounts.services.password_policy import password_errors
@@ -32,6 +34,8 @@ from apps.accounts.services.token_service import (
 from apps.accounts.views.base import AuthAPIView, PublicAPIView, api_error, field_errors
 from apps.accounts.views.payloads import user_payload
 from core.utils import login_throttle
+from core.utils import rate_limiter as rl
+from core.utils.client_ip import get_client_ip
 
 log = logging.getLogger(__name__)
 
@@ -174,8 +178,33 @@ class RegisterView(PublicAPIView):
 # ── Login ───────────────────────────────────────────────────
 
 
-def authenticate_login(data):
-    """Check username + password (+ second factor). Returns ``(user, key, early_response)``.
+def _known_device(request, user: CustomUser) -> bool:
+    """The request carries a device cookie that this account has signed in with before."""
+    device_id = request.COOKIES.get('device_id', '')
+    return bool(device_id) and DeviceSession.objects.filter(user=user, device_id=device_id).exists()
+
+
+def _register_failure(keys, target: CustomUser | None) -> None:
+    """Count one failure on the (account, IP) bucket and the account-wide bucket."""
+    ip_key, global_key = keys
+    locked_for = max(
+        login_throttle.register_failure(ip_key),
+        login_throttle.register_failure(
+            global_key, free=getattr(settings, 'LOGIN_GLOBAL_FREE_ATTEMPTS', 20)
+        ),
+    )
+    if locked_for and target is not None:
+        notify_account_locked(target, locked_for)
+
+
+def authenticate_login(request, data):
+    """Check username + password (+ second factor). Returns ``(user, keys, early_response)``.
+
+    Brute-force protection has two layers so a stranger cannot lock the owner out:
+      * an (account, client IP) bucket with the 5-failure ladder: an attacker only locks
+        their own address;
+      * an account-wide bucket with a much higher threshold (distributed guessing), which
+        a device already used to sign in to that account bypasses.
 
     A non-None ``early_response`` (throttled / wrong credentials / need_code) must be
     returned to the client as is; otherwise ``user`` is fully authenticated.
@@ -184,11 +213,18 @@ def authenticate_login(data):
     password = raw_text_field(data, 'password')
 
     target = CustomUser.objects.filter(username__iexact=name).first() if name else None
-    key = login_throttle.account_key(f'user:{target.pk}' if target else f'login:{name}')
+    ident = f'user:{target.pk}' if target else f'login:{name}'
+    keys = (
+        login_throttle.account_key(f'{ident}|{get_client_ip(request)}'),
+        login_throttle.account_key(ident),
+    )
+    known = target is not None and _known_device(request, target)
     try:
-        login_throttle.check(key)
+        login_throttle.check(keys[0])
+        if not known:
+            login_throttle.check(keys[1])
     except login_throttle.LoginThrottled as e:
-        return None, key, throttled_response(e)
+        return None, keys, throttled_response(e)
 
     user = None
     if target is not None and target.has_usable_password():
@@ -198,47 +234,81 @@ def authenticate_login(data):
         _burn_password_check(password)
 
     if user is None or not user.is_active:
-        locked_for = login_throttle.register_failure(key)
-        if locked_for and target is not None:
-            notify_account_locked(target, locked_for)
-        return None, key, api_error('invalid_credentials', MSG_INVALID, 400)
+        _register_failure(keys, target)
+        return None, keys, api_error('invalid_credentials', MSG_INVALID, 400)
 
     # Second factor: password alone never signs in an account that has 2FA.
     if two_factor.is_enabled(user):
         code = raw_text_field(data, 'code')
         if not code:
-            return None, key, Response({'need_code': True})
+            return None, keys, Response({'need_code': True})
         if not two_factor.verify_second_factor(user, code):
-            locked_for = login_throttle.register_failure(key)
-            if locked_for:
-                notify_account_locked(user, locked_for)
-            return None, key, api_error('invalid_code', 'Kod notoʻgʻri.', 400)
+            _register_failure(keys, user)
+            return None, keys, api_error('invalid_code', 'Kod noto\u02bbg\u02bbri.', 400)
 
-    return user, key, None
+    return user, keys, None
+
+
+def _reset_throttle(keys) -> None:
+    for k in keys:
+        login_throttle.reset(k)
+
+
+# One-time ticket proving "password + 2FA already passed" for the forced password change,
+# so the user is not asked for a second TOTP code (a code can only be used once).
+CHANGE_TICKET_TTL = 600
+
+
+def _ticket_key(token: str) -> str:
+    return 'pwchange:' + hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_change_ticket(user: CustomUser) -> str:
+    token = secrets.token_urlsafe(32)
+    rl._redis().set(_ticket_key(token), str(user.pk), ex=CHANGE_TICKET_TTL)
+    return token
+
+
+def _ticket_user(token: str) -> CustomUser | None:
+    try:
+        uid = rl._redis().get(_ticket_key(token))
+    except Exception:
+        return None
+    return CustomUser.objects.filter(pk=uid, is_active=True).first() if uid else None
 
 
 class LoginView(PublicAPIView):
     def post(self, request):
-        user, key, early = authenticate_login(request.data)
+        user, keys, early = authenticate_login(request, request.data)
         if early is not None:
             return early
-        login_throttle.reset(key)
+        _reset_throttle(keys)
         if user.must_change_password:
             # An admin issued a temporary password: no session until it is replaced.
-            return Response({'password_change_required': True})
+            return Response(
+                {'password_change_required': True, 'change_token': create_change_ticket(user)}
+            )
         return finish_login(request, user, remember=flag_field(request.data, 'remember', False))
 
 
 class ForcedPasswordChangeView(PublicAPIView):
     """Replace an admin-issued temporary password; signs the user in on success.
 
-    Body: username, password (the temporary one), new_password, code? (if 2FA), remember?
+    Body: ``change_token`` (from the login response) + new_password, or username +
+    password (the temporary one) + code? (if 2FA) + new_password; remember?
     """
 
     def post(self, request):
-        user, key, early = authenticate_login(request.data)
-        if early is not None:
-            return early
+        ticket = raw_text_field(request.data, 'change_token')
+        keys = ()
+        if ticket:
+            user = _ticket_user(ticket)
+            if user is None:
+                return api_error('invalid_ticket', 'The ticket is invalid or has expired.', 400)
+        else:
+            user, keys, early = authenticate_login(request, request.data)
+            if early is not None:
+                return early
         if not user.must_change_password:
             return api_error('not_required', 'Password change is not required.', 409)
         new = raw_text_field(request.data, 'new_password')
@@ -252,7 +322,9 @@ class ForcedPasswordChangeView(PublicAPIView):
                 400,
                 field_errors(new_password=errs),
             )
-        login_throttle.reset(key)
+        _reset_throttle(keys)
+        if ticket:
+            rl._redis().delete(_ticket_key(ticket))
         user.set_password(new)
         user.must_change_password = False
         user.save(update_fields=['password', 'must_change_password'])

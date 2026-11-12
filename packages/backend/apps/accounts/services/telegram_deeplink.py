@@ -50,7 +50,12 @@ def _save(token: str, data: dict) -> None:
 # ── Session boshqaruv ─────────────────────────────────────────
 
 
-def create_session(link_user_pk: str | None = None, acquisition: dict | None = None) -> dict:
+def create_session(
+    link_user_pk: str | None = None,
+    acquisition: dict | None = None,
+    nonce_hash: str | None = None,
+    requester: dict | None = None,
+) -> dict:
     """
     Yangi deep link sessiya yaratadi.
 
@@ -75,6 +80,9 @@ def create_session(link_user_pk: str | None = None, acquisition: dict | None = N
                 'mode': 'link' if link_user_pk else 'login',
                 'link_user_pk': link_user_pk,
                 'acquisition': acquisition if isinstance(acquisition, dict) else None,
+                # Login sessions are bound to the browser that started them (nonce cookie).
+                'nonce_hash': nonce_hash,
+                'requester': requester,
             }
         ),
         ex=SESSION_TTL,
@@ -215,6 +223,31 @@ def on_bot_contact(
     session.update({'status': 'verified', 'phone': normalized_phone, 'user_pk': user_pk})
     _save(token, session)
     return True
+
+
+def hash_nonce(nonce: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((nonce or '').encode()).hexdigest()
+
+
+def nonce_matches(token: str, nonce: str) -> bool:
+    """True when ``nonce`` is the secret handed to the browser that created this session."""
+    import hmac
+
+    session = get_session(token)
+    expected = (session or {}).get('nonce_hash')
+    if not expected or not nonce:
+        return False
+    return hmac.compare_digest(expected, hash_nonce(nonce))
+
+
+def requester_text(token: str) -> str:
+    """Who asked for this sign-in (shown in the bot message so the owner can refuse)."""
+    info = (get_session(token) or {}).get('requester') or {}
+    if not info:
+        return ''
+    return f'{info.get("label", "?")}, IP {info.get("ip", "?")}'
 
 
 def get_verified_user_pk(token: str) -> int | None:

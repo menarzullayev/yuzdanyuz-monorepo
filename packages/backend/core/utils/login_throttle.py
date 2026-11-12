@@ -56,8 +56,8 @@ def _ladder() -> tuple[int, ...]:
     return tuple(int(x) for x in raw) or (60,)
 
 
-def _lock_seconds(failures: int) -> int:
-    free = _setting('LOGIN_FAILURE_FREE_ATTEMPTS', 5)
+def _lock_seconds(failures: int, free: int | None = None) -> int:
+    free = _setting('LOGIN_FAILURE_FREE_ATTEMPTS', 5) if free is None else free
     if failures < free:
         return 0
     ladder = _ladder()
@@ -78,8 +78,11 @@ def check(key: str) -> None:
         raise LoginThrottled(retry_after=max(1, math.ceil(remaining)))
 
 
-def register_failure(key: str) -> int:
-    """Record a failed attempt; return the lock length it started (0 if none)."""
+def register_failure(key: str, free: int | None = None) -> int:
+    """Record a failed attempt; return the lock length it started (0 if none).
+
+    ``free`` overrides the number of failures tolerated before the first lock.
+    """
     try:
         r = rl._redis()
         window = _setting('LOGIN_FAILURE_WINDOW_SECONDS', 3600)
@@ -87,7 +90,7 @@ def register_failure(key: str) -> int:
         pipe.incr(f'auth:fail:{key}')
         pipe.expire(f'auth:fail:{key}', window)
         failures, _ = pipe.execute()
-        seconds = _lock_seconds(int(failures))
+        seconds = _lock_seconds(int(failures), free)
         if seconds:
             r.set(f'auth:lock:{key}', str(_now() + seconds), ex=seconds + 5)
             log.warning('Login backoff: account=%s failures=%s lock=%ss', key, failures, seconds)

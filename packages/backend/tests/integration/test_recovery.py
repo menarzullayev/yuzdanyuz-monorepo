@@ -65,7 +65,7 @@ class TestTelegramLink:
             resp = j(Client(), '/api/auth/recovery/telegram/', {'username': 'TG.person'})
         assert resp.status_code == 202
         assert send.call_args.args[0] == 777
-        assert '/reset-password?token=' in send.call_args.args[1]
+        assert '/reset-password#token=' in send.call_args.args[1]
 
     def test_response_is_identical_for_unknown_and_telegramless_accounts(self, tg_user):
         CustomUser.objects.create_user(username='no.telegram', password=STRONG)
@@ -87,25 +87,51 @@ class TestTelegramLink:
         links = [request_link('tg.person')[1] for _ in range(5)]
         assert [bool(x) for x in links] == [True, True, True, False, False]
 
-    def test_a_new_link_invalidates_the_previous_one(self, tg_user):
+    def test_requesting_a_new_link_does_not_kill_the_previous_one(self, tg_user):
+        """Anyone who knows a username must not be able to invalidate the owner's link."""
         _, first = request_link('tg.person')
         _, second = request_link('tg.person')
+        assert RecoveryToken.objects.filter(user=tg_user, used_at__isnull=True).count() == 2
         assert (
             j(
                 Client(),
                 '/api/auth/recovery/confirm/',
                 {'token': token_of(first), 'new_password': NEW},
             ).status_code
-            == 400
-        )
-        assert (
-            j(
-                Client(),
-                '/api/auth/recovery/confirm/',
-                {'token': token_of(second), 'new_password': NEW},
-            ).status_code
             == 200
         )
+        # using one link retires the rest
+        again = j(
+            Client(),
+            '/api/auth/recovery/confirm/',
+            {'token': token_of(second), 'new_password': 'An0ther-pass!9'},
+        )
+        assert again.status_code == 400
+
+    def test_requests_are_limited_per_ip_as_well(self, db):
+        users = [
+            CustomUser.objects.create_user(
+                username=f'tg.user{i}', password=STRONG, telegram_id=900 + i
+            )
+            for i in range(12)
+        ]
+        sent = 0
+        for u in users:
+            with patch('apps.accounts.services.bot_sender.send_message') as send:
+                # same client IP every time: only the per-IP hourly cap can stop this
+                Client().post(
+                    '/api/auth/recovery/telegram/',
+                    data=json.dumps({'username': u.username}),
+                    content_type='application/json',
+                    REMOTE_ADDR='203.0.113.50',
+                )
+            sent += int(send.called)
+            from core.utils import rate_limiter as rl
+
+            rl._redis().delete(
+                *rl._redis().keys('rl:*')
+            )  # clear the 5/min tier, keep the hourly cap
+        assert sent == recovery.IP_REQUESTS_PER_HOUR
 
     def test_inactive_account_gets_no_link(self, tg_user):
         tg_user.is_active = False
@@ -122,7 +148,7 @@ class TestTelegramLink:
                 HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN='test-webhook-secret',
             )
         assert resp.status_code == 200
-        assert 'reset-password?token=' in send.call_args.args[1]
+        assert 'reset-password#token=' in send.call_args.args[1]
         assert RecoveryToken.objects.filter(user=tg_user).count() == 1
 
     def test_bot_reset_for_unknown_telegram_creates_nothing(self, db):
@@ -252,160 +278,305 @@ def org_setup(db, org, org2):
 
 @pytest.mark.integration
 class TestOrgAdminReset:
-    def test_manager_issues_a_temporary_password(self, org_setup):
+    """An org admin only STARTS a recovery for a lower-ranked member; the link goes to the
+    member's own Telegram and the admin never sees a password."""
+
+    URL = '/api/auth/recovery/org-reset/'
+
+    def _reset(self, client, target, **extra):
+        with patch('apps.accounts.services.bot_sender.send_message') as send:
+            resp = j(client, self.URL, {'user_id': str(target.pk), **extra})
+        return resp, send
+
+    def test_manager_triggers_a_link_for_a_student_and_never_gets_a_password(self, org_setup):
         org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
+        student = org_setup('the.student', 'student', telegram_id=3131)
         admin_client, _ = login('the.manager')
 
-        resp = j(admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)})
+        resp, send = self._reset(admin_client, student)
 
         assert resp.status_code == 200
-        temp = resp.json()['temporary_password']
-        assert len(temp) >= 12
-        student.refresh_from_db()
-        assert student.must_change_password and student.check_password(temp)
-
-    def test_login_with_temporary_password_demands_a_change_and_gives_no_session(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        admin_client, _ = login('the.manager')
-        temp = j(
-            admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)}
-        ).json()['temporary_password']
-
-        c, resp = login('the.student', temp)
-
-        assert resp.json() == {'password_change_required': True}
-        assert 'access_token' not in resp.cookies
-        assert c.get('/api/auth/me/').status_code == 401
-
-    def test_forced_change_replaces_the_password_and_signs_in(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        admin_client, _ = login('the.manager')
-        temp = j(
-            admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)}
-        ).json()['temporary_password']
-
-        c = Client()
-        resp = j(
-            c,
-            '/api/auth/password/change-required/',
-            {'username': 'the.student', 'password': temp, 'new_password': NEW},
-        )
-
-        assert resp.status_code == 200 and 'access_token' in resp.cookies
-        student.refresh_from_db()
-        assert not student.must_change_password and student.check_password(NEW)
-        assert login('the.student', NEW)[1].json()['user']['username'] == 'the.student'
-        assert login('the.student', temp)[1].status_code == 400
-
-    def test_forced_change_rejects_weak_or_unchanged_passwords(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        admin_client, _ = login('the.manager')
-        temp = j(
-            admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)}
-        ).json()['temporary_password']
-        for bad in ('password1', temp, 'the.student1'):
-            resp = j(
-                Client(),
-                '/api/auth/password/change-required/',
-                {'username': 'the.student', 'password': temp, 'new_password': bad},
-            )
-            assert resp.status_code == 400, bad
-        student.refresh_from_db()
-        assert student.must_change_password
-
-    def test_forced_change_needs_the_temporary_password(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        admin_client, _ = login('the.manager')
-        j(admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)})
-        resp = j(
-            Client(),
-            '/api/auth/password/change-required/',
-            {'username': 'the.student', 'password': 'guess-it-1', 'new_password': NEW},
-        )
-        assert resp.status_code == 400
-        student.refresh_from_db()
-        assert student.must_change_password
-
-    def test_forced_change_is_409_for_normal_accounts(self, org_setup):
-        org_setup('the.student', 'student')
-        resp = j(
-            Client(),
-            '/api/auth/password/change-required/',
-            {'username': 'the.student', 'password': STRONG, 'new_password': NEW},
-        )
-        assert resp.status_code == 409
-
-    def test_the_reset_kills_the_targets_sessions(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        stu_client, _ = login('the.student')
-        admin_client, _ = login('the.manager')
-        j(admin_client, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)})
-        assert stu_client.post('/api/auth/refresh/').status_code == 401
-
-    def test_a_student_cannot_reset_anyone(self, org_setup):
-        org_setup('the.student', 'student')
-        other = org_setup('other.student', 'student')
-        c, _ = login('the.student')
-        assert j(c, '/api/auth/recovery/org-reset/', {'user_id': str(other.pk)}).status_code == 403
-        other.refresh_from_db()
-        assert not other.must_change_password
-
-    def test_a_manager_of_another_org_cannot_reset(self, org_setup, org2):
-        org_setup('foreign.manager', 'manager', organization=org2)
-        student = org_setup('the.student', 'student')
-        c, _ = login('foreign.manager')
-        assert (
-            j(c, '/api/auth/recovery/org-reset/', {'user_id': str(student.pk)}).status_code == 403
-        )
+        assert resp.json() == {'ok': True, 'delivered': 'telegram'}
+        assert 'password' not in resp.content.decode().lower()
+        chat_id, text = send.call_args.args
+        assert chat_id == 3131 and 'tashkilot administratori' in text
+        assert 'reset-password#token=' in text
         student.refresh_from_db()
         assert student.check_password(STRONG) and not student.must_change_password
 
-    def test_cannot_reset_platform_staff_or_self(self, org_setup):
-        manager = org_setup('the.manager', 'manager')
-        staff = org_setup('the.staff', 'student', is_staff=True)
-        c, _ = login('the.manager')
-        assert j(c, '/api/auth/recovery/org-reset/', {'user_id': str(staff.pk)}).status_code == 403
+    def test_the_link_lets_only_the_member_set_the_password(self, org_setup):
+        org_setup('the.manager', 'manager')
+        student = org_setup('the.student', 'student', telegram_id=3131)
+        admin_client, _ = login('the.manager')
+        _, send = self._reset(admin_client, student)
+        token = token_of(re.search(r'https?://\S+', send.call_args.args[1]).group(0))
+
         assert (
-            j(c, '/api/auth/recovery/org-reset/', {'user_id': str(manager.pk)}).status_code == 403
+            j(
+                Client(), '/api/auth/recovery/confirm/', {'token': token, 'new_password': NEW}
+            ).status_code
+            == 200
         )
+        assert login('the.student', NEW)[1].status_code == 200
+
+    def test_member_without_telegram_cannot_be_reset_this_way(self, org_setup):
+        org_setup('the.manager', 'manager')
+        student = org_setup('the.student', 'student')
+        resp, send = self._reset(login('the.manager')[0], student)
+        assert resp.status_code == 409 and resp.json()['error']['code'] == 'no_telegram'
+        send.assert_not_called()
+        assert RecoveryToken.objects.count() == 0
+
+    def test_a_manager_cannot_reset_the_owner(self, org_setup):
+        org_setup('the.manager', 'manager', telegram_id=1)
+        owner = org_setup('the.owner', 'owner', telegram_id=2)
+        resp, send = self._reset(login('the.manager')[0], owner)
+        assert resp.status_code == 403
+        send.assert_not_called()
+        owner.refresh_from_db()
+        assert owner.check_password(STRONG) and RecoveryToken.objects.count() == 0
+
+    def test_a_manager_cannot_reset_another_manager(self, org_setup):
+        org_setup('manager.one', 'manager')
+        other = org_setup('manager.two', 'manager', telegram_id=2)
+        resp, send = self._reset(login('manager.one')[0], other)
+        assert resp.status_code == 403
+        send.assert_not_called()
+
+    def test_a_teacher_cannot_reset_anyone(self, org_setup):
+        org_setup('the.teacher', 'teacher')
+        student = org_setup('the.student', 'student', telegram_id=3)
+        resp, _ = self._reset(login('the.teacher')[0], student)
+        assert resp.status_code == 403  # teachers lack members:manage
+
+    def test_owner_can_reset_a_manager(self, org_setup):
+        org_setup('the.owner', 'owner')
+        manager = org_setup('the.manager', 'manager', telegram_id=4)
+        resp, send = self._reset(login('the.owner')[0], manager)
+        assert resp.status_code == 200 and send.called
+
+    def test_target_who_is_higher_in_any_shared_org_is_protected(self, org_setup, org, org2):
+        """Manager in org A, but the target is owner of org B where the actor is also a member."""
+        actor = org_setup('the.manager', 'manager')
+        target = org_setup('the.target', 'student', telegram_id=5)
+        Membership.objects.create(
+            user=actor,
+            organization=org2,
+            role=OrgRole.objects.get(organization=org2, name='student'),
+            status=MembershipStatus.ACTIVE,
+        )
+        Membership.objects.create(
+            user=target,
+            organization=org2,
+            role=OrgRole.objects.get(organization=org2, name='owner'),
+            status=MembershipStatus.ACTIVE,
+        )
+        resp, send = self._reset(login('the.manager')[0], target)
+        assert resp.status_code == 403
+        send.assert_not_called()
+
+    def test_a_b2c_account_cannot_be_taken_over_by_an_org_admin(self, org_setup):
+        org_setup('the.manager', 'manager')
+        outsider = CustomUser(username='outsider', telegram_id=6)
+        outsider.set_password(STRONG)
+        outsider.save()
+        resp, send = self._reset(login('the.manager')[0], outsider)
+        assert resp.status_code == 403
+        send.assert_not_called()
+        outsider.refresh_from_db()
+        assert outsider.check_password(STRONG)
+
+    def test_a_manager_of_another_org_cannot_reset(self, org_setup, org2):
+        org_setup('foreign.manager', 'manager', organization=org2)
+        student = org_setup('the.student', 'student', telegram_id=7)
+        resp, send = self._reset(login('foreign.manager')[0], student)
+        assert resp.status_code == 403
+        send.assert_not_called()
+
+    def test_cannot_reset_platform_staff_or_self(self, org_setup):
+        manager = org_setup('the.manager', 'manager', telegram_id=8)
+        staff = org_setup('the.staff', 'student', is_staff=True, telegram_id=9)
+        c, _ = login('the.manager')
+        assert self._reset(c, staff)[0].status_code == 403
+        assert self._reset(c, manager)[0].status_code == 403
+
+    def test_a_supplied_password_is_ignored_and_no_password_is_ever_set(self, org_setup):
+        org_setup('the.manager', 'manager')
+        student = org_setup('the.student', 'student', telegram_id=10)
+        resp, _ = self._reset(
+            login('the.manager')[0], student, temporary_password='Attacker-pass-1!'
+        )
+        assert resp.status_code == 200
+        student.refresh_from_db()
+        assert not student.check_password('Attacker-pass-1!') and student.check_password(STRONG)
+
+    def test_the_target_is_rate_limited(self, org_setup):
+        org_setup('the.manager', 'manager')
+        student = org_setup('the.student', 'student', telegram_id=11)
+        c, _ = login('the.manager')
+        codes = [self._reset(c, student)[0].status_code for _ in range(5)]
+        assert codes[:3] == [200, 200, 200] and 429 in codes
 
     def test_unknown_user_is_indistinguishable_from_forbidden(self, org_setup):
         org_setup('the.manager', 'manager')
         c, _ = login('the.manager')
         import uuid
 
-        assert (
-            j(c, '/api/auth/recovery/org-reset/', {'user_id': str(uuid.uuid4())}).status_code == 403
-        )
-        assert j(c, '/api/auth/recovery/org-reset/', {'user_id': 'nope'}).status_code == 400
-
-    def test_supplied_temporary_password_must_meet_the_policy(self, org_setup):
-        org_setup('the.manager', 'manager')
-        student = org_setup('the.student', 'student')
-        c, _ = login('the.manager')
-        resp = j(
-            c,
-            '/api/auth/recovery/org-reset/',
-            {'user_id': str(student.pk), 'temporary_password': 'password1'},
-        )
-        assert resp.status_code == 400
-        student.refresh_from_db()
-        assert student.check_password(STRONG)
+        assert j(c, self.URL, {'user_id': str(uuid.uuid4())}).status_code == 403
+        assert j(c, self.URL, {'user_id': 'nope'}).status_code == 400
 
     def test_anonymous_is_rejected(self, db):
-        assert j(Client(), '/api/auth/recovery/org-reset/', {'user_id': 'x'}).status_code == 401
+        assert j(Client(), self.URL, {'user_id': 'x'}).status_code == 401
 
     def test_generated_passwords_pass_the_policy(self, db):
         for _ in range(20):
             from apps.accounts.services.password_policy import password_errors
 
             assert password_errors(recovery.generate_temporary_password()) == []
+
+
+@pytest.mark.integration
+class TestForcedChange:
+    """Temporary passwords now come only from platform staff (Django admin action)."""
+
+    @pytest.fixture
+    def flagged(self, db):
+        user = CustomUser.objects.create_user(username='flagged.user', password=STRONG)
+        temp = recovery.set_temporary_password(user)
+        return user, temp
+
+    def test_login_with_temporary_password_gives_a_ticket_and_no_session(self, flagged):
+        c, resp = login('flagged.user', flagged[1])
+        body = resp.json()
+        assert body['password_change_required'] is True and body['change_token']
+        assert 'access_token' not in resp.cookies
+        assert c.get('/api/auth/me/').status_code == 401
+
+    def test_ticket_completes_the_change_and_signs_in(self, flagged):
+        user, temp = flagged
+        ticket = login('flagged.user', temp)[1].json()['change_token']
+        c = Client()
+        resp = j(
+            c, '/api/auth/password/change-required/', {'change_token': ticket, 'new_password': NEW}
+        )
+        assert resp.status_code == 200 and 'access_token' in resp.cookies
+        user.refresh_from_db()
+        assert not user.must_change_password and user.check_password(NEW)
+        assert login('flagged.user', temp)[1].status_code == 400
+
+    def test_ticket_is_single_use(self, flagged):
+        ticket = login('flagged.user', flagged[1])[1].json()['change_token']
+        assert (
+            j(
+                Client(),
+                '/api/auth/password/change-required/',
+                {'change_token': ticket, 'new_password': NEW},
+            ).status_code
+            == 200
+        )
+        again = j(
+            Client(),
+            '/api/auth/password/change-required/',
+            {'change_token': ticket, 'new_password': 'An0ther-pass!9'},
+        )
+        assert again.status_code == 400
+
+    def test_garbage_ticket_is_refused(self, flagged):
+        resp = j(
+            Client(),
+            '/api/auth/password/change-required/',
+            {'change_token': 'x' * 43, 'new_password': NEW},
+        )
+        assert resp.status_code == 400 and resp.json()['error']['code'] == 'invalid_ticket'
+        flagged[0].refresh_from_db()
+        assert flagged[0].must_change_password
+
+    def test_weak_or_unchanged_passwords_keep_the_ticket_usable(self, flagged):
+        user, temp = flagged
+        ticket = login('flagged.user', temp)[1].json()['change_token']
+        for bad in ('password1', temp, 'flagged.user1'):
+            resp = j(
+                Client(),
+                '/api/auth/password/change-required/',
+                {'change_token': ticket, 'new_password': bad},
+            )
+            assert resp.status_code == 400, bad
+        assert (
+            j(
+                Client(),
+                '/api/auth/password/change-required/',
+                {'change_token': ticket, 'new_password': NEW},
+            ).status_code
+            == 200
+        )
+
+    def test_legacy_credentials_path_still_needs_the_temporary_password(self, flagged):
+        resp = j(
+            Client(),
+            '/api/auth/password/change-required/',
+            {'username': 'flagged.user', 'password': 'guess-it-1', 'new_password': NEW},
+        )
+        assert resp.status_code == 400
+        flagged[0].refresh_from_db()
+        assert flagged[0].must_change_password
+
+    def test_409_for_normal_accounts(self, db):
+        CustomUser.objects.create_user(username='normal.user', password=STRONG)
+        resp = j(
+            Client(),
+            '/api/auth/password/change-required/',
+            {'username': 'normal.user', 'password': STRONG, 'new_password': NEW},
+        )
+        assert resp.status_code == 409
+
+    def test_after_2fa_login_no_second_totp_code_is_needed(self, flagged):
+        """16: the TOTP step is spent at login; the ticket carries the proof."""
+        from apps.accounts.models import TOTPDevice
+        from apps.accounts.services import two_factor as tf
+
+        user, temp = flagged
+        secret = tf.generate_secret()
+        TOTPDevice.objects.create(
+            user=user, secret_enc=tf.encrypt_secret(secret), confirmed_at=timezone.now()
+        )
+        step = tf.current_step()
+        code = tf.totp_code(secret, step + 1)
+
+        resp = login('flagged.user', temp, code=code)[1]
+        assert resp.json()['password_change_required'] is True
+        done = j(
+            Client(),
+            '/api/auth/password/change-required/',
+            {'change_token': resp.json()['change_token'], 'new_password': NEW},
+        )
+        assert done.status_code == 200
+
+    def test_ticket_cannot_be_obtained_without_the_second_factor(self, flagged):
+        from apps.accounts.models import TOTPDevice
+        from apps.accounts.services import two_factor as tf
+
+        user, temp = flagged
+        TOTPDevice.objects.create(
+            user=user,
+            secret_enc=tf.encrypt_secret(tf.generate_secret()),
+            confirmed_at=timezone.now(),
+        )
+        resp = login('flagged.user', temp)[1]
+        assert resp.json() == {'need_code': True}
+        assert 'change_token' not in resp.content.decode()
+
+    def test_the_reset_kills_the_targets_sessions(self, db):
+        user = CustomUser.objects.create_user(username='victim.user', password=STRONG)
+        client, _ = login('victim.user')
+        recovery.set_temporary_password(user)
+        assert client.post('/api/auth/refresh/').status_code == 401
+
+    def test_supplied_temporary_password_must_meet_the_policy(self, db):
+        user = CustomUser.objects.create_user(username='victim.user', password=STRONG)
+        with pytest.raises(recovery.RecoveryError):
+            recovery.set_temporary_password(user, 'password1')
+        user.refresh_from_db()
+        assert user.check_password(STRONG)
 
 
 @pytest.mark.integration

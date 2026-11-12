@@ -1,10 +1,11 @@
 """Shared helpers for the auth JSON API."""
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.authentication import CookieJWTAuthentication
+from apps.accounts.authentication import CookieJWTAuthentication, origin_allowed
 
 
 def api_error(code: str, message: str, status: int = 400, details=None, **extra) -> Response:
@@ -31,7 +32,16 @@ class AuthAPIView(APIView):
 
 
 class PublicAPIView(APIView):
-    """Anonymous endpoint; never touches the session/CSRF machinery."""
+    """Anonymous endpoint; never touches the session/CSRF machinery.
+
+    These views set auth cookies (login, register...), so a foreign ``Origin`` on a
+    state-changing request is refused (login CSRF / session fixation from another site).
+    """
 
     authentication_classes: list = []
     permission_classes: list = []
+
+    def initial(self, request, *args, **kwargs):
+        if not origin_allowed(request):
+            raise PermissionDenied('Origin not allowed.', code='origin_not_allowed')
+        super().initial(request, *args, **kwargs)

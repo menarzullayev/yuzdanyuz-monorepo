@@ -169,15 +169,15 @@ class TestPerAccountThrottle:
 
     def test_per_account_limit_triggers_across_ips(self, client, settings, victim):
         settings.TRUSTED_PROXY_CIDRS = []
-        statuses = [self._attempt(client, i).status_code for i in range(20)]
+        statuses = [self._attempt(client, i).status_code for i in range(40)]
         assert 429 in statuses, statuses
         first_429 = statuses.index(429)
-        assert first_429 <= 6, statuses
+        assert first_429 <= settings.LOGIN_GLOBAL_FREE_ATTEMPTS + 1, statuses
         assert all(s == 429 for s in statuses[first_429:]), statuses
 
     def test_correct_password_refused_while_backoff_active(self, client, settings, victim):
         settings.TRUSTED_PROXY_CIDRS = []
-        for i in range(10):
+        for i in range(settings.LOGIN_GLOBAL_FREE_ATTEMPTS + 2):
             self._attempt(client, i)
         resp = self._attempt(client, 50, password='Correct-horse-9')
         assert resp.status_code == 429

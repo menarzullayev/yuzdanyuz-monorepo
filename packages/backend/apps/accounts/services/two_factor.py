@@ -62,9 +62,14 @@ def current_step(now: float | None = None) -> int:
     return int((now if now is not None else time.time()) // STEP_SECONDS)
 
 
+def _is_totp_shaped(code: str) -> bool:
+    # isdigit() alone accepts non-ASCII digits, which hmac.compare_digest cannot compare.
+    return len(code) == DIGITS and code.isascii() and code.isdigit()
+
+
 def matching_step(secret: str, code: str, now: float | None = None) -> int | None:
     """Step whose code equals ``code`` within the +-1 window, else None (constant time)."""
-    if not (len(code) == DIGITS and code.isdigit()):
+    if not _is_totp_shaped(code):
         return None
     base = current_step(now)
     found = None
@@ -133,6 +138,8 @@ def backup_codes_remaining(user: CustomUser) -> int:
 
 
 def _consume_backup_code(user: CustomUser, code: str) -> bool:
+    if not code.isascii():
+        return False
     digest = hash_backup_code(code)
     for row in BackupCode.objects.filter(user=user, used_at__isnull=True):
         if hmac.compare_digest(row.code_hash, digest):
@@ -199,7 +206,7 @@ def verify_second_factor(user: CustomUser, code: str) -> bool:
     if device is None or not code:
         return False
     code = code.strip()
-    if len(code) == DIGITS and code.isdigit():
+    if _is_totp_shaped(code):
         return _verify_totp(device, code)
     return _consume_backup_code(user, code)
 

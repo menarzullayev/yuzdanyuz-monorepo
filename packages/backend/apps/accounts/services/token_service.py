@@ -155,7 +155,9 @@ def verify_access_token(token: str) -> str | None:
 @dataclass
 class IssuedSession:
     access: str
-    refresh: str
+    # None when the presented token was the previous one inside the grace window:
+    # the browser already holds (or is about to receive) the current refresh token.
+    refresh: str | None
     session: DeviceSession
     device_id: str
     remember: bool
@@ -313,7 +315,9 @@ def create_token_pair(
 # ── Rotation ────────────────────────────────────────────────
 
 
-def rotate_refresh_token(refresh_value: str, request=None) -> IssuedSession | None:
+def rotate_refresh_token(
+    refresh_value: str, request=None, device_id: str | None = None
+) -> IssuedSession | None:
     """Exchange a refresh token for a new pair, from the refresh token alone.
 
     Returns None for unknown/expired/revoked sessions and wrong secrets. Replaying
@@ -345,18 +349,28 @@ def rotate_refresh_token(refresh_value: str, request=None) -> IssuedSession | No
             revoke_session(session, 'inactive')
             return None
 
+        # A refresh token only works together with the device cookie it was issued for.
+        if device_id is not None and not hmac.compare_digest(
+            device_id.encode(), session.device_id.encode()
+        ):
+            return None
+
         is_current = hmac.compare_digest(presented, session.refresh_hash)
         is_prev = bool(session.prev_refresh_hash) and hmac.compare_digest(
             presented, session.prev_refresh_hash
         )
         if not is_current:
-            if is_prev and session.rotated_at is not None:
-                within_grace = (now - session.rotated_at).total_seconds() <= REFRESH_GRACE_SECONDS
-                if not within_grace:
-                    revoke_session(session, 'reuse')
-                    return None
-            else:
+            if not (is_prev and session.rotated_at is not None):
                 return None
+            if (now - session.rotated_at).total_seconds() > REFRESH_GRACE_SECONDS:
+                revoke_session(session, 'reuse')
+                return None
+            # Second tab inside the grace window: hand out an access token only and do
+            # NOT rotate again. Rotating twice would leave the shared cookie jar holding
+            # an already-superseded token and turn the race into a 'reuse' revocation.
+            DeviceSession.objects.filter(pk=session.pk).update(last_used_at=now)
+            access = _create_access_token(user, org=user.primary_organization, sid=session.pk)
+            return IssuedSession(access, None, session, session.device_id, session.remember)
 
         new_refresh, new_hash = _make_refresh(session.pk)
         updates = {
@@ -410,7 +424,7 @@ def revoke_token(user_id: str, device_id: str) -> None:
 def set_auth_cookies(
     response,
     access: str,
-    refresh: str,
+    refresh: str | None,
     is_secure: bool = False,
     remember: bool = True,
     device_id: str | None = None,
@@ -425,15 +439,16 @@ def set_auth_cookies(
         samesite='Lax',
         path='/',
     )
-    response.set_cookie(
-        'refresh_token',
-        refresh,
-        max_age=int(_remember_ttl().total_seconds()) if remember else None,
-        httponly=True,
-        secure=is_secure,
-        samesite='Lax',
-        path=_refresh_cookie_path(),
-    )
+    if refresh is not None:
+        response.set_cookie(
+            'refresh_token',
+            refresh,
+            max_age=int(_remember_ttl().total_seconds()) if remember else None,
+            httponly=True,
+            secure=is_secure,
+            samesite='Lax',
+            path=_refresh_cookie_path(),
+        )
     if device_id:
         set_device_cookie(response, device_id, is_secure)
 

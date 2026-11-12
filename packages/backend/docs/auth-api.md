@@ -40,7 +40,7 @@ Extra keys may sit inside `error` (`suggestions`, `retry_after`). Status codes u
 `400` validation/credentials, `401` not signed in (call `refresh` once, then send the user to login),
 `403` forbidden (also a foreign `Origin` on a state-changing request), `404`, `409` conflict, `429` throttled.
 
-State-changing authenticated requests (POST/PATCH/DELETE) with an `Origin` header outside
+Every state-changing request (POST/PATCH/DELETE, signed in or not, including login/register/Telegram sign-in) with an `Origin` header outside
 `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` / the API host get `403 origin_not_allowed`
 (this, plus `SameSite=Lax`, is the CSRF defence; there is no CSRF token to fetch).
 
@@ -72,14 +72,18 @@ Over the limit: `429` with `Retry-After` and
 `{"error":"rate_limit_exceeded","tier":"login","retry_after":N}`.
 The client IP comes from `TRUSTED_PROXY_CIDRS` only (see `deployment/cloudflare.md`).
 
-On top of that, password sign-in has a **per-account** lock that no IP rotation avoids:
-after 5 failures in a row the account is locked for 1 min, then 5 min, then 15 min
-(cap) for each further failure; attempts during a lock are refused without extending it.
-A wrong 2FA code counts as a failure too. Locked response:
+On top of that, password sign-in has two failure buckets so a stranger cannot lock the owner out:
+
+* **account + client IP**: after 5 failures in a row the address is locked for 1 min, then 5 min, then 15 min (cap);
+  an attacker only locks their own address, the owner signing in from elsewhere is unaffected;
+* **account-wide** (guessing from many IPs): the same ladder after `LOGIN_GLOBAL_FREE_ATTEMPTS` (20) failures.
+  A device that has signed in to that account before (valid `device_id` cookie) bypasses this lock.
+
+Attempts during a lock are refused without extending it. A wrong 2FA code counts as a failure too. Locked response:
 
 `429 {"error":{"code":"account_locked","retry_after":60,...}}` + `Retry-After`.
 
-The owner is told on Telegram when a lock starts (if Telegram is linked).
+The owner is told on Telegram when a lock starts (if Telegram is linked), at most once per hour.
 
 ---
 
@@ -121,7 +125,7 @@ is only needed when 2FA is on.
 |---|---|
 | `200 {"user": {...}}` + cookies | signed in |
 | `200 {"need_code": true}` | 2FA is on: repeat the request with `code` (no session yet) |
-| `200 {"password_change_required": true}` | an admin issued a temporary password: call `POST /password/change-required/` (no session yet) |
+| `200 {"password_change_required": true, "change_token": "..."}` | platform staff issued a temporary password: call `POST /password/change-required/` with the ticket (no session yet; the ticket is only issued after password and 2FA passed) |
 | `400 invalid_credentials` | wrong username/password/inactive/no-password account (same answer for unknown users) |
 | `400 invalid_code` | wrong or already-used 2FA code |
 | `429 account_locked` | see *Rate limits* |
@@ -132,18 +136,19 @@ cookies and a 24 h sliding server session.
 ### `POST /api/auth/telegram/` (Mini App)
 
 `{"init_data": "<WebApp.initData>", "acquisition": {...}?}`. The signature is verified with the bot
-token; initData older than 24 h is refused. Creates the account on first use (username generated
+token; initData older than 10 minutes is refused (same for linking). Creates the account on first use (username generated
 from the Telegram name, one free change, `start_param` captured as attribution).
-`200 {"user": {..., "is_new": true}}` + cookies (persistent). `401 {"error": "..."}` bad signature,
+`200 {"user": {..., "is_new": true}}` + cookies (persistent). `401 {"error": "..."}` bad signature or older than 10 minutes,
 `403` blocked account. (Legacy shape: `error` is a string here.)
 
 ### Telegram through the bot (web)
 
-1. `POST /api/auth/tg/init/` (optional body `{"acquisition": {...}}`) -> `{"token", "deep_link", "expires_in": 300}`.
-   Open `deep_link`; the user presses Start and shares *their own* phone contact.
+1. `POST /api/auth/tg/init/` (optional body `{"acquisition": {...}}`) -> `{"token", "deep_link", "expires_in": 300}`
+   and an HttpOnly `tg_nonce` cookie (path `/api/auth/tg/`) that binds the sign-in to this browser.
+   Open `deep_link`; the bot shows which device/IP asked, and the user presses Start and shares *their own* phone contact.
 2. Poll `GET /api/auth/tg/status/?token=...` -> `{"status": "pending" | "waiting" | "verified" | "expired"}`.
 3. When `verified`: `POST /api/auth/tg/complete/` `{"token", "remember"?}` -> `{"user": {...}}` + cookies
-   (`401` if not verified/expired, `403` blocked).
+   (`401` if not verified/expired or the `tg_nonce` cookie is missing/wrong, i.e. another browser; `403` blocked).
 
 New accounts get a name-based username (`username_change_available: true`).
 
@@ -164,10 +169,12 @@ ask for a 2FA code; keep the flag off for accounts that use 2FA until that hook 
 
 ### `POST /api/auth/refresh/`
 
-No body. Needs only the `refresh_token` cookie (the access cookie is already gone after 15 minutes
-of inactivity). `200 {"ok": true}` + rotated cookies. `401` (cookies cleared) when the session is
-unknown, revoked or expired. A refresh token replayed after its 10 s grace window revokes the
-whole session (theft signal); two tabs refreshing together are fine.
+No body. Needs the `refresh_token` cookie and the `device_id` cookie it was issued for (the access cookie is
+already gone after 15 minutes of inactivity). `200 {"ok": true}` + rotated cookies. `401` (cookies cleared)
+when the session is unknown, revoked or expired, or the device cookie is missing/different.
+Two tabs refreshing together are fine: inside a 10 s grace window the second request gets only a new
+access cookie (no second rotation, so no refresh cookie is set). Replaying the previous refresh token after
+the grace window revokes the whole session (theft signal).
 
 ### `POST /api/auth/logout/`
 
@@ -224,8 +231,10 @@ Errors: `400 invalid_credentials` (`details.current_password`), `400 validation_
 ### `POST /api/auth/password/change-required/`
 
 Replaces a temporary password issued by an admin and signs the user in.
-`{"username", "password" (the temporary one), "new_password", "code"?, "remember"?}` ->
-`200 {"user": {...}}` + cookies. `409 not_required` for normal accounts; same errors as login.
+`{"change_token", "new_password", "remember"?}` (the ticket from the login response; single use, 10 min; no second
+TOTP code is needed) -> `200 {"user": {...}}` + cookies. Alternatively `{"username", "password" (the temporary one),
+"code"?, "new_password"}`. `400 invalid_ticket`, `409 not_required` for normal accounts; same errors as login.
+Temporary passwords are issued only by platform staff (Django admin action "Vaqtinchalik parol berish"); org admins can not set passwords.
 
 ---
 
@@ -233,17 +242,23 @@ Replaces a temporary password issued by an admin and signs the user in.
 
 * **Telegram link** - `POST /api/auth/recovery/telegram/` `{"username"}` -> always `202 {"ok": true, "message"}`
   (identical for unknown, Telegram-less and inactive accounts). When the account has Telegram, the bot
-  sends a link `FRONTEND_BASE_URL/reset-password?token=...` (15 min, single use, only a hash is stored,
-  3 per hour per account). Users can also send `/reset` to the bot.
+  sends a link `FRONTEND_BASE_URL/reset-password#token=...` (the token is in the URL *fragment*: read it with
+  `location.hash`, it never reaches server logs or Referer; 15 min, single use, only a hash is stored,
+  3 per hour per account and 10 per hour per client IP). Requesting another link does not invalidate earlier
+  ones (so strangers cannot kill the owner's link); using any link retires the rest.
+  Users can also send `/reset` to the bot.
 * `POST /api/auth/recovery/confirm/` `{"token", "new_password"}` -> `200 {"ok": true}`; all devices are
   signed out and the account lock is cleared. 2FA stays on. Errors: `400 invalid_token`, `400 validation_error`
   (`details.new_password`; the token survives a rejected password).
 * **Platform admin queue** - `POST /api/auth/recovery/request/` `{"username", "contact"}` -> always `202`.
   Staff handle the queue in Django admin (action "Vaqtinchalik parol berish").
-* **Org admin** - `POST /api/auth/recovery/org-reset/` (signed in, needs `members:manage` in an organization the
-  target belongs to) `{"user_id", "temporary_password"?}` -> `200 {"temporary_password", "must_change_password": true}`.
-  Generated when omitted; supplied ones must meet the policy. The target is signed out everywhere and must
-  change it at next login. `403 forbidden` for anything else (unknown user, other org, platform staff, self).
+* **Org admin** - `POST /api/auth/recovery/org-reset/` (signed in, needs `members:manage`) `{"user_id"}` -> `200 {"ok": true, "delivered": "telegram"}`.
+  The admin never sees or sets a password: the member receives the recovery link above on their own Telegram, with a notice
+  that an org admin asked for it. Only members of **strictly lower rank** can be targeted (owner > manager > teacher >
+  observer > student; custom roles rank just above student), never someone who is equal/higher in any shared org, never
+  platform staff or yourself, and never a user outside your organizations (so B2C accounts cannot be taken over).
+  `403 forbidden` for all of those (identical answer for unknown ids), `409 no_telegram` when the member has no Telegram
+  (use the platform-admin queue), `429` after 3 requests per hour per member.
 
 ---
 
@@ -349,6 +364,6 @@ Joins the organization with the role of the invite. `consent` must be exactly `t
 | `AUTH_MAX_DEVICES` | `3` | devices per account (orgs with `single_device_policy`: 1) |
 | `AUTH_REMEMBER_DAYS` / `AUTH_SESSION_HOURS` | `30` / `24` | sliding session lengths |
 | `AUTH_REFRESH_COOKIE_PATH` | `/api/auth/` | refresh cookie path |
-| `LOGIN_FAILURE_FREE_ATTEMPTS`, `LOGIN_LOCK_LADDER_SECONDS` | `5`, `(60, 300, 900)` | account lock |
+| `LOGIN_FAILURE_FREE_ATTEMPTS`, `LOGIN_GLOBAL_FREE_ATTEMPTS`, `LOGIN_LOCK_LADDER_SECONDS` | `5`, `20`, `(60, 300, 900)` | per-IP and account-wide lock |
 | `TOTP_ENCRYPTION_KEY` | derived from `SECRET_KEY` | key for stored 2FA secrets (set it to rotate `SECRET_KEY` independently) |
 | `TRUSTED_PROXY_CIDRS` | empty | proxies whose forwarding headers are believed |

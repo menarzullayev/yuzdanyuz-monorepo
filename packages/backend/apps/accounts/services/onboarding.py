@@ -433,7 +433,8 @@ def join_with_invite(user: CustomUser, code: str, consent: bool):
                 invited_by=invite.created_by,
                 joined_at=timezone.now(),
             )
-            invite.use()
+            if not invite.use():
+                raise InviteError('invalid_invite', 'The invite code is not valid.')
         elif membership.status != MembershipStatus.ACTIVE:
             raise InviteError('invalid_invite', 'The invite code is not valid.')
         OrgResultsConsent.objects.update_or_create(

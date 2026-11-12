@@ -68,8 +68,8 @@ class TestTelegramInitDataValidation:
             verify_init_data(init_data)
 
     def test_verify_init_data_expired_timestamp(self):
-        """Auth date > max_age (24h default) → raises TelegramAuthError."""
-        old_timestamp = int(datetime.now(UTC).timestamp()) - (86400 + 1)
+        """Auth date > max_age (10 min default) → raises TelegramAuthError."""
+        old_timestamp = int(datetime.now(UTC).timestamp()) - (600 + 1)
         data = {'user': '{"id":123}', 'auth_date': str(old_timestamp)}
 
         secret_key = hashlib.sha256(f'WebAppData{settings.TELEGRAM_BOT_TOKEN}'.encode()).digest()

@@ -17,6 +17,7 @@ from apps.accounts.services import recovery
 from apps.accounts.services import usernames as un
 from apps.accounts.views.base import AuthAPIView, PublicAPIView, api_error, field_errors
 from apps.accounts.views.credentials import raw_text_field, text_field
+from core.utils.client_ip import get_client_ip
 
 ACCEPTED = {
     'ok': True,
@@ -29,7 +30,9 @@ class TelegramRecoveryView(PublicAPIView):
 
     def post(self, request):
         name = un.normalize_username(text_field(request.data, 'username'))
-        if name:
+        if name and recovery.allow_request(
+            f'ip:{get_client_ip(request)}', recovery.IP_REQUESTS_PER_HOUR
+        ):
             allowed = recovery.allow_request(f'login:{name}')
             user = CustomUser.objects.filter(username__iexact=name).first()
             if user is not None and allowed:
@@ -61,13 +64,24 @@ class AdminQueueRequestView(PublicAPIView):
     def post(self, request):
         name = un.normalize_username(text_field(request.data, 'username'))
         contact = text_field(request.data, 'contact')
-        if name and recovery.allow_request(f'queue:{name}'):
+        if (
+            name
+            and recovery.allow_request(
+                f'qip:{get_client_ip(request)}', recovery.IP_REQUESTS_PER_HOUR
+            )
+            and recovery.allow_request(f'queue:{name}')
+        ):
             recovery.queue_request(name, contact)
         return Response({'ok': True}, status=202)
 
 
 class OrgAdminResetView(AuthAPIView):
-    """An org admin (``members:manage``) sets a temporary password for a member."""
+    """An org admin starts a recovery for a member of LOWER rank.
+
+    The admin never sees or chooses a password: the member gets a one-time link on their
+    own Telegram (with a notice that an org admin asked for it). Members without Telegram
+    cannot be reset this way (use the platform-admin queue).
+    """
 
     def post(self, request):
         try:
@@ -75,31 +89,17 @@ class OrgAdminResetView(AuthAPIView):
         except ValueError:
             return api_error('validation_error', 'user_id is required.', 400)
 
-        actor = request.user
         target = CustomUser.objects.filter(pk=target_id).first()
-        if target is None or not self._may_reset(actor, target):
+        if target is None or not recovery.org_admin_may_reset(request.user, target):
             # Same answer for "no such user" and "not yours": no probing of other orgs.
             return api_error('forbidden', 'Not allowed.', 403)
-
-        supplied = raw_text_field(request.data, 'temporary_password') or None
-        try:
-            password = recovery.set_temporary_password(target, supplied)
-        except recovery.RecoveryError as e:
+        if not target.telegram_id or not target.is_active:
             return api_error(
-                'validation_error', str(e), 400, field_errors(temporary_password=e.errors)
+                'no_telegram',
+                "Foydalanuvchida Telegram ulanmagan: platforma administratoriga so'rov yuboring.",
+                409,
             )
-        return Response({'temporary_password': password, 'must_change_password': True})
-
-    @staticmethod
-    def _may_reset(actor: CustomUser, target: CustomUser) -> bool:
-        if actor.pk == target.pk or target.is_staff or target.is_superuser:
-            return False
-        from apps.organizations.models import Membership, MembershipStatus
-
-        org_ids = Membership.objects.filter(
-            user=target, status=MembershipStatus.ACTIVE
-        ).values_list('organization_id', flat=True)
-        memberships = Membership.objects.filter(
-            user=actor, organization_id__in=list(org_ids), status=MembershipStatus.ACTIVE
-        ).select_related('role', 'organization')
-        return any(m.has_permission('members:manage') for m in memberships)
+        if not recovery.allow_request(f'orgreset:{target.pk}'):
+            return api_error('rate_limited', 'Too many requests for this user.', 429)
+        recovery.send_link_via_telegram(target, by_org_admin=True)
+        return Response({'ok': True, 'delivered': 'telegram'})
