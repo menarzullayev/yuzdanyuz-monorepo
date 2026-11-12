@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 
@@ -46,6 +47,21 @@ def stub_allowed() -> bool:
 
 def payments_available() -> bool:
     return _is_real_mode() or stub_allowed()
+
+
+def _to_uzs(raw, divisor: Decimal) -> Decimal | None:
+    """Provider amount -> so'm. None when missing or not a finite non-negative number."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = Decimal(str(raw)) / divisor
+    except (InvalidOperation, ValueError):
+        return None
+    return value if value.is_finite() and value >= 0 else None
+
+
+# Provider error codes for "incorrect amount" (Payme JSON-RPC / Click API)
+AMOUNT_MISMATCH_ERROR = {'payme': -31001, 'click': -2}
 
 
 def _verify_hmac(secret_setting: str, payload: dict, signature: str) -> bool:
@@ -112,7 +128,8 @@ class PaymeProvider(BaseProvider):
         return {
             'provider_tx_id': payload.get('id') or payload.get('transaction'),
             'status': payload.get('state', 'succeeded'),  # Payme states map
-            'amount_uzs': payload.get('amount', 0),
+            # Payme reports tiyin (1 so'm = 100 tiyin)
+            'amount_uzs': _to_uzs(payload.get('amount'), Decimal(100)),
             'error': payload.get('error'),
         }
 
@@ -146,7 +163,8 @@ class ClickProvider(BaseProvider):
         return {
             'provider_tx_id': payload.get('payment_id'),
             'status': 'succeeded' if payload.get('status') == 1 else 'failed',
-            'amount_uzs': payload.get('amount', 0),
+            # Click reports so'm
+            'amount_uzs': _to_uzs(payload.get('amount'), Decimal(1)),
             'error': payload.get('error_note'),
         }
 

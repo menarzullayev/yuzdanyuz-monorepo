@@ -51,7 +51,7 @@ def _pay(intent, state='succeeded'):
     intent.refresh_from_db()
     return Client().post(
         reverse('commerce:payme-webhook'),
-        data={'id': intent.provider_tx_id, 'state': state, 'amount': 1},
+        data={'id': intent.provider_tx_id, 'state': state, 'amount': int(intent.amount_uzs * 100)},
         content_type='application/json',
         HTTP_X_SIGNATURE='stub-sig',
     )

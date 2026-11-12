@@ -114,9 +114,10 @@ class TestPurchase:
         assert ExamKey.global_objects.count() == 0
         intent = PaymentIntent.objects.get(user=owner1)
         assert intent.target_organization_id == org.id
+        tiyin = int(intent.amount_uzs * 100)
         Client().post(
             reverse('commerce:payme-webhook'),
-            data={'id': intent.provider_tx_id, 'state': 'succeeded', 'amount': 1},
+            data={'id': intent.provider_tx_id, 'state': 'succeeded', 'amount': tiyin},
             content_type='application/json',
             HTTP_X_SIGNATURE='stub-sig',
         )
@@ -125,7 +126,7 @@ class TestPurchase:
         # duplicate callback does not mint again
         Client().post(
             reverse('commerce:payme-webhook'),
-            data={'id': intent.provider_tx_id, 'state': 'succeeded', 'amount': 1},
+            data={'id': intent.provider_tx_id, 'state': 'succeeded', 'amount': tiyin},
             content_type='application/json',
             HTTP_X_SIGNATURE='stub-sig',
         )

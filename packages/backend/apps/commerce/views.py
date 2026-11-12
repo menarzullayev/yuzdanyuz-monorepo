@@ -175,6 +175,14 @@ def _payments_unavailable() -> Response:
     )
 
 
+def _amount_matches(intent, parsed) -> bool:
+    reported = parsed.get('amount_uzs')
+    if reported is None:
+        return False
+    cent = Decimal('0.01')
+    return Decimal(reported).quantize(cent) == intent.amount_uzs.quantize(cent)
+
+
 def _process_webhook(provider_name: str, request) -> Response:
     if not payment_providers.payments_available():
         return _payments_unavailable()
@@ -206,6 +214,24 @@ def _process_webhook(provider_name: str, request) -> Response:
 
         if intent.status == PaymentIntent.Status.SUCCEEDED:
             return Response({'detail': 'Already processed'}, status=200)
+
+        if parsed.get('status') == 'succeeded' and not _amount_matches(intent, parsed):
+            # Nothing is activated or credited; the intent stays open for a correct payment.
+            logger.warning(
+                'SECURITY payment amount mismatch: provider=%s intent=%s expected_uzs=%s '
+                'reported_uzs=%s',
+                provider_name,
+                intent.id,
+                intent.amount_uzs,
+                parsed.get('amount_uzs'),
+            )
+            return Response(
+                {
+                    'detail': 'Incorrect amount',
+                    'error': {'code': payment_providers.AMOUNT_MISMATCH_ERROR[provider_name]},
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if parsed.get('status') == 'succeeded':
             if intent.coins_to_credit > 0:  # tariff / key purchases credit no coins
