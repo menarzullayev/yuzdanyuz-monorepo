@@ -35,6 +35,16 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Per-test isolation: xdist workers must not share throttle/allauth cache state.
+CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
+# pytest-django forces DEBUG=False and tests never run collectstatic, so the
+# manifest storage would raise on every {% static %}.
+STORAGES = {
+    **STORAGES,
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
+
 # Fast password hashing
 PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.MD5PasswordHasher',

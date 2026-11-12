@@ -1,5 +1,10 @@
 # Milliy Sertifikat — Celery Task Architecture
 
+> **Early design notes — partly out of date.** Source of truth: `core/celery.py`
+> (routes + `beat_schedule`, every periodic task) and `core/settings/base.py`
+> (Celery section). Delivery rules: `docs/operations/reliability.md` at the repo root
+> (acks_late, idempotent tasks, single-run locks).
+
 ## Overview
 
 - **Message Broker**: Redis (port 6379)

@@ -5,9 +5,9 @@ to a plain role with SET LOCAL ROLE inside the test transaction (rolled back aft
 
 * every RLS table has FORCE ROW LEVEL SECURITY, so even the table owner is filtered;
 * the runtime role created by core.db_roles owns nothing and only gets DML grants;
-* policies never raise when no organisation is set; the `app.rls_bypass` flag (set per
-  connection, core.db_roles) decides who passes: 'all' (default), 'on' (org sessions
-  filtered, enabled by RLS_ENFORCE_ORG_SESSIONS) or 'off'.
+* policies never raise when no organisation is set; the `app.rls_bypass` flag (sent per
+  statement by core.db_rls when RLS_ENFORCE_ORG_SESSIONS is on, unset = 'all') decides who
+  passes: 'all', 'on' (org sessions filtered) or 'off'.
 """
 
 import uuid
@@ -201,10 +201,8 @@ class TestRuntimeRole:
             assert cur.fetchone()[0] is False
 
 
-def _flag_after_connect():
-    from core.db_roles import on_connection_created
-
-    on_connection_created(sender=None, connection=connection)
+def _flag_seen_by_a_statement():
+    """The flag as the statement itself sees it (core/db_rls.py prefixes statements)."""
     with connection.cursor() as cur:
         cur.execute("SELECT current_setting('app.rls_bypass', true)")
         return cur.fetchone()[0]
@@ -212,17 +210,29 @@ def _flag_after_connect():
 
 @pytest.mark.django_db
 class TestBypassFlag:
-    def test_default_lets_every_session_through(self, db):
+    def test_default_sends_no_flag(self, db):
         """Org-session enforcement is opt-in (RLS_ENFORCE_ORG_SESSIONS): see the next class."""
-        assert _flag_after_connect() == 'all'
+        assert _flag_seen_by_a_statement() in (None, '')
 
     @override_settings(RLS_ENFORCE_ORG_SESSIONS=True)
-    def test_enforcement_mode_filters_org_sessions(self, db):
-        assert _flag_after_connect() == 'on'
+    def test_enforcement_mode_puts_the_flag_on_every_statement(self, db):
+        assert _flag_seen_by_a_statement() == 'on'
 
     @override_settings(RLS_ENFORCE_ORG_SESSIONS=True, RLS_BYPASS_WITHOUT_ORG=False)
     def test_fail_closed_mode(self, db):
-        assert _flag_after_connect() == 'off'
+        assert _flag_seen_by_a_statement() == 'off'
+
+    def test_unset_flag_counts_as_all(self, two_orgs_rows, org, org2):
+        with connection.cursor() as cur:
+            role = _role(cur, owner_of=T)
+            cur.execute(f'SET LOCAL ROLE {role}')
+            try:
+                cur.execute("SELECT set_config('app.rls_bypass', '', true)")
+                cur.execute("SELECT set_config('app.current_org_id', %s, true)", [str(org.id)])
+                cur.execute(f'SELECT DISTINCT organization_id FROM {T}')  # noqa: S608
+                assert {r[0] for r in cur.fetchall()} == {org.id, org2.id}
+            finally:
+                cur.execute('RESET ROLE')
 
     def test_all_passes_an_org_session_and_on_does_not(self, two_orgs_rows, org, org2):
         with connection.cursor() as cur:

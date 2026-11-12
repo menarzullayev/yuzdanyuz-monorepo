@@ -7,7 +7,7 @@ Audit items B15 (least privilege) and C18 (encryption at rest).
 | Role | Used by | Owns tables | RLS | Secret key |
 |------|---------|-------------|-----|------------|
 | `yuzdanyuz_owner` | the Helm migrate Job only | yes (schema `public`) | applies (`FORCE`) | `DB_MIGRATE_PASSWORD` |
-| `yuzdanyuz` | web, channels, Celery workers, beat | no; `SELECT/INSERT/UPDATE/DELETE` only | applies | `DB_PASSWORD` |
+| `yuzdanyuz` | web, channels, Celery workers, beat (via PgBouncer) | no; `SELECT/INSERT/UPDATE/DELETE` only | stage 1: bypassed (`BYPASSRLS`); stage 2: applies | `DB_PASSWORD` |
 | `yuzdanyuz_backup` | backup CronJob (`pg_dump`) | no; read-only | bypassed (`BYPASSRLS`) | `DB_BACKUP_PASSWORD` |
 
 Names come from `externalServices.postgres.{migrateUser,user,backupUser}` in the chart
@@ -16,12 +16,38 @@ values; the chart refuses to render when `migrateUser` equals `user`.
 The runtime role cannot `ALTER`/`DROP` a table, change or drop a policy, turn RLS off, or
 create tables (tests/security/test_db_least_privilege.py runs these against real Postgres).
 
+### Two stages for RLS on the runtime role
+
+**Stage 1 (now): `BYPASSRLS`.** Two measured blockers keep RLS off the runtime role:
+
+1. Shared content: the policies hide another org's public mock exam questions (below).
+2. Index use: RLS quals are security barriers, so a non-leakproof predicate such as the
+   question search `ILIKE` cannot use its trigram index on a table whose RLS applies to
+   the role, even while the bypass policy passes every row
+   (`tests/integration/test_question_search_index.py` falls back to a sequential scan when
+   the suite runs as a non-superuser owner under `FORCE`).
+
+So the runtime role gets `BYPASSRLS` for now. What stage 1 already gives: it owns nothing,
+has DML only, cannot change schema or policies; the owner role is used by the migrate Job
+alone; policies are `FORCE`d and never raise.
+
+**Stage 2: enforcement.** Once the policies model shared content and the hot search paths
+no longer filter RLS tables with non-leakproof operators (e.g. search through a
+`SECURITY DEFINER` function or a denormalised search table):
+
+```sql
+ALTER ROLE yuzdanyuz NOBYPASSRLS;
+```
+
+and set `RLS_ENFORCE_ORG_SESSIONS=true` in the same release. `TestEnforcementBlocker`
+fails when the shared-content gap is closed.
+
 ### Create them (once, as a superuser or the managed-database admin)
 
 ```sql
 CREATE ROLE yuzdanyuz_owner  LOGIN PASSWORD '<owner password>';
 CREATE ROLE yuzdanyuz        LOGIN PASSWORD '<runtime password>'
-       NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+       NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS;   -- stage 1, see above
 CREATE ROLE yuzdanyuz_backup LOGIN PASSWORD '<backup password>' BYPASSRLS;
 GRANT pg_read_all_data TO yuzdanyuz_backup;          -- PostgreSQL 14+
 ```
@@ -43,6 +69,7 @@ this change):
 ALTER DATABASE yuzdanyuz_db OWNER TO yuzdanyuz_owner;
 ALTER SCHEMA public OWNER TO yuzdanyuz_owner;
 REASSIGN OWNED BY yuzdanyuz TO yuzdanyuz_owner;     -- tables, sequences, functions
+ALTER ROLE yuzdanyuz BYPASSRLS;                     -- stage 1 (as a superuser)
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ```
 
@@ -86,13 +113,14 @@ The flag is set on every new connection (`core/db_roles.py`):
 
 | `RLS_ENFORCE_ORG_SESSIONS` | `RLS_BYPASS_WITHOUT_ORG` | flag | effect |
 |---|---|---|---|
-| `false` (default) | — | `all` | every session passes, as when the runtime role owned the tables |
+| `false` (default) | — | not sent (= `all`) | every session passes, as when the runtime role owned the tables |
 | `true` | `true` | `on` | a session with an org (`RLSMiddleware`) is filtered to it; org-less sessions (workers, platform admin, anonymous pages) pass |
 | `true` | `false` | `off` | org-less sessions see nothing (fail closed) |
 
 **Why enforcement is off by default (measured 2026-11-12).** The full backend suite run
 as a non-superuser table owner with the flag at `on`: 2353 passed, 10 failed. Eight were
-test artefacts (fixed: the org set by `RLSMiddleware` is now reset when the request ends).
+test artefacts of the session-level org variable (gone since the variable became
+transaction-local, #62).
 The other two show a real gap: the policies do not model content shared across
 organisations. A public mock exam is visible to another org, but its questions
 (`catalog_question`, `catalog_questionversion` belong to the publishing org) are not, and
@@ -105,18 +133,12 @@ What holds regardless of the flag: the runtime role owns nothing, cannot alter o
 tables, change or drop policies, disable or un-force RLS, or create tables; `SET
 row_security = off` makes its filtered queries fail instead of returning everything.
 
-Connections that never run Django's hook (psql, pgbouncer server connections) need the
-flag as a database default. PostgreSQL lets only a superuser store a custom parameter that
-way (measured on 16.15: the owner role gets `permission denied to set parameter
-"app.rls_bypass"`), so the migration does it only when it runs as a superuser and
-otherwise prints the statement to run once as the admin:
+Both variables ride transaction-local on each statement (`core/db_rls.py`, audit E05), so
+they survive PgBouncer transaction pooling. The bypass flag is only sent with enforcement
+on; a statement without it (psql, the default mode) counts as `all`.
 
-```sql
-ALTER DATABASE yuzdanyuz_db SET app.rls_bypass = 'all';   -- 'on' once enforcement is enabled
-```
-
-Limits: the flag is a session setting, so it protects against application bugs (a missing
-tenant filter in an org request), not against SQL injection, which could `RESET` the org.
+Limits: the flag is set by the application, so it protects against application bugs (a missing
+tenant filter in an org request), not against SQL injection, which could set it.
 `RLS_BYPASS_WITHOUT_ORG=false` (with enforcement on) makes org-less sessions see nothing;
 use it only once every worker task sets an org.
 
@@ -124,12 +146,10 @@ New tenant tables: enable RLS with `core.rls.enable(cursor, table, clause)` in a
 `RunPython` migration. The guard test fails for a policy that reads
 `current_setting('app.current_org_id')` directly or a table without the bypass policy.
 
-### pgbouncer
+### PgBouncer
 
-Session settings (`SET app.current_org_id`, `app.rls_bypass`) need session pooling. In
-transaction pooling mode a later transaction can land on another server connection;
-the database default above keeps org-less work running, but org context would leak
-between clients — do not run the web pods through a transaction-mode pool.
+PgBouncer connects as the runtime role (`DB_PASSWORD`); the migrate Job and the backup
+CronJob connect to Postgres directly with their own roles.
 
 ### Backup and restore
 

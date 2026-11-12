@@ -60,6 +60,10 @@ app.conf.task_routes = {
     'intelligence.check_ai_token_expiry': {'queue': 'batch'},
     'ops.run_health_probe': {'queue': 'batch'},
     'ops.cleanup_old_records': {'queue': 'batch'},
+    'accounts.cleanup_expired_sessions': {'queue': 'batch'},
+    'accounts.cleanup_used_otp_codes': {'queue': 'batch'},
+    'accounts.cleanup_old_webhook_deliveries': {'queue': 'batch'},
+    'accounts.check_sms_balance': {'queue': 'batch'},
     'accounts.process_due_erasures': {'queue': 'batch'},
 }
 
@@ -83,6 +87,55 @@ app.conf.beat_schedule = {
     'ops-cleanup-daily': {
         'task': 'ops.cleanup_old_records',
         'schedule': crontab(hour=4, minute=15),
+    },
+    # ── F11: every periodic job the code defines. Each task holds a single-run
+    # lock (core/locks.py), so a second beat or a manual run cannot double it.
+    'exams-publish-scheduled-mocks': {
+        'task': 'exams.publish_scheduled_mocks',
+        'schedule': crontab(minute='*/5'),
+    },
+    'commerce-auto-renew-subscriptions': {
+        'task': 'commerce.auto_renew_subscriptions',
+        'schedule': crontab(hour=3, minute=0),
+    },
+    'engagement-check-broken-streaks': {
+        'task': 'engagement.check_broken_streaks',
+        'schedule': crontab(hour=0, minute=5),
+    },
+    'engagement-leagues-weekly-recalc': {
+        'task': 'engagement.leagues_weekly_recalc',
+        'schedule': crontab(hour=0, minute=10, day_of_week='mon'),
+    },
+    'engagement-archive-leaderboards-weekly': {
+        'task': 'engagement.archive_leaderboards',
+        'schedule': crontab(hour=0, minute=5, day_of_week='mon'),
+        'args': ('weekly',),
+    },
+    'engagement-archive-leaderboards-monthly': {
+        'task': 'engagement.archive_leaderboards',
+        'schedule': crontab(hour=0, minute=10, day_of_month=1),
+        'args': ('monthly',),
+    },
+    'engagement-archive-leaderboards-yearly': {
+        'task': 'engagement.archive_leaderboards',
+        'schedule': crontab(hour=0, minute=15, day_of_month=1, month_of_year=1),
+        'args': ('yearly',),
+    },
+    'accounts-cleanup-expired-sessions': {
+        'task': 'accounts.cleanup_expired_sessions',
+        'schedule': crontab(hour=4, minute=0),
+    },
+    'accounts-cleanup-used-otp-codes': {
+        'task': 'accounts.cleanup_used_otp_codes',
+        'schedule': crontab(minute=20),
+    },
+    'accounts-cleanup-old-webhook-deliveries': {
+        'task': 'accounts.cleanup_old_webhook_deliveries',
+        'schedule': crontab(hour=4, minute=30),
+    },
+    'accounts-check-sms-balance': {
+        'task': 'accounts.check_sms_balance',
+        'schedule': crontab(minute=10),
     },
     # GDPR erasure requests whose cooling-off has ended (apps/accounts/services/erasure.py).
     'gdpr-erasure-hourly': {

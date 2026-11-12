@@ -36,7 +36,12 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           envFrom: {{- include "yuzdanyuz.envFrom" . | nindent 12 }}
+          # Straight to Postgres, no statement timeout: migrations build indexes
+          # CONCURRENTLY and must not be cut off by the pooled request timeout.
           env:
+            {{- include "yuzdanyuz.directDbEnv" . | nindent 12 }}
+            - name: DB_STATEMENT_TIMEOUT_MS
+              value: "0"
             # Owner role (audit B15): only this Job may change the schema. DB_RUNTIME_ROLE
             # gets DML grants after every migrate (core/db_roles.py).
             - name: DB_USER

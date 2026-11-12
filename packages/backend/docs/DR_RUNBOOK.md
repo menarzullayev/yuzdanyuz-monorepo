@@ -1,209 +1,180 @@
 # Disaster Recovery Runbook — YuzDanYuz / Milliy Sertifikat
 
-> **Owner**: Backend on-call · **Updated**: 2026-05-17 · **Test cadence**: quarterly drill
+> **Owner**: Backend on-call · **Updated**: 2026-11-12 · **Drill**: har chorakda (pastdagi jurnal)
 >
-> Bu hujjat production'da to'qnashilishi mumkin bo'lgan eng yomon stsenariylarni va ularni
-> aniqlash + tiklash bo'yicha bosqichma-bosqich harakatlarni yozadi. Drill paytida har 3 oyda
-> bir marta sinab ko'ring (oxirgi drill sanasi yuqorida).
+> Joriy production dizayni uchun: Kubernetes + Helm chart (`charts/yuzdanyuz`), tashqi
+> PostgreSQL 16 (RLS), PgBouncer (transaction pooling), Redis, RWX media PVC. Eski
+> HestiaCP/supervisord tartibi bekor qilingan va bu yerda yo'q.
+>
+> Batafsil backup/restore buyruqlari: [`docs/operations/backup-restore.md`](../../../docs/operations/backup-restore.md)
+> (repo ildizida). Bu hujjat — qaysi holatda nima qilinadi va qancha vaqt/ma'lumot
+> yo'qotish kutiladi.
 
 ---
 
-## 1. PostgreSQL — to'liq backup va tiklash
+## 0. Maqsadlar (RPO / RTO)
 
-### Backup strategiyasi
-- **Automated `pg_dump` har 6 soatda** — cron task local server'da:
-  ```bash
-  0 */6 * * *  <server-home>/.local/pgsql/bin/pg_dump -h 127.0.0.1 -p <db-port> -U hsm -d yuzdanyuz_db \
-                  | gzip -9 > <server-home>/backups/postgres/yuzdanyuz_db_$(date +%Y%m%d-%H%M%S).sql.gz
-  ```
-- **Retention**: oxirgi 10 ta snapshot saqlanadi (`/.claude/commands/db-snapshot.md` skripti
-  o'zi rotation qiladi).
-- **Off-site copy** (kelajak): WebDAV/S3 yoki Hetzner Storagebox'ga rsync (1 kun retention).
+| Komponent | Backup | RPO (yo'qotish) | RTO (tiklash) | Izoh |
+|---|---|---|---|---|
+| PostgreSQL | `CronJob <release>-backup`: kunlik `pg_dump -Fc` → GPG → rclone (03:00 UTC, 30 kun) | **≤ 24 soat** | **≤ 2 soat** | Restore 2026-11-12 da mashq qilindi. 24 soatdan kam RPO kerak bo'lsa — WAL arxivlash / provayder PITR (quyida "Ma'lum bo'shliqlar") |
+| Media PVC (`<release>-media`) | **chart backup qilmaydi** | storage class snapshot'iga bog'liq | — | Ma'lum bo'shliq; foydalanuvchi fayllari va eksportlar |
+| Redis | yo'q (ataylab) | hammasi | ~5 daqiqa (yangi bo'sh Redis) | Kesh, tokenlar, rate limit, Celery navbati, Channels |
+| Kubernetes resurslari | git (`charts/`, `argocd/`) + offline secret'lar | 0 | ≤ 1 soat | `helm upgrade --install` qayta quradi |
 
-### Tiklash (restore)
-```bash
-# 1. PostgreSQL ishlayotganligini tasdiqlash
-<server-home>/.local/pgsql/bin/pg_ctl -D <server-home>/.local/pgsql/data status
-
-# 2. Yangi DB yaratish (DROP qilmasdan — eski'ni saqlash)
-<server-home>/.local/pgsql/bin/createdb -h 127.0.0.1 -p <db-port> -U hsm yuzdanyuz_db_restore
-
-# 3. Backup'dan tiklash
-gunzip -c <server-home>/backups/postgres/yuzdanyuz_db_20260517-100000.sql.gz \
-  | <server-home>/.local/pgsql/bin/psql -h 127.0.0.1 -p <db-port> -U hsm -d yuzdanyuz_db_restore
-
-# 4. Tasdiqlash
-<server-home>/.local/pgsql/bin/psql -h 127.0.0.1 -p <db-port> -U hsm -d yuzdanyuz_db_restore -c \
-  "SELECT COUNT(*) FROM accounts_customuser; SELECT COUNT(*) FROM organizations_organization;"
-
-# 5. Switch — Django `DB_NAME=yuzdanyuz_db_restore` ga o'tkazib, gunicorn restart
-# Eski DB'ni saqlash: `ALTER DATABASE yuzdanyuz_db RENAME TO yuzdanyuz_db_failed_<ts>;`
-```
-
-### RPO/RTO
-- **RPO** (Recovery Point Objective): 6 soat (snapshot frequency)
-- **RTO** (Recovery Time Objective): 30 daqiqa (manual restore + verify)
+RTO 2 soat: dump yuklash + `sha256` + GPG decrypt + `pg_restore -j 4` + tekshiruv +
+cutover. 2026-11-12 dagi dump 0,5 MB edi; baza o'sgan sari `pg_restore` vaqtini har
+drill'da qayta o'lchang va jadvalni yangilang.
 
 ---
 
-## 2. Redis — snapshot va tiklash
+## 1. PostgreSQL ma'lumotlari yo'qoldi yoki buzildi
 
-Redis cache+session+rate-limit+queue ishlatadi. Yo'qotish: barcha login session bekor (foydalanuvchi
-qayta login), rate-limit reset (yana 60s logged), Celery queue bo'sh (in-flight task'lar yo'qoladi).
+Belgilar: 5xx ko'payadi, `relation ... does not exist`, noto'g'ri/yo'qolgan yozuvlar,
+provayder "volume lost" xabari.
 
-### Backup
-- Redis o'zi `dump.rdb` har soatda saqlaydi (default config).
-- Manual snapshot: `redis-cli -a ***REMOVED*** BGSAVE`.
-- Backup location: `/var/lib/redis/dump.rdb` (yoki HestiaCP jail ichida).
+1. **Yozuvchilarni to'xtating** (yangi buzilish va split-brain bo'lmasin):
+   ```bash
+   kubectl -n <ns> scale deploy -l app.kubernetes.io/instance=<release> --replicas=0
+   kubectl -n <ns> patch cronjob <release>-backup -p '{"spec":{"suspend":true}}'
+   ```
+   PgBouncer ham to'xtaydi — bu to'g'ri: eski bazaga ochiq server ulanishlari qolmaydi.
+2. **Tiklang** — `backup-restore.md` "Restore" bo'limi, 1–5 qadamlar: dump tanlash,
+   `sha256sum -c`, offline kalit bilan decrypt, **yangi** `yuzdanyuz_restore` bazasiga
+   `pg_restore --exit-on-error`, sonlarni tekshirish (`django_migrations`,
+   `accounts_customuser`, `relrowsecurity` ≥ 17).
+   Restore to'g'ridan-to'g'ri Postgres'ga qilinadi, PgBouncer orqali emas.
+3. **Cutover**: bazalarni almashtiring (`ALTER DATABASE ... RENAME`) yoki
+   `externalServices.postgres.name` ni o'zgartiring, keyin:
+   ```bash
+   helm upgrade yuzdanyuz charts/yuzdanyuz -f values.yaml -f values-prod.yaml <prod --set'lar>
+   kubectl -n <ns> patch cronjob <release>-backup -p '{"spec":{"suspend":false}}'
+   ```
+   `helm upgrade` migrate Job'ini ham ishga tushiradi (restore'dan keyingi migratsiyalar).
+4. **Keyin**: backup vaqtidan keyingi ma'lumot yo'qolgan (RPO). To'lov provayderlari
+   (Payme/Click) kabinetidan shu oraliqdagi tranzaksiyalarni solishtiring.
 
-### Tiklash
-```bash
-# 1. Redis to'xtatish
-sudo systemctl stop redis-server  # yoki HestiaCP jail'da supervisorctl
+## 2. PostgreSQL primary ishlamayapti (failover)
 
-# 2. dump.rdb ni almashtirish
-cp <server-home>/backups/redis/dump-20260517.rdb /var/lib/redis/dump.rdb
-chown redis:redis /var/lib/redis/dump.rdb
+Boshqariladigan Postgres failover qilsa, host nomi o'sha qoladi, IP o'zgaradi.
 
-# 3. Redis ishga tushirish
-sudo systemctl start redis-server
-redis-cli -a ***REMOVED*** INFO persistence | grep loading
-```
+- PgBouncer serverga qayta ulanadi (`server_login_retry = 5`), lekin DNS keshini
+  (`dns_max_ttl`, standart 15 s) kutadi. 1 daqiqadan keyin ham xato bo'lsa:
+  `kubectl -n <ns> rollout restart deploy/<release>-pgbouncer`.
+- Failover paytidagi so'rovlar xato beradi (ilova `query_wait_timeout = 15 s` dan keyin
+  javob qaytaradi, osilib qolmaydi). Celery vazifalari `acks_late` bilan navbatga
+  qaytadi; `finalize_attempt_score` DB xatosida o'zi qayta urinadi.
 
-**Acceptable loss**: foydalanuvchilar qayta login qiladi (acceptable). Celery in-flight tasklar — ISSUE-308
-DLQ orqali keyin qayta urinilishi mumkin.
+## 3. PgBouncer muammolari
 
----
+- `no more connections allowed (max_client_conn)` → `pgbouncer.maxClientConn` ni oshiring.
+- `query_wait_timeout` xatolari (ulanish kutish) → Postgres'da sekin so'rovlar bormi
+  (`pg_stat_activity`), yoki `pgbouncer.maxDbConnections` × replicas yetarli emasmi.
+  Chart `replicas × (maxDbConnections + workerMaxDbConnections)` ni
+  `maxConnections − reservedConnections` dan oshirishga yo'l qo'ymaydi.
+- Favqulodda chetlab o'tish (faqat qisqa muddat): `--set pgbouncer.enabled=false` —
+  ilova to'g'ridan-to'g'ri Postgres'ga ulanadi, lekin HPA maksimumida ulanishlar
+  `max_connections` dan oshib ketishi mumkin.
 
-## 3. HestiaCP jail recovery
+## 4. Redis yo'qoldi
 
-### Senariy: jail crash bo'ldi, services down
-```bash
-# 1. SSH jail'ga kirish
-ssh yuzdanyuz@<host>
+Redis'da faqat tiklanadigan holat bor; backup qilinmaydi.
 
-# 2. supervisord status
-supervisorctl status
+Yo'qotish oqibati: barcha foydalanuvchilar qayta login qiladi, rate-limit hisoblagichlari
+nolga tushadi, Django kesh bo'sh, Channels guruhlari uziladi (WebSocket'lar qayta
+ulanadi), **Celery navbatidagi vazifalar yo'qoladi**.
 
-# 3. Agar barcha service down — supervisord o'zi restart
-supervisorctl reread
-supervisorctl update
-supervisorctl restart all
+1. Yangi Redis'ni ishga tushiring (bir xil URL/parol, `REDIS_URL`, `CELERY_BROKER_URL`,
+   `CHANNELS_REDIS_URL` secret'lari).
+2. `kubectl -n <ns> rollout restart deploy -l app.kubernetes.io/instance=<release>`.
+3. Davriy vazifalar o'z jadvalida qayta ishlaydi (hammasi `core/celery.py`
+   `beat_schedule` da, idempotent). Topshirilgan, lekin balli hisoblanmagan imtihonlarni
+   qayta navbatga qo'ying:
+   ```bash
+   kubectl -n <ns> exec deploy/<release>-web -- python manage.py shell -c "
+   from apps.exams.models import ExamAttempt; from apps.exams.tasks import finalize_attempt_score
+   from core.tenant import unscoped_context
+   with unscoped_context():
+       for pk in ExamAttempt.objects.filter(status='submitted', submitted_at__gte='<Redis yo\'qolgan vaqt>').values_list('pk', flat=True):
+           finalize_attempt_score.delay(str(pk))"
+   ```
 
-# 4. Logs tekshirish
-tail -100 /home/yuzdanyuz/private/yuzdanyuz/logs/gunicorn.log
-tail -100 /home/yuzdanyuz/private/yuzdanyuz/logs/celery-worker.log
-```
+## 5. Klaster yoki namespace yo'qoldi
 
-### Senariy: `jailbash --die-with-parent` PID 1 o'ldi (eski memory)
-- Watchdog (`_yuzdanyuz_keepalive.php` + `watchdog.sh`) avtomatik tiklaydi (60s ichida).
-- Manual force: `curl https://<host>/_yuzdanyuz_keepalive.php` keepalive ping.
+1. Yangi klasterda: ingress-nginx, cert-manager, (ixtiyoriy) KEDA, Prometheus operator.
+2. Secret'larni offline manbadan tiklang: `yuzdanyuz-secrets`, `ghcr-pull`,
+   `yuzdanyuz-backup-rclone` (`docs/deployment/secrets.md`).
+3. `helm upgrade --install` (prod `--set`'lar bilan, `backup-restore.md` "Setting it up" 3).
+4. Postgres ham yo'qolgan bo'lsa — 1-bo'lim. Media PVC bo'sh bo'ladi (backup yo'q).
 
----
-
-## 4. Secret rotation (incident response)
-
-### Senariy: `.env` yoki API kalit leak bo'ldi
-```bash
-# 1. SECRET_KEY rotation
-python -c "import secrets; print(secrets.token_urlsafe(50))"
-# .env'ga yozish, JWT signing key bilan birga (eski JWT'lar invalid bo'ladi — barcha foydalanuvchi qayta login)
-
-# 2. DB password rotation
-sudo -u postgres psql -c "ALTER USER hsm WITH PASSWORD '<new>';"
-# .env'da DB_PASSWORD yangilash
-
-# 3. Redis password rotation
-redis-cli -a <old> CONFIG SET requirepass <new>
-# .env'da REDIS_URL yangilash
-
-# 4. Anthropic API key rotation
-# https://console.anthropic.com/settings/keys — yangi key + revoke old
-# .env'da ANTHROPIC_API_KEY yangilash
-
-# 5. PlayMobile/Eskiz SMS credentials — provider portal orqali
-# .env'da PLAYMOBILE_PASSWORD / ESKIZ_PASSWORD yangilash
-
-# 6. Telegram bot token (agar leak)
-# @BotFather → /token → /revoke + yangi
-# .env'da TELEGRAM_BOT_TOKEN yangilash
-
-# 7. Gunicorn + Celery restart har bir secret'dan keyin
-supervisorctl restart all
-```
-
----
-
-## 5. ALLOWED_HOSTS / production rollback
-
-Production `subpath /yuzdanyuz/` deploy yoki domain o'zgarganda:
+## 6. Yomon deploy / migratsiya
 
 ```bash
-# Eski ALLOWED_HOSTS .env'da:
-ALLOWED_HOSTS=<host>,127.0.0.1
-
-# Leading-dot syntax (Lesson IELTSmock memory!) — har subdomain qoplaydi
-# Agar foydalanuvchi 400/403 ALLOWED_HOSTS xato olsa, yangi domain qo'shish:
-ALLOWED_HOSTS=<host>,milliysertifikat.uz,127.0.0.1
+helm -n <ns> history yuzdanyuz
+helm -n <ns> rollback yuzdanyuz <revision>
 ```
 
----
+`helm rollback` kod va konfiguratsiyani qaytaradi, **migratsiyalarni qaytarmaydi**.
+Sxema o'zgargan bo'lsa: `python manage.py migrate <app> <oldingi_migratsiya>`
+(`RunPython` teskari funksiyasi bo'lsagina xavfsiz) yoki 1-bo'lim bo'yicha backup'dan
+tiklash. `CREATE INDEX CONCURRENTLY` migratsiyalari (`catalog 0012`) yarim qolsa,
+`INVALID` indeksni `DROP INDEX CONCURRENTLY` qilib migratsiyani qayta ishga tushiring.
 
-## 6. Database migration rollback
+## 7. Secret rotation (sizib chiqish)
 
-Migration apply qilingan, lekin xato (data loss, performance):
+Secret'ni `yuzdanyuz-secrets` da yangilang, keyin barcha podlarni qayta ishga tushiring:
 
 ```bash
-# 1. Oxirgi N migration nomini bilish
-./venv/bin/python manage.py showmigrations | tail -20
-
-# 2. Rollback specific migration (masalan catalog'da 0007 dan oldingi 0006'ga qaytish)
-./venv/bin/python manage.py migrate catalog 0006_historicalquestion
-
-# 3. Verify: pg_policies / table state
-psql ... -c "SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'catalog_%';"
+kubectl -n <ns> create secret generic yuzdanyuz-secrets --from-env-file=<yangi .env> \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n <ns> rollout restart deploy -l app.kubernetes.io/instance=<release>
 ```
 
-**Risk**: yangi migration data backfill qilgan bo'lsa, rollback uchun ataylab `RunPython(reverse=...)`
-yozish kerak. Backup'dan tiklash ko'pincha xavfsizroq.
+- `SECRET_KEY`: barcha JWT/sessiyalar bekor bo'ladi (qayta login).
+- `DB_PASSWORD`: avval Postgres'da `ALTER ROLE ... PASSWORD`, so'ng secret, so'ng
+  restart (PgBouncer userlist'ni ishga tushishda secret'dan yozadi).
+- Redis paroli: Redis'da `CONFIG SET requirepass`, so'ng uchala Redis URL secret'i.
+- Anthropic / Claude token, Telegram bot token, SMS va to'lov kalitlari: provayder
+  kabinetida yangisini chiqarib, eskisini bekor qiling.
+- Backup GPG kaliti: yangi juft, yangi public key bilan `helm upgrade`; eski private
+  key eski backup'lar saqlanguncha (30 kun) offline turadi.
 
----
+## 8. Eskalatsiya
 
-## 7. On-call escalation
-
-| Severity | Misol | Aloqa | Response |
+| Severity | Misol | Aloqa | Javob |
 |---|---|---|---|
-| **P0** | Production down (>5 daqiqa), data leak, security breach | Telegram @narzullayevme | < 15 daqiqa |
-| **P1** | Auth tushgan, payment fail, exam start qilolmaydi | Telegram @narzullayevme | < 1 soat |
-| **P2** | Sekin response (p95 > 5s), partial feature broken | Email saidmurodnarzullayev@gmail.com | Next business day |
-| **P3** | Cosmetic, docs, suggestions | GitHub Issue | Backlog |
+| **P0** | Production down (>5 daqiqa), ma'lumot sizishi, buzib kirish | Telegram @narzullayevme | < 15 daqiqa |
+| **P1** | Auth ishlamaydi, to'lov o'tmaydi, imtihon boshlanmaydi | Telegram @narzullayevme | < 1 soat |
+| **P2** | Sekin (p95 > 5 s), qisman nosozlik | Email (on-call) | Keyingi ish kuni |
+| **P3** | Kosmetika, hujjat | GitHub Issue | Backlog |
 
-### Tashqi vendor aloqalari
-- **PlayMobile SMS support**: `support@playmobile.uz`, +998 (71) ...
-- **Eskiz support**: `info@eskiz.uz`, dashboard ticket
-- **Anthropic status**: https://status.anthropic.com
-- **HestiaCP admin** (root access kerak): hosting provider ticket
+Tashqi: PlayMobile `support@playmobile.uz`, Eskiz `info@eskiz.uz`,
+https://status.anthropic.com, Postgres/Redis provayderi support tiketi.
 
----
+## 9. Drill (har chorak)
 
-## 8. Drill checklist (har quarter)
+- [ ] PostgreSQL: oxirgi backup → bo'sh bazaga restore, 1-bo'lim tekshiruvlari, vaqtni yozing (RTO)
+- [ ] Backup Job xatosi alert'gacha yetishini tekshiring (`kubectl get jobs -l app.kubernetes.io/component=backup`)
+- [ ] PgBouncer'ni o'chirib-yoqish (`rollout restart`): ilova o'zi tiklanadimi
+- [ ] Redis restart: Celery vazifalari yo'qolmaydimi (acks_late), beat ishlaydimi
+- [ ] Bitta secret rotation (staging)
+- [ ] Bu hujjatdagi buyruqlar hali to'g'rimi
 
-- [ ] PostgreSQL backup → restore test (yangi DB'ga, fake user create + login verify)
-- [ ] Redis dump.rdb → backup → restore + Celery queue resurrection
-- [ ] Secret rotation simulation (test env'da ANTHROPIC_API_KEY rotation + verify)
-- [ ] Migration rollback dry-run (1 ta migration reverse)
-- [ ] On-call notification path (Telegram bot test message)
-- [ ] DR runbook outdated link/command audit
+### Jurnal
 
-**Last drill**: (drill o'tkazilganda yangilang)
+| Sana | Nima | Natija |
+|---|---|---|
+| 2026-11-12 | Backup Job + to'liq restore (kind klasteri), `backup-restore.md` "Last rehearsal" | OK: checksum, `pg_restore --exit-on-error`, 17 RLS jadval, 124 migratsiya |
 
----
+## Ma'lum bo'shliqlar
 
-## 9. Bog'liq hujjatlar
+- **RPO 24 soat** — kunlik dump. Kamaytirish: provayder PITR yoqish yoki WAL arxivlash
+  (`scripts/backup/` WAL-G skriptlari faqat o'zimiz boshqaradigan Postgres host uchun).
+- **Media PVC backup qilinmaydi** — storage class snapshot'i yoki object storage
+  (S3) ga o'tish kerak.
 
-- `/.claude/commands/db-snapshot.md` — PostgreSQL backup automation
-- `docs/pre_launch_checklist.md` — launch'dan oldin DR ready check
-- `docs/POSTGRES_SETUP.md` / `POSTGRESQL_PRODUCTION_SETUP.md` — PostgreSQL configuration
-- `docs/DEPLOYMENT.md` — production lifecycle umumiy ko'rinishi
-- `memory/yuzdanyuz_persistent_backend.md` — HestiaCP jail watchdog pattern
-- `memory/yuzdanyuz_production_state.md` — joriy production holati
+## Bog'liq hujjatlar
+
+- `docs/operations/backup-restore.md` (repo ildizi) — backup sozlash va restore buyruqlari
+- `docs/deployment/` — deploy, secret'lar
+- `charts/yuzdanyuz/values.yaml` — `pgbouncer`, `backup`, `externalServices`
+- `docs/pre_launch_checklist.md` — launch'dan oldingi DR tekshiruvi

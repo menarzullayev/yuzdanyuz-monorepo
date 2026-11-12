@@ -307,6 +307,12 @@ externalServices:
     name: yuzdanyuz_db
     # Runtime role: owns nothing, DML grants only, so RLS applies (audit B15).
     user: yuzdanyuz
+    # TLS to Postgres (libpq sslmode). values-prod: require; verify-full once the CA is
+    # known (sslrootcert "system" = the OS trust store, enough for a public-CA provider).
+    sslmode: prefer
+    sslrootcert: ""
+    # The server's max_connections; the chart refuses pool sizes that would exceed it.
+    maxConnections: 100
     # Owner role: owns the schema; used only by the migrate Job (password key
     # DB_MIGRATE_PASSWORD). Must differ from `user`. SQL: docs/deployment/database-roles.md
     migrateUser: yuzdanyuz_owner
@@ -316,6 +322,45 @@ externalServices:
   redis:
     host: redis-master
     port: 6379
+
+# ── PgBouncer (transaction pooling, E05) ─────────────────────────────────────
+# Web (HPA up to 30 pods x 8 threads), Channels and Celery would otherwise open
+# hundreds of Postgres connections. Every app pod talks to PgBouncer; only the
+# migrate Job and the backup CronJob connect to Postgres directly.
+# RLS stays correct: the org variable is transaction-local (core/db_rls.py).
+pgbouncer:
+  enabled: true
+  replicas: 2
+  image:
+    repository: edoburu/pgbouncer
+    tag: v1.25.2-p0
+    pullPolicy: IfNotPresent
+  maxClientConn: 2000
+  defaultPoolSize: 20
+  reservePoolSize: 5
+  # Server connections per replica: web/channels pool + Celery pool. Together with
+  # replicas they must stay under externalServices.postgres.maxConnections minus
+  # reservedConnections (migrations, backup, admin shells, monitoring).
+  maxDbConnections: 30
+  workerMaxDbConnections: 10
+  reservedConnections: 15
+  # statement_timeout per pool (ms): requests are killed long before gunicorn's 30 s,
+  # Celery gets the task hard limit (CELERY_TASK_TIME_LIMIT=300 s).
+  statementTimeoutMs: 25000
+  workerStatementTimeoutMs: 300000
+  # A client waiting this long for a free server connection gets an error instead
+  # of hanging the gunicorn thread.
+  queryWaitTimeout: 15
+  # Kills sessions that sit "idle in transaction" and pin a server connection.
+  idleTransactionTimeout: 60
+  # App -> PgBouncer stays inside the namespace (NetworkPolicy); PgBouncer -> Postgres
+  # uses externalServices.postgres.sslmode.
+  clientSslmode: prefer
+  resources:
+    requests: { cpu: "50m",  memory: "32Mi" }
+    limits:   { cpu: "500m", memory: "128Mi" }
+  pdb:
+    minAvailable: 1
 
 # ── Pod Security Context ─────────────────────────────────────────────────────
 securityContext:

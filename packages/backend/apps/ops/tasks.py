@@ -6,6 +6,8 @@ from datetime import timedelta
 from celery import shared_task
 from django.utils import timezone
 
+from core.locks import single_run
+
 logger = logging.getLogger(__name__)
 
 PROBE_RETENTION_DAYS = 120
@@ -13,6 +15,7 @@ EVENT_RETENTION_DAYS = 90
 
 
 @shared_task(name='ops.run_health_probe', ignore_result=True)
+@single_run('ops.run_health_probe', expire=240)
 def run_health_probe() -> dict:
     from apps.ops.services.probes import run_probe
 
@@ -28,6 +31,7 @@ def send_admin_alert(text: str) -> int:
 
 
 @shared_task(name='ops.cleanup_old_records', ignore_result=True)
+@single_run('ops.cleanup_old_records', expire=3600)
 def cleanup_old_records() -> dict:
     from apps.ops.models import ProbeResult, SecurityEvent
 

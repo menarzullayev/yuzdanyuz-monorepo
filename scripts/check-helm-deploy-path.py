@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROD_SETTINGS = ROOT / 'packages/backend/core/settings/prod.py'
 BACKEND_IMAGE = 'yuzdanyuz-backend'
 NGINX_IMAGE = 'yuzdanyuz-nginx'
-ENTRYPOINT_MODES = {'web', 'asgi', 'worker', 'beat', 'flower', 'migrate'}
+ENTRYPOINT_MODES = {'web', 'asgi', 'worker', 'beat', 'flower', 'migrate', 'copy-static'}
 # prod.py: ALLOWED_HOSTS always starts with these
 ALWAYS_ALLOWED = {'127.0.0.1', 'localhost'}
 

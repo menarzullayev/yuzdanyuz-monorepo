@@ -29,6 +29,8 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 
+from core.infra import redis_from_url
+
 logger = logging.getLogger(__name__)
 
 _redis_client: redis.Redis | None = None
@@ -37,7 +39,7 @@ _redis_client: redis.Redis | None = None
 def _redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.Redis.from_url(
+        _redis_client = redis_from_url(
             getattr(settings, 'REDIS_URL', 'redis://127.0.0.1:6379/1'),
             decode_responses=True,
         )

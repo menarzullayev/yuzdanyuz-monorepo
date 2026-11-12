@@ -29,6 +29,7 @@ from django.utils import timezone
 
 from apps.catalog.services.ai_providers.base import TransientProviderError
 from core.claude_cli import ClaudeRateLimitError, ClaudeTimeoutError
+from core.locks import single_run
 
 from .models import AIFeedback, OpenEndedSubmission
 
@@ -424,6 +425,7 @@ def ai_token_days_left(today: date | None = None) -> int | None:
 
 
 @shared_task(name='intelligence.check_ai_token_expiry')
+@single_run('intelligence.check_ai_token_expiry', expire=600)
 def check_ai_token_expiry() -> dict:
     """Daily (core/celery.py beat_schedule). ERROR logs reach Sentry via LoggingIntegration."""
     if settings.LLM_BACKEND != 'claude_cli':

@@ -6,6 +6,7 @@
 #   beat        — celery beat (scheduler)
 #   flower      — celery flower (monitoring UI, optional)
 #   migrate     — one-shot: apply migrations + collectstatic
+#   copy-static — copy the image's collected (hashed) static files to $1 (nginx init)
 #   shell       — interactive python manage.py shell
 #
 # OpenTelemetry: if OTEL_ENABLED=true, wraps the command with `opentelemetry-instrument`.
@@ -76,6 +77,12 @@ case "$CMD" in
         ;;
     shell)
         exec python manage.py shell
+        ;;
+    copy-static)
+        # Helm nginx initContainer: the image already ran collectstatic at build time
+        dest="${1:?usage: copy-static <dir>}"
+        cp -a /app/staticfiles/. "$dest"/
+        echo "copied $(find "$dest" -type f | wc -l) static files to $dest"
         ;;
     *)
         # Unknown command — exec it as-is (e.g., manage.py custom commands)

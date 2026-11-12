@@ -4,9 +4,9 @@ Every RLS policy compares against `app_current_org_id()`, which is NULL (never a
 when no org is set, and every RLS table carries:
 
 * one `<table>_org_<cmd>` policy per command, filtered by the org;
-* a permissive `rls_bypass` policy: `app.rls_bypass = 'all'` passes every session,
-  'on' only sessions without an org (workers, platform admin, anonymous pages), anything
-  else none (see core/db_roles.py);
+* a permissive `rls_bypass` policy: `app.rls_bypass` 'all' (or unset) passes every
+  session, 'on' only sessions without an org (workers, platform admin, anonymous pages),
+  'off' none (see core/db_roles.py);
 * FORCE ROW LEVEL SECURITY, so the table owner is filtered too.
 
 New tenant tables: call `enable(cursor, table, clause)` from a RunPython migration, where
@@ -30,7 +30,7 @@ CREATE OR REPLACE FUNCTION app_current_org_id() RETURNS uuid
 
 CREATE OR REPLACE FUNCTION app_rls_bypass() RETURNS boolean
     LANGUAGE sql STABLE PARALLEL SAFE
-    AS $$ SELECT CASE coalesce(current_setting('app.rls_bypass', true), '')
+    AS $$ SELECT CASE coalesce(NULLIF(current_setting('app.rls_bypass', true), ''), 'all')
                      WHEN 'all' THEN true
                      WHEN 'on' THEN app_current_org_id() IS NULL
                      ELSE false

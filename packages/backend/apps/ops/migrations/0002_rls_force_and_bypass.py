@@ -14,38 +14,17 @@ from django.db import migrations
 def harden(apps, schema_editor):
     if schema_editor.connection.vendor != 'postgresql':
         return
-    from psycopg2 import sql
-
     from core import rls
-    from core.db_roles import bypass_default
 
     with schema_editor.connection.cursor() as cur:
         rls.harden_existing(cur)
-        # Database-level default for connections that never run our connection_created hook
-        # (psql, pgbouncer server connections). PostgreSQL only lets a superuser store a
-        # custom parameter this way, so the owner role prints the SQL for the DBA instead.
-        cur.execute('SELECT rolsuper FROM pg_roles WHERE rolname = current_user')
-        if cur.fetchone()[0]:
-            cur.execute('SELECT current_database()')
-            db = cur.fetchone()[0]
-            cur.execute(
-                sql.SQL('ALTER DATABASE {} SET app.rls_bypass = {}').format(
-                    sql.Identifier(db), sql.Literal(bypass_default())
-                )
-            )
-        else:
-            print(
-                "\n  NOTE: as a superuser, run once: ALTER DATABASE <db> SET app.rls_bypass = 'on';"
-                ' (needed only for sessions that bypass Django, e.g. pgbouncer server'
-                ' connections; docs/deployment/database-roles.md)'
-            )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ('ops', '0001_initial'),
         ('analytics', '0008_expense'),
-        ('catalog', '0011_aiproviderconfig_profiles_encryption'),
+        ('catalog', '0012_search_and_question_indexes'),
         ('commerce', '0008_exam_keys_rls_and_seed'),
         ('engagement', '0006_seed_typing_texts'),
         ('exams', '0010_billing_monetisation'),

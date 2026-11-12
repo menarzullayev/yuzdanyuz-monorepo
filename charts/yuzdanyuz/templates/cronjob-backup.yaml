@@ -64,6 +64,8 @@ spec:
                 # BYPASSRLS read-only role: pg_dump refuses tables whose RLS would filter it
                 - name: PGUSER
                   value: {{ .Values.externalServices.postgres.backupUser | quote }}
+                - name: PGSSLMODE
+                  value: {{ .Values.externalServices.postgres.sslmode | quote }}
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
