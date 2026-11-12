@@ -29,6 +29,16 @@ secretGroup = 1
 keywords = ["redis-cli"]
 
 [[rules]]
+id = "hardcoded-access-token"
+description = "32-char random access/bearer token written next to the word token or bearer (e.g. a keepalive endpoint token in docs)"
+# Left boundary is a non-alphanumeric char so a longer hash cannot be matched by its tail;
+# entropy 4.0 keeps hex digests (max 4.0 bits/char) out while mixed-case tokens pass.
+regex = '''(?i)\b(?:token|bearer)\b[^\n]{0,60}?[^A-Za-z0-9\n]([A-Za-z0-9]{32})(?:[^A-Za-z0-9]|$)'''
+secretGroup = 1
+entropy = 4.0
+keywords = ["token", "bearer"]
+
+[[rules]]
 id = "inline-password"
 description = "Literal password=value in docs, runbooks or config"
 regex = '''(?i)\bpassword\s*=\s*["']?([^\s"',)$<{*\]]{6,})'''

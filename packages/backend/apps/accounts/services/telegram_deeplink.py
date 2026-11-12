@@ -251,6 +251,43 @@ def requester_text(token: str) -> str:
     return f'{info.get("label", "?")}, IP {info.get("ip", "?")}'
 
 
+def consume_verified(token: str, nonce: str) -> str | None:
+    """Atomically redeem a verified login session started by this browser.
+
+    Returns the user pk and deletes the session in the same Redis transaction, so
+    two concurrent ``complete`` calls can never both receive a login. A session
+    that is not yet verified, or a wrong nonce, leaves the session untouched.
+    """
+    import hmac
+
+    import redis as _r
+
+    if not token or not nonce:
+        return None
+    r = _redis()
+    key = _key(token)
+    with r.pipeline() as pipe:
+        try:
+            pipe.watch(key)
+            raw = pipe.get(key)
+            session = json.loads(raw) if raw else None
+            if (
+                not isinstance(session, dict)
+                or session.get('status') != 'verified'
+                or not session.get('nonce_hash')
+                or not hmac.compare_digest(session['nonce_hash'], hash_nonce(nonce))
+                or not session.get('user_pk')
+            ):
+                pipe.unwatch()
+                return None
+            pipe.multi()
+            pipe.delete(key)
+            pipe.execute()
+        except _r.WatchError:
+            return None  # someone else changed or redeemed it first
+    return session['user_pk']
+
+
 def get_verified_user_pk(token: str) -> int | None:
     """
     Verified sessiyadan user_pk ni qaytaradi.

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from allauth.account.models import EmailAddress
+from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.models import SocialAccount, SocialLogin
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
@@ -312,29 +313,21 @@ class TestGoogleAdapter:
 
     def test_pre_hijacking_unverified_email_is_not_auto_linked(self, db):
         """Attacker pre-registers the victim's address; the victim's Google login must not
-        land in the attacker's account."""
+        land in the attacker's account, and nothing is linked until ownership is proven."""
         attacker = CustomUser.objects.create_user(
             username='attacker', email='victim@example.com', password=STRONG
         )
-        adapter = SocialAccountAdapter()
-        request = make_request()
         sl = google_login(email='victim@example.com', uid='g-victim', first='Vik', last='Tim')
 
-        adapter.pre_social_login(request, sl)
+        with pytest.raises(ImmediateHttpResponse) as exc:
+            SocialAccountAdapter().pre_social_login(make_request(), sl)
 
-        assert not SocialAccount.objects.filter(user=attacker).exists()
-        assert not sl.is_existing  # still a brand-new account
+        assert 'error=link_required' in exc.value.response['Location']
+        assert not SocialAccount.objects.exists()
+        assert not sl.is_existing
         attacker.refresh_from_db()
-        assert attacker.email is None  # the squatter lost the address
-
-        adapter.populate_user(
-            request, sl, {'email': 'victim@example.com', 'first_name': 'Vik', 'last_name': 'Tim'}
-        )
-        adapter.save_user(request, sl)
-        victim = CustomUser.objects.get(email='victim@example.com')
-        assert victim.pk != attacker.pk
-        assert not attacker.check_password('') and attacker.check_password(STRONG)
-        assert not SocialAccount.objects.filter(user=attacker).exists()
+        assert attacker.email == 'victim@example.com'  # nothing is taken from anyone
+        assert CustomUser.objects.count() == 1
 
     def test_verified_email_is_auto_linked(self, db):
         owner = CustomUser.objects.create_user(
@@ -359,7 +352,9 @@ class TestGoogleAdapter:
             user=owner, email='owner@example.com', verified=True, primary=True
         )
         sl = google_login(email='owner@example.com', uid='g-owner')
-        SocialAccountAdapter().pre_social_login(make_request(), sl)
+        with pytest.raises(ImmediateHttpResponse) as exc:
+            SocialAccountAdapter().pre_social_login(make_request(), sl)
+        assert 'error=account_disabled' in exc.value.response['Location']
         assert not SocialAccount.objects.filter(user=owner).exists()
 
     def test_unverified_google_email_never_matches(self, db):
@@ -368,7 +363,8 @@ class TestGoogleAdapter:
         )
         EmailAddress.objects.create(user=other, email='x@example.com', verified=True, primary=True)
         sl = google_login(email='x@example.com', uid='g-x', verified=False)
-        SocialAccountAdapter().pre_social_login(make_request(), sl)
+        with pytest.raises(ImmediateHttpResponse):
+            SocialAccountAdapter().pre_social_login(make_request(), sl)
         assert not SocialAccount.objects.filter(user=other).exists()
         other.refresh_from_db()
         assert other.email == 'x@example.com'

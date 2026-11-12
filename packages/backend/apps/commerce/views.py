@@ -28,7 +28,7 @@ from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
@@ -55,6 +55,21 @@ logger = logging.getLogger(__name__)
 
 # Conversion: 1 Coin = 100 UZS (default exchange rate)
 COIN_TO_UZS_RATE = 100
+MAX_TOPUP_UZS = Decimal('100000000')  # 100 mln so'm per intent
+MAX_SPEND_COINS = 10_000_000
+
+
+class TopUpRequestSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(choices=('payme', 'click'), default='payme')
+    # DecimalField rejects NaN/Infinity and anything that does not fit the column.
+    amount_uzs = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal('1'), max_value=MAX_TOPUP_UZS
+    )
+
+
+class SpendRequestSerializer(serializers.Serializer):
+    coins = serializers.IntegerField(min_value=1, max_value=MAX_SPEND_COINS)
+    description = serializers.CharField(max_length=255, allow_blank=True, default='')
 
 
 # ─── Wallet ──────────────────────────────────────────────────────────────────
@@ -101,15 +116,10 @@ class TopUpView(APIView):
     """POST /api/wallet/topup/  body: {provider: 'payme'|'click', amount_uzs: int}"""
 
     def post(self, request):
-        provider_name = request.data.get('provider', 'payme')
-        try:
-            amount_uzs = Decimal(str(request.data.get('amount_uzs', 0)))
-        except (TypeError, ValueError):
-            raise ValidationError({'amount_uzs': 'invalid'}) from None
-        if amount_uzs <= 0:
-            raise ValidationError({'amount_uzs': 'must be positive'})
-        if provider_name not in ('payme', 'click'):
-            raise ValidationError({'provider': "'payme' yoki 'click'"})
+        ser = TopUpRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        provider_name = ser.validated_data['provider']
+        amount_uzs = ser.validated_data['amount_uzs']
 
         if not payment_providers.payments_available():
             return _payments_unavailable()
@@ -143,18 +153,13 @@ class SpendView(APIView):
     """POST /api/wallet/spend/  body: {coins: int, description: str}"""
 
     def post(self, request):
-        try:
-            coins = int(request.data.get('coins', 0))
-        except (TypeError, ValueError):
-            raise ValidationError({'coins': 'invalid'}) from None
-        if coins <= 0:
-            raise ValidationError({'coins': 'must be positive'})
+        ser = SpendRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        coins = ser.validated_data['coins']
 
         wallet = wallet_service.get_or_create_wallet(request.user)
         try:
-            tx = wallet_service.spend(
-                wallet, coins, description=request.data.get('description', '')
-            )
+            tx = wallet_service.spend(wallet, coins, description=ser.validated_data['description'])
         except wallet_service.InsufficientFunds as e:
             return Response({'detail': str(e)}, status=status.HTTP_402_PAYMENT_REQUIRED)
 

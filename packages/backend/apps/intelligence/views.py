@@ -11,10 +11,12 @@ Endpoints:
   POST /api/intelligence/openended/<id>/qa/      admin tasdiqlash
 """
 
+from decimal import Decimal
+
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -133,17 +135,40 @@ def _validate_audio(audio, transcript: str) -> None:
         raise ValidationError({'audio': f'allowed formats: {", ".join(AUDIO_EXTENSIONS)}'})
 
 
+MAX_ESSAY_CHARS = 20_000  # also bounds what is sent to the LLM
+
+
+class OpenEndedSubmitRequestSerializer(serializers.Serializer):
+    question_version = serializers.UUIDField()
+    submission_type = serializers.ChoiceField(choices=('essay', 'audio'), default='essay')
+    content = serializers.CharField(
+        max_length=MAX_ESSAY_CHARS, allow_blank=True, default='', trim_whitespace=False
+    )
+
+
+class OpenEndedQARequestSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=('approve', 'dispute'))
+    score = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal('0'),
+        max_value=Decimal('100'),
+        required=False,
+        allow_null=True,
+        default=None,
+    )
+    notes = serializers.CharField(max_length=5000, allow_blank=True, default='')
+
+
 class OpenEndedSubmitView(APIView):
     def post(self, request):
-        qv_id = request.data.get('question_version')
-        sub_type = request.data.get('submission_type', 'essay')
-        content = request.data.get('content', '') or ''
+        ser = OpenEndedSubmitRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        qv_id = ser.validated_data['question_version']
+        sub_type = ser.validated_data['submission_type']
+        content = ser.validated_data['content']
         audio = request.FILES.get('audio')
 
-        if not qv_id:
-            raise ValidationError({'question_version': 'required'})
-        if sub_type not in ('essay', 'audio'):
-            raise ValidationError({'submission_type': "'essay' yoki 'audio'"})
         if sub_type == 'essay' and not content.strip():
             raise ValidationError({'content': "essay bo'sh bo'lmasligi kerak"})
         if sub_type == 'audio':
@@ -194,13 +219,13 @@ class OpenEndedQAView(APIView):
             raise PermissionDenied('Faqat staff/admin QA qila oladi.')
 
         sub = get_object_or_404(OpenEndedSubmission, pk=submission_id)
-        action = request.data.get('action')
-        if action not in ('approve', 'dispute'):
-            raise ValidationError({'action': "'approve' yoki 'dispute'"})
+        ser = OpenEndedQARequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        action = ser.validated_data['action']
 
         sub.human_reviewer = request.user
-        sub.human_score = request.data.get('score')
-        sub.human_notes = request.data.get('notes', '')
+        sub.human_score = ser.validated_data['score']
+        sub.human_notes = ser.validated_data['notes']
         sub.human_completed_at = timezone.now()
         sub.status = (
             OpenEndedSubmission.Status.HUMAN_APPROVED

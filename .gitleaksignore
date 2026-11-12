@@ -1,3 +1,7 @@
 # Fake test fixture key (sk-live-ABCDEFGH1234) in a PR commit, replaced by 55fd1b1; the
 # commit stays in branch history until squash-merged, and gitleaks scans full history.
 38bfab13950e99312c5f7de7cc318640d2c355e1:packages/backend/tests/unit/test_ai_providers.py:generic-api-key:14
+# Legacy keepalive token committed in docs (0ac1580), replaced with a placeholder in this
+# branch. It is public history: treated as leaked and must be rotated/retired; the history
+# rewrite is a separate, owner-approved step. Ignore only this historical occurrence.
+0ac15808506bf1c0c459acb162f8384f76c65f08:packages/backend/docs/ARCHITECTURE_REVIEW_2026-05-16.md:hardcoded-access-token:494

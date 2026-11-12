@@ -5,8 +5,6 @@ POST /api/auth/otp/send/    — telefon raqamga SMS yuboradi
 POST /api/auth/otp/verify/  — kodni tekshiradi, JWT cookie qaytaradi
 """
 
-import json
-
 from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
@@ -21,6 +19,7 @@ from apps.accounts.services.otp_service import (
 )
 from apps.accounts.services.phone_utils import PhoneValidationError
 from apps.accounts.services.token_service import attach_session, issue_login
+from apps.accounts.views.schemas import OTPVerifySchema, PhoneSchema, parse_json_body
 from core.utils.client_ip import get_client_ip
 
 
@@ -38,14 +37,10 @@ class OTPSendView(View):
     def post(self, request):
         if not settings.ENABLE_SMS_OTP:
             return _disabled_response()
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-        raw_phone = body.get('phone', '').strip()
-        if not raw_phone:
-            return JsonResponse({'error': 'phone required'}, status=400)
+        data, error = parse_json_body(request, PhoneSchema)
+        if error is not None:
+            return error
+        raw_phone = data['phone']
 
         # ISSUE-106: IP-tier rate limit uchun client IP
         client_ip = get_client_ip(request)
@@ -78,16 +73,10 @@ class OTPVerifyView(View):
     def post(self, request):
         if not settings.ENABLE_SMS_OTP:
             return _disabled_response()
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-        raw_phone = body.get('phone', '').strip()
-        code = body.get('code', '').strip()
-
-        if not raw_phone or not code:
-            return JsonResponse({'error': 'phone va code majburiy'}, status=400)
+        data, error = parse_json_body(request, OTPVerifySchema)
+        if error is not None:
+            return error
+        raw_phone, code = data['phone'], data['code']
 
         try:
             user = verify_otp(raw_phone, code)

@@ -13,6 +13,8 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 fake="Tr0ub4dor""Horse""77"
+# 32-char mixed-case bearer token shape (assembled so this file never matches).
+fake_token="Qw7rTz2Lm9""Xc4Vb8Np3K""dF6gHj1sYa""Pe"
 failures=0
 
 # expect_rule <name> <rule-id> <file> <content>
@@ -48,6 +50,10 @@ expect_rule requirepass-cfg redis-requirepass   redis.conf         "requirepass 
 expect_rule requirepass-list redis-requirepass  docker-compose.yml "$(printf '    command:\n      - redis-server\n      - --requirepass\n      - %s' "$fake")"
 expect_rule redis-cli-a     redis-cli-password  docker-compose.yml "      test: [\"CMD\", \"redis-cli\", \"-a\", \"${fake}\", \"ping\"]"
 expect_rule runbook-inline  inline-password     runbook.md         "- Redis: localhost:6379, password=${fake}"
+# Legacy keepalive endpoint token: in prose, in a query string and as a header.
+expect_rule token-prose     hardcoded-access-token REVIEW.md      "- Token rotation manual (bitta hardcoded \`${fake_token}\`)"
+expect_rule token-query     hardcoded-access-token DR_RUNBOOK.md  "curl https://host/_keepalive.php?token=${fake_token}"
+expect_rule token-header    hardcoded-access-token watchdog.sh    "curl -H 'Authorization: Bearer ${fake_token}' https://host/ping"
 
 # Negative cases: env-var references and placeholders must stay quiet.
 expect_clean env-url        docker-compose.yml '    REDIS_URL: redis://:${REDIS_PASSWORD:-yuzdanyuz_dev_redis}@redis:6379/1'
@@ -56,6 +62,9 @@ expect_clean placeholder-md runbook.md         '- Redis: localhost:6379, passwor
 expect_clean code-variable  login.py           'user = authenticate(request, username=login_val, password=password)'
 expect_clean md-code-expr   SECURITY.md        "        password = request.POST.get('password')"
 expect_clean md-fixture     TESTING.md         "        password='testpass123'"
+expect_clean token-placeholder REVIEW.md      '- Token rotation manual (hardcoded `<keepalive-token>`, rotate monthly)'
+expect_clean token-env      watchdog.sh        'curl -H "Authorization: Bearer ${KEEPALIVE_TOKEN}" https://host/ping'
+expect_clean token-hex-sha  CHANGELOG.md       'token bucket fixed in 3f2a9c1d8b7e6f5a4c3b2a1908f7e6d5c4b3a291'
 expect_clean env-template   DEPLOYMENT.md      'CELERY_BROKER_URL=redis://:secure_redis_password@127.0.0.1:6379/1'
 # The template allowlist must not swallow a real-looking value with the same prefix.
 expect_rule env-template-real redis-url-password DEPLOYMENT.md   "CELERY_BROKER_URL=redis://:secure${fake}@127.0.0.1:6379/1"
