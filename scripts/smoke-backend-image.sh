@@ -25,9 +25,14 @@ fi
 echo "image: $image"
 echo "pod user (from values.yaml): $uid:$gid"
 
+# core/settings/prod.py refuses to start without its REQUIRED_ENV keys; the smoke
+# test never reaches a database or broker, so placeholders are enough.
 run() {
   docker run --rm --user "$uid:$gid" \
     -e SECRET_KEY=smoke-test-only -e CLAUDE_CLI_TIMEOUT=60 \
+    -e DB_PASSWORD=smoke -e DB_HOST=127.0.0.1 -e ALLOWED_HOSTS=localhost \
+    -e REDIS_URL=redis://127.0.0.1:6379/1 -e CELERY_BROKER_URL=redis://127.0.0.1:6379/0 \
+    -e TELEGRAM_WEBHOOK_SECRET=smoke -e TRUSTED_PROXY_CIDRS=127.0.0.1/32 \
     "$@"
 }
 

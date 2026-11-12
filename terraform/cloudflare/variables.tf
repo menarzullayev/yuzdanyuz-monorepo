@@ -19,3 +19,29 @@ variable "origin_ip" {
   description = "Public IPv4 of the K8s ingress LoadBalancer (or LB hostname via separate CNAME)"
   type        = string
 }
+
+# ── Uptime probes (uptime.tf) ─────────────────────────────────────────────────
+
+variable "enable_uptime_checks" {
+  description = "Create Cloudflare health checks for the public hosts (needs a Pro+ zone plan)"
+  type        = bool
+  default     = true
+}
+
+variable "uptime_path" {
+  description = "Path probed on every public host"
+  type        = string
+  default     = "/health/ready/"
+}
+
+variable "account_id" {
+  description = "Cloudflare account ID (for the uptime notification policy)"
+  type        = string
+  default     = ""
+}
+
+variable "uptime_alert_emails" {
+  description = "Emails notified when a probe goes unhealthy or recovers; empty = no notification policy"
+  type        = list(string)
+  default     = []
+}

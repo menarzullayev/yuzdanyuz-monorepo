@@ -13,7 +13,69 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
+
+from pythonjsonlogger.json import JsonFormatter
+
+# Secrets that end up inside URLs: Telegram puts the bot token in the path
+# (https://api.telegram.org/bot<id>:<secret>/getMe), and some providers take keys
+# as query parameters. httpx logs every request URL at INFO; Sentry's httpx and
+# logging integrations copy them into breadcrumbs.
+_SECRET_PATTERNS = (
+    (re.compile(r'bot\d+:[A-Za-z0-9_-]+'), 'bot<redacted>'),
+    (
+        re.compile(
+            r'(?i)([?&](?:token|access_token|api_key|apikey|key|secret|password|signature)=)'
+            r'[^&\s"\']+'
+        ),
+        r'\1<redacted>',
+    ),
+)
+
+# Third-party loggers that write full request URLs at INFO.
+_NOISY_URL_LOGGERS = ('httpx', 'httpcore', 'httpx2', 'urllib3')
+
+
+def redact(text: str) -> str:
+    """Remove known secret shapes (bot tokens, key=... query params) from text."""
+    for pattern, repl in _SECRET_PATTERNS:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {k: _redact_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(v) for v in value)
+    return value
+
+
+def scrub_breadcrumb(crumb: dict, hint: dict) -> dict:
+    """Sentry before_breadcrumb: strip secrets from URLs and messages."""
+    return _redact_value(crumb)
+
+
+def scrub_event(event: dict, hint: dict) -> dict:
+    """Sentry before_send: strip secrets from messages, exceptions and breadcrumbs."""
+    return _redact_value(event)
+
+
+class RedactingJsonFormatter(JsonFormatter):
+    """JSON formatter that redacts secrets from the final line (message, extras, traceback)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
+
+
+class RedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
 
 
 def init_sentry() -> bool:
@@ -45,8 +107,15 @@ def init_sentry() -> bool:
             RedisIntegration(),
             LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
         ],
+        before_breadcrumb=scrub_breadcrumb,
+        before_send=scrub_event,
     )
     return True
+
+
+def quiet_url_loggers() -> dict[str, dict[str, Any]]:
+    """LOGGING entries that keep URL-logging HTTP clients at WARNING (no request URLs)."""
+    return {name: {'level': 'WARNING'} for name in _NOISY_URL_LOGGERS}
 
 
 def json_logging_dict(level: str = 'INFO') -> dict[str, Any]:
@@ -60,19 +129,30 @@ def json_logging_dict(level: str = 'INFO') -> dict[str, Any]:
         'disable_existing_loggers': False,
         'formatters': {
             'json': {
-                '()': 'pythonjsonlogger.json.JsonFormatter',
+                '()': 'core.observability.RedactingJsonFormatter',
                 'fmt': '%(asctime)s %(levelname)s %(name)s %(module)s %(message)s',
                 'rename_fields': {'asctime': 'time', 'levelname': 'level'},
             },
+        },
+        'filters': {
+            'request_id': {'()': 'core.middleware.request_id.RequestIdFilter'},
         },
         'handlers': {
             'console': {
                 'class': 'logging.StreamHandler',
                 'formatter': 'json',
+                'filters': ['request_id'],
                 'stream': 'ext://sys.stdout',
             },
         },
         'loggers': {
+            # One JSON line per HTTP request (core.middleware.request_id).
+            'yuzdanyuz.access': {
+                'handlers': ['console'],
+                'level': os.getenv('ACCESS_LOG_LEVEL', 'INFO'),
+                'propagate': False,
+            },
+            **quiet_url_loggers(),
             'django.request': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
             'django.db.backends': {
                 'handlers': ['console'],

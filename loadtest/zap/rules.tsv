@@ -1,0 +1,2 @@
+# ZAP rule overrides for .github/workflows/zap-baseline.yml (tab-separated: id<TAB>IGNORE|WARN|FAIL<TAB>reason).
+# Every IGNORE needs a reason and a date; see docs/security/zap-baseline.md for the triage.

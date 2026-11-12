@@ -1,14 +1,23 @@
 name: Build & Push images
 
+# Images are published only for commits whose CI passed (audit H02):
+#   - main: runs after the "CI" workflow finished green on a push (workflow_run);
+#   - v*.*.* tags and manual runs: a gate step checks "All Checks Passed" on the commit.
+# Tags are immutable: sha-<full git sha> (+ vX.Y.Z for releases). No `latest`, no
+# branch tags; the chart refuses anything else (templates/_helpers.tpl checkedTag).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+  push:
     tags: ['v*.*.*']
   pull_request:
     paths:
       - 'docker/**'
       - 'packages/backend/**'
       - 'charts/**'
+      - 'argocd/**'
       - 'scripts/check-celery-queues.py'
       - 'scripts/check-helm-pull-secrets.py'
       - 'scripts/check-helm-deploy-path.py'
@@ -21,15 +30,23 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  # The commit being built: for workflow_run, github.sha is the default branch tip,
+  # not the commit CI tested.
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
 
 permissions:
   contents: read
+  checks: read              # CI gate for tags / manual runs
   packages: write           # required to push to ghcr.io
   id-token: write           # for cosign keyless signing (future)
 
 jobs:
   build:
     name: ${{ matrix.image }}
+    # workflow_run fires on every CI completion: build only after a green push to main.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -44,6 +61,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Require green CI for this commit (tags / manual runs)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion="$(gh api "repos/${{ github.repository }}/commits/${SOURCE_SHA}/check-runs?check_name=All%20Checks%20Passed" --jq '[.check_runs[].conclusion] | if length == 0 then "missing" else (if all(. == "success") then "success" else "failure" end) end')"
+          echo "CI 'All Checks Passed' on ${SOURCE_SHA}: ${conclusion}"
+          test "${conclusion}" = success
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -65,12 +93,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}
           tags: |
-            type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern=v{{version}}
+            type=raw,value=sha-${{ env.SOURCE_SHA }},enable=${{ github.event_name != 'pull_request' }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -96,30 +121,38 @@ jobs:
 
   helm-lint:
     name: Helm lint
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     env:
       # values-prod leaves the backup destination and the cluster pod CIDR to the
       # operator, so the chart refuses to render without them; CI supplies placeholders.
       PROD_REQUIRED_SET: >-
+        --set image.tag=sha-0123456789abcdef0123456789abcdef01234567
         --set backup.destination=dest:ci-placeholder/postgres
         --set backup.rcloneSecret=yuzdanyuz-backup-rclone
         --set backup.gpgPublicKey=ci-placeholder
         --set trustedProxy.clusterCidrs={10.42.0.0/16}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
       - uses: azure/setup-helm@v5
         with:
           version: v3.16.2
       - name: Lint chart
         run: |
+          read -ra PROD <<< "$PROD_REQUIRED_SET"
           helm lint charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET
+            --values charts/yuzdanyuz/values-prod.yaml "${PROD[@]}"
       - name: Render template (smoke test)
         run: |
+          read -ra PROD <<< "$PROD_REQUIRED_SET"
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET > /tmp/rendered.yaml
+            --values charts/yuzdanyuz/values-prod.yaml "${PROD[@]}" > /tmp/rendered.yaml
           wc -l /tmp/rendered.yaml
           # Sanity — at least 200 lines means the chart actually rendered something
           test "$(wc -l < /tmp/rendered.yaml)" -gt 200
@@ -128,25 +161,28 @@ jobs:
           python-version: '3.12'
       - name: Every routed Celery queue has a worker; AI stays capped
         run: |
+          read -ra PROD <<< "$PROD_REQUIRED_SET"
           pip install pyyaml==6.0.3
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET \
+            --values charts/yuzdanyuz/values-prod.yaml "${PROD[@]}" \
             --set keda.enabled=true > /tmp/rendered-keda.yaml
           python scripts/check-celery-queues.py --manifests /tmp/rendered.yaml /tmp/rendered-keda.yaml
       - name: Every pod can pull the private GHCR images
         run: |
+          read -ra PROD <<< "$PROD_REQUIRED_SET"
           # values-prod sets global.imagePullSecrets; turn on every optional pod too.
           helm template yuzdanyuz charts/yuzdanyuz \
             --values charts/yuzdanyuz/values.yaml \
-            --values charts/yuzdanyuz/values-prod.yaml $PROD_REQUIRED_SET \
+            --values charts/yuzdanyuz/values-prod.yaml "${PROD[@]}" \
             --set backup.enabled=true --set keda.enabled=true > /tmp/rendered-all.yaml
           bash scripts/test-check-helm-pull-secrets.sh
           python scripts/check-helm-pull-secrets.py /tmp/rendered.yaml /tmp/rendered-all.yaml
       - name: Deploy path works (entrypoint args, nginx upstreams, probes, backup refs)
         run: |
           helm template yuzdanyuz charts/yuzdanyuz \
-            --values charts/yuzdanyuz/values.yaml > /tmp/rendered-default.yaml
+            --values charts/yuzdanyuz/values.yaml \
+            --set image.tag=sha-0123456789abcdef0123456789abcdef01234567 > /tmp/rendered-default.yaml
           bash scripts/test-check-helm-deploy-path.sh /tmp/rendered.yaml
           python scripts/check-helm-deploy-path.py \
             --external-secret yuzdanyuz-secrets --external-secret yuzdanyuz-backup-rclone \
@@ -171,15 +207,29 @@ jobs:
             grep -qF -- "$want" /tmp/err.txt || { cat /tmp/err.txt; echo "::error::wrong error for: $*"; exit 1; }
             echo "ok    refused: $*"
           }
-          expect_fail "web.command is set" --set 'web.command={web}'
-          expect_fail "celeryWorker.command is set" --set 'celeryWorker.command={worker}'
-          expect_fail "exceeds externalServices.postgres.maxConnections" --set pgbouncer.replicas=3
-          expect_fail "migrateUser must differ" --set externalServices.postgres.migrateUser=yuzdanyuz
-          expect_fail "backup.destination is empty" --values charts/yuzdanyuz/values-prod.yaml \
+          # Only immutable CI-built tags deploy (audit H02).
+          expect_fail "image.tag is empty"
+          expect_fail 'image tag "latest" is mutable' --set image.tag=latest
+          expect_fail 'image tag "main" is mutable' --set image.tag=main
+          T=(--set image.tag=sha-0123456789abcdef0123456789abcdef01234567)
+          expect_fail 'image tag "latest" is mutable' "${T[@]}" --set nginx.image.tag=latest
+          # Every case below has a valid tag, so it fails for its own reason.
+          expect_fail "web.command is set" "${T[@]}" --set 'web.command={web}'
+          expect_fail "celeryWorker.command is set" "${T[@]}" --set 'celeryWorker.command={worker}'
+          expect_fail "exceeds externalServices.postgres.maxConnections" "${T[@]}" --set pgbouncer.replicas=3
+          expect_fail "migrateUser must differ" "${T[@]}" --set externalServices.postgres.migrateUser=yuzdanyuz
+          expect_fail "backup.destination is empty" "${T[@]}" --values charts/yuzdanyuz/values-prod.yaml \
             --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
-          expect_fail "backup.gpgPublicKey is empty" --values charts/yuzdanyuz/values-prod.yaml \
+          expect_fail "backup.gpgPublicKey is empty" "${T[@]}" --values charts/yuzdanyuz/values-prod.yaml \
             --set backup.destination=dest:x --set backup.rcloneSecret=s --set 'trustedProxy.clusterCidrs={10.42.0.0/16}'
-          expect_fail "trustedProxy.clusterCidrs is empty" --values charts/yuzdanyuz/values-prod.yaml \
+          expect_fail "trustedProxy.clusterCidrs is empty" "${T[@]}" --values charts/yuzdanyuz/values-prod.yaml \
             --set backup.destination=dest:x --set backup.rcloneSecret=s --set backup.gpgPublicKey=k
+          # Alert routing needs a chat id (the bot token stays in a Secret).
+          expect_fail "alerting.telegram.chatId is empty" "${T[@]}" --set alerting.telegram.enabled=true
+          # Every ArgoCD app pins an immutable image tag.
+          for app in argocd/apps/*.yaml; do
+            grep -Eq 'value: (sha-[0-9a-f]{7,40}|v[0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*$' "$app" \
+              || { echo "::error::$app does not pin image.tag to sha-<git sha>"; exit 1; }
+          done
           # the rendered prod ConfigMap carries the pod CIDR and the Cloudflare ranges
           grep -q 'TRUSTED_PROXY_CIDRS: "10.42.0.0/16,173.245.48.0/20,' /tmp/rendered.yaml

@@ -85,17 +85,11 @@ def record_failure(
     Sentry observability, DLQ — recovery.
     """
     # Prometheus metric (ISSUE-104'ga qo'shimcha)
-    try:
-        from prometheus_client import Counter
+    # A module-level counter: creating it here raised "Duplicated timeseries" from the
+    # second failure on, so only the first failure per process was ever counted.
+    from core.metrics import TASK_DLQ
 
-        Counter(
-            'yz_task_dlq_total',
-            'Failed Celery tasks routed to DLQ',
-            ['task_name'],
-        ).labels(task_name=sender.name if sender else 'unknown').inc()
-    except (ImportError, ValueError):
-        # Counter already registered (duplicate) yoki prometheus_client yo'q — skip
-        pass
+    TASK_DLQ.labels(task_name=sender.name if sender else 'unknown').inc()
 
     try:
         FailedTask.objects.create(

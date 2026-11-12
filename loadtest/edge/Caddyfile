@@ -1,0 +1,13 @@
+# TLS edge for the ZAP scan, standing in for the ingress: terminates HTTPS with a
+# local CA certificate and proxies to the web replicas with X-Forwarded-Proto/-For,
+# so the backend runs exactly as in production (SECURE_SSL_REDIRECT, Secure cookies).
+{
+	auto_https disable_redirects
+	local_certs
+	skip_install_trust
+}
+
+https://edge.yuzdanyuz.test {
+	tls internal
+	reverse_proxy web:8000
+}
