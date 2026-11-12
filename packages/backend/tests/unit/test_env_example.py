@@ -63,7 +63,7 @@ class TestEnvExample:
 
 
 REQUIRED_PROD = {
-    'SECRET_KEY': 'prod-test-secret-key-0123456789abcdef0123456789',
+    'SECRET_KEY': 'x' * 50,
     'DB_PASSWORD': 'pw',
     'DB_HOST': 'postgres-primary',
     'REDIS_URL': 'redis://redis:6379/1',
