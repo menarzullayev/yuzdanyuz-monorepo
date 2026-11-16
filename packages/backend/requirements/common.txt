@@ -25,7 +25,7 @@ channels-redis==4.3.0          # Task 4: Channel layer for Redis
 daphne==4.2.3                  # Task 4: ASGI server (channels.testing ham talab qiladi)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-django-allauth==65.21.1        # Task 2: Google OAuth, email auth
+django-allauth==65.22.0        # Task 2: Google OAuth, email auth
 PyJWT==2.15.1                  # Task 2: JWT token generation/verification
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
