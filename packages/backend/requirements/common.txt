@@ -25,7 +25,7 @@ channels-redis==4.3.0          # Task 4: Channel layer for Redis
 daphne==4.2.3                  # Task 4: ASGI server (channels.testing ham talab qiladi)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-django-allauth==65.21.1        # Task 2: Google OAuth, email auth
+django-allauth==65.22.1        # Task 2: Google OAuth, email auth
 PyJWT==2.15.1                  # Task 2: JWT token generation/verification
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ djangorestframework==3.18.3    # Task 2, 4: TMA va mobile uchun API endpoints
 django-cors-headers==4.9.0     # Task 2: CORS (TMA, mobile app)
 drf-spectacular==0.30.0        # ISSUE-201: OpenAPI 3.0 schema + Swagger UI + Redoc
 django-fsm-2==4.3.0            # ISSUE-205: state machine field decorators for status models
-django-flags==5.2.0             # ISSUE-505: feature flag toggling (per-user/per-org/percentage)
+django-flags==5.3.0             # ISSUE-505: feature flag toggling (per-user/per-org/percentage)
 
 # ── Frontend Helpers ──────────────────────────────────────────────────────────
 django-htmx==1.29.0            # Task 1+: HTMX request detection middleware
