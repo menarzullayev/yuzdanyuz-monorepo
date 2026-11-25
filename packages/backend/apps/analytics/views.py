@@ -35,14 +35,10 @@ logger = logging.getLogger(__name__)
 
 
 def _is_dashboard_user(user, org) -> bool:
-    """Org admin/owner/manager/teacher (student emas)."""
+    """Roles holding ``analytics:view`` (owner, manager, teacher, observer), not students."""
     if user.is_superuser or user.is_staff:
         return True
-    return user.memberships.filter(
-        organization=org,
-        status='active',
-        role__name__in=['owner', 'admin', 'manager', 'teacher'],
-    ).exists()
+    return user.has_org_permission(org, 'analytics:view')
 
 
 def _require_org(request):

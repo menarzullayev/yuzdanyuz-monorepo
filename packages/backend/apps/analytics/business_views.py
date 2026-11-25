@@ -25,12 +25,13 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.organizations.models import Membership, MembershipStatus, Organization
+from apps.organizations.models import Organization
 
 from . import finance, funnel, org_report
 from .models import Expense
 
-ADMIN_ROLES = ('owner', 'admin', 'manager')
+# Finance, funnel and monthly reports: owner ('*') and manager (audit B11).
+BUSINESS_PERMISSION = 'analytics:business'
 MAX_FUTURE_DAYS = 31
 MIN_EXPENSE_DATE = date(2020, 1, 1)
 
@@ -70,9 +71,7 @@ def _resolve_org(request, *, staff_default_to_request_org=False):
     org = getattr(request, 'org', None)
     if org is None or (raw and raw != str(org.id)):
         raise PermissionDenied('Faqat o‘z tashkilotingiz ma‘lumotlarini ko‘ra olasiz.')
-    if not Membership.objects.filter(
-        user=user, organization=org, status=MembershipStatus.ACTIVE, role__name__in=ADMIN_ROLES
-    ).exists():
+    if not user.has_org_permission(org, BUSINESS_PERMISSION):
         raise PermissionDenied('Faqat tashkilot admini ko‘ra oladi.')
     return org
 

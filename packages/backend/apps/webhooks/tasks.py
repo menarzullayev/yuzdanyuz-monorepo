@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
@@ -19,6 +20,14 @@ logger = logging.getLogger(__name__)
 # Exponential backoff schedule: 1m, 5m, 30m, 2h, 12h (seconds).
 # Aligned with @shared_task(max_retries=5) — index = self.request.retries.
 RETRY_SCHEDULE_SECONDS = (60, 300, 1800, 7200, 43200)
+
+# ±20% spread so endpoints that failed together (receiver outage) are not all retried
+# in the same second when it comes back (audit F07).
+RETRY_JITTER = 0.2
+
+# 4xx answers that can change on their own; any other 4xx (bad signature, gone,
+# not found) is the receiver rejecting this payload, so retrying only adds load.
+RETRYABLE_4XX = frozenset({408, 409, 425, 429})
 
 REQUEST_TIMEOUT_SECONDS = 10
 # Only a short prefix of the receiver's answer is read and kept: enough to debug,
@@ -123,7 +132,22 @@ def deliver_webhook(self, delivery_id: str):
         )
         return
 
-    # 4xx / 5xx → retry path
+    if 400 <= response.status_code < 500 and response.status_code not in RETRYABLE_4XX:
+        logger.warning(
+            'deliver_webhook: delivery %s rejected with HTTP %s, not retried',
+            delivery_id,
+            response.status_code,
+        )
+        _record_attempt(
+            delivery,
+            status=WebhookDelivery.Status.EXHAUSTED,
+            response_status=response.status_code,
+            response_body=response_text,
+            completed=True,
+        )
+        return
+
+    # 5xx and retryable 4xx → retry path
     _record_attempt(
         delivery,
         status=WebhookDelivery.Status.FAILED,
@@ -136,6 +160,12 @@ def deliver_webhook(self, delivery_id: str):
         delivery,
         RuntimeError(f'HTTP {response.status_code} from webhook endpoint {endpoint.pk}'),
     )
+
+
+def jittered(seconds: int) -> int:
+    """``seconds`` spread by ±RETRY_JITTER, never below one second."""
+    spread = seconds * RETRY_JITTER
+    return max(1, round(seconds + random.uniform(-spread, spread)))  # noqa: S311 - not security
 
 
 def _retry_or_exhaust(task, delivery: WebhookDelivery, exc: Exception) -> None:
@@ -158,7 +188,8 @@ def _retry_or_exhaust(task, delivery: WebhookDelivery, exc: Exception) -> None:
         raise exc
 
     # retries_so_far is the count BEFORE this retry — next attempt index.
-    countdown = RETRY_SCHEDULE_SECONDS[min(retries_so_far, len(RETRY_SCHEDULE_SECONDS) - 1)]
+    base = RETRY_SCHEDULE_SECONDS[min(retries_so_far, len(RETRY_SCHEDULE_SECONDS) - 1)]
+    countdown = jittered(base)
     try:
         raise task.retry(exc=exc, countdown=countdown)
     except MaxRetriesExceededError:

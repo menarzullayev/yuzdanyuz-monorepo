@@ -98,3 +98,40 @@ def _extract_details(response) -> dict | None:
         extra = {k: v for k, v in data.items() if k != 'detail'}
         return extra or None
     return None
+
+
+def _wants_json(request) -> bool:
+    return request.path.startswith('/api/') or 'application/json' in request.headers.get(
+        'Accept', ''
+    )
+
+
+def server_error(request, *args, **kwargs):
+    """``handler500``: JSON envelope for API clients, Django's HTML page otherwise.
+
+    Non-DRF exceptions (and DRF ones the handler above returns None for) used to reach
+    API clients as Django's HTML 500 page, which the frontend cannot parse (audit D02).
+    The body carries the request id so a user report can be matched to the log line.
+    """
+    from django.http import JsonResponse
+    from django.views.defaults import server_error as html_server_error
+
+    from core.middleware.request_id import get_request_id
+
+    if not _wants_json(request):
+        return html_server_error(request)
+    request_id = get_request_id()
+    message = 'Serverda kutilmagan xato yuz berdi'
+    return JsonResponse(
+        {
+            'success': False,
+            'error': {
+                'code': 'server_error',
+                'message': message,
+                'details': None,
+                'request_id': request_id,
+            },
+            'detail': message,
+        },
+        status=500,
+    )

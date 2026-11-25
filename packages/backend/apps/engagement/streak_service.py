@@ -40,7 +40,7 @@ def update_on_activity(user, activity_date=None) -> UserStreak:
     Milestone (7/30/100) → Wallet'ga Coin reward (idempotent: faqat shu kun
     yangi qiymat bo'lsa beriladi).
     """
-    today = activity_date or timezone.now().date()
+    today = activity_date or timezone.localdate()
     # Row lock: parallel activity calls (two tabs, retries) are serialised, so only
     # the first one advances the streak and pays a milestone; the others see
     # last_activity_date == today. The reward is written in the same transaction.
@@ -98,7 +98,7 @@ def check_broken_streaks() -> int:
     """
     from . import notifications_service
 
-    yesterday = timezone.now().date() - timedelta(days=1)
+    yesterday = timezone.localdate() - timedelta(days=1)
     broken_qs = UserStreak.objects.filter(
         last_activity_date__lt=yesterday, current_streak__gte=1
     ).select_related('user')

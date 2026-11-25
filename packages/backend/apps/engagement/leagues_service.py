@@ -35,7 +35,7 @@ DEMOTE_BOTTOM = 10
 
 
 def _current_week_bounds() -> tuple[date, date]:
-    today = timezone.now().date()
+    today = timezone.localdate()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
     return monday, sunday

@@ -4,7 +4,7 @@ Coverage:
   - WebhookEndpoint CRUD + tenant isolation
   - sign_payload stability
   - dispatch_webhook subscription filter + delivery row creation
-  - deliver_webhook task: 2xx → SENT, 4xx → retry, 5 fails → EXHAUSTED + DLQ
+  - deliver_webhook task: 2xx → SENT, permanent 4xx → EXHAUSTED, 5xx/429 → retry, 5 fails → EXHAUSTED + DLQ
 """
 
 from __future__ import annotations
@@ -204,8 +204,8 @@ class TestDeliverWebhookTask:
         assert headers['X-Webhook-Signature'] == expected
         assert headers['X-Webhook-Event'] == 'exam.submitted'
 
-    def test_4xx_triggers_retry(self, org):
-        """Non-2xx response → task.retry() invoked, delivery stays FAILED."""
+    def test_permanent_4xx_is_not_retried(self, org):
+        """Audit F07: 400/401/404/410 mean the receiver rejects this payload."""
         ep = _make_endpoint(org)
         delivery = WebhookDelivery.objects.create(
             endpoint=ep, event='exam.submitted', payload={'k': 'v'}
@@ -216,6 +216,29 @@ class TestDeliverWebhookTask:
                 'apps.webhooks.tasks.safe_post',
                 return_value=_mock_response(400, 'bad req'),
             ),
+            patch('apps.webhooks.tasks.deliver_webhook.retry') as mock_retry,
+        ):
+            deliver_webhook(str(delivery.id))
+
+        assert not mock_retry.called
+        delivery.refresh_from_db()
+        assert delivery.status == WebhookDelivery.Status.EXHAUSTED
+        assert delivery.response_status == 400
+        assert delivery.attempts == 1
+        assert delivery.completed_at is not None
+
+    @pytest.mark.parametrize('code', [408, 409, 425, 429])
+    def test_retryable_4xx_triggers_retry(self, org, code):
+        ep = _make_endpoint(org)
+        delivery = WebhookDelivery.objects.create(
+            endpoint=ep, event='exam.submitted', payload={'k': 'v'}
+        )
+
+        with (
+            patch(
+                'apps.webhooks.tasks.safe_post',
+                return_value=_mock_response(code, 'later'),
+            ),
             patch(
                 'apps.webhooks.tasks.deliver_webhook.retry',
                 side_effect=RuntimeError('retry-called'),
@@ -224,12 +247,21 @@ class TestDeliverWebhookTask:
             with pytest.raises(RuntimeError, match='retry-called'):
                 deliver_webhook(str(delivery.id))
 
-        # retry() was called with the right exponential countdown
         assert mock_retry.called
+        countdown = mock_retry.call_args.kwargs['countdown']
+        assert 48 <= countdown <= 72  # 60s ±20%
         delivery.refresh_from_db()
         assert delivery.status == WebhookDelivery.Status.FAILED
-        assert delivery.response_status == 400
-        assert delivery.attempts == 1
+        assert delivery.response_status == code
+
+    def test_jitter_spreads_retries_within_bounds(self):
+        from apps.webhooks.tasks import jittered
+
+        values = {jittered(3600) for _ in range(200)}
+        assert min(values) >= 2880
+        assert max(values) <= 4320
+        assert len(values) > 10
+        assert jittered(1) >= 1
 
     def test_5xx_triggers_retry(self, org):
         ep = _make_endpoint(org)

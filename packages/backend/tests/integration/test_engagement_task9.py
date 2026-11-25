@@ -77,7 +77,7 @@ class TestStreak:
         assert s.max_streak == 1
 
     def test_consecutive_day_increments(self, db, user):
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         streak_service.update_on_activity(user, activity_date=yesterday)
         s = streak_service.update_on_activity(user)  # bugun
         assert s.current_streak == 2
@@ -89,7 +89,7 @@ class TestStreak:
         assert s.current_streak == 1
 
     def test_broken_streak_resets(self, db, user):
-        three_days_ago = timezone.now().date() - timedelta(days=3)
+        three_days_ago = timezone.localdate() - timedelta(days=3)
         streak_service.update_on_activity(user, activity_date=three_days_ago)
         s = streak_service.update_on_activity(user)  # bugun, gap 3 kun
         assert s.current_streak == 1
@@ -98,7 +98,7 @@ class TestStreak:
     def test_milestone_7_days_awards_coin(self, db, user):
         # Manually build 7-day streak
         for i in range(6, -1, -1):
-            d = timezone.now().date() - timedelta(days=i)
+            d = timezone.localdate() - timedelta(days=i)
             streak_service.update_on_activity(user, activity_date=d)
         s = UserStreak.objects.get(user=user)
         assert s.current_streak == 7
@@ -111,7 +111,7 @@ class TestStreak:
     def test_check_broken_streaks_queues_notification(self, db, user):
         # User'ning oxirgi faolligi 3 kun oldin
         streak_service.update_on_activity(
-            user, activity_date=timezone.now().date() - timedelta(days=3)
+            user, activity_date=timezone.localdate() - timedelta(days=3)
         )
         result = check_broken_streaks_task()
         assert result['warnings_queued'] >= 1
@@ -142,9 +142,7 @@ class TestLeagues:
 
     def test_weekly_recalc_promotes_top(self, db, user, user2, league_catalog):
         # Avvalgi haftaning membership'larini yaratish
-        prev_week_start = timezone.now().date() - timedelta(
-            days=timezone.now().date().weekday() + 7
-        )
+        prev_week_start = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         prev_week_end = prev_week_start + timedelta(days=6)
 
         bronze = league_catalog[0]

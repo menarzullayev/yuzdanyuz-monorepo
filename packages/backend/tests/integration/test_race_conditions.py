@@ -117,7 +117,7 @@ def test_parallel_anticheat_cancels_exactly_at_the_limit(org, user, member, subj
 def test_parallel_activity_awards_a_streak_milestone_once(user, settings, monkeypatch):
     settings.REWARD_SERVICE_PATH = 'tests.integration.test_race_conditions.record_reward'
     _rewards.clear()
-    today = timezone.now().date()
+    today = timezone.localdate()
     UserStreak.objects.create(
         user=user, current_streak=6, max_streak=6, last_activity_date=today - timedelta(days=1)
     )

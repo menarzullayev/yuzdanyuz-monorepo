@@ -78,7 +78,7 @@ class TestRewardResolver:
 class TestRewardInterfaceIntegration:
     def test_streak_milestone_uses_reward_interface(self, db, user):
         """Milestone (7-day) get_reward_service() resolver orqali ketishi kerak."""
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         UserStreak.objects.create(
             user=user, current_streak=6, max_streak=6, last_activity_date=yesterday
         )
@@ -110,7 +110,7 @@ class TestRewardInterfaceIntegration:
         silver = League.objects.create(
             name='Kumush', slug='kumush', rank_order=2, promote_reward_coins=250
         )
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         # Top user (will be promoted)
         LeagueMembership.objects.create(
             user=user,
