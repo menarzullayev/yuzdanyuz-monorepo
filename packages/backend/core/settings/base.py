@@ -220,6 +220,8 @@ CHANNEL_LAYERS = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # JWT cookie (Next.js app): Origin check, no CSRF token. Must come first.
+        'apps.accounts.authentication.JWTCookieAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
