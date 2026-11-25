@@ -46,6 +46,7 @@ from .models import (
 from .onboarding_gate import missing_for, require_onboarding
 from .serializers import (
     AntiCheatEventCreateSerializer,
+    ExamAnswerAckSerializer,
     ExamAttemptSerializer,
     MockExamListSerializer,
     PracticeSessionCreateSerializer,
@@ -85,6 +86,25 @@ def _attempt_payload(user, attempt) -> dict:
         data['onboarding_required'] = True
         data['missing'] = missing
     return data
+
+
+def _expire_if_overdue(attempt) -> bool:
+    """Close an in-progress attempt whose time ran out and score what was answered.
+
+    The WebSocket consumer does this on its heartbeat, but a client that never opens
+    the socket (or drops it) must not get unlimited time over plain HTTP.
+    """
+    if attempt.status != ExamAttempt.Status.IN_PROGRESS or not attempt.is_overdue():
+        return False
+    with transaction.atomic():
+        locked = ExamAttempt.objects.select_for_update().get(pk=attempt.pk)
+        if locked.status != ExamAttempt.Status.IN_PROGRESS:
+            attempt.refresh_from_db()
+            return False
+        locked.expire()
+    transaction.on_commit(lambda: finalize_attempt_score.delay(str(attempt.pk)))
+    attempt.refresh_from_db()
+    return True
 
 
 def _get_user_session_or_404(user, session_id):
@@ -210,14 +230,18 @@ class StartAttemptView(APIView):
             if created:
                 _enforce_exam_access(request.user, mock, attempt)
 
+        _expire_if_overdue(attempt)
         if attempt.status not in {ExamAttempt.Status.IN_PROGRESS}:
             raise ValidationError(
                 f'Sizda allaqachon yakunlangan attempt bor (status={attempt.status}).'
             )
 
+        # A resumed attempt (reload, second tab) gets back what was already chosen.
+        answers = list(UserAnswer.objects.filter(attempt=attempt))
         return Response(
             StartAttemptResponseSerializer(
-                {'attempt': attempt, 'exam': mock}, context={'request': request}
+                {'attempt': attempt, 'exam': mock, 'answers': answers},
+                context={'request': request},
             ).data,
             status=status.HTTP_201_CREATED,
         )
@@ -231,6 +255,7 @@ class AttemptDetailView(APIView):
 
     def get(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
+        _expire_if_overdue(attempt)
         if attempt.status != ExamAttempt.Status.IN_PROGRESS:
             require_onboarding(request.user)  # a finished attempt shows the result
         return Response(ExamAttemptSerializer(attempt).data)
@@ -244,6 +269,20 @@ class SubmitAnswerView(APIView):
 
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
+        if _expire_if_overdue(attempt):
+            return Response(
+                {
+                    'success': False,
+                    'error': {
+                        'code': 'attempt_expired',
+                        'message': 'Vaqt tugadi.',
+                        'details': None,
+                    },
+                    'detail': 'Vaqt tugadi.',
+                    'status': attempt.status,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         if attempt.status != ExamAttempt.Status.IN_PROGRESS:
             raise ValidationError(f'Attempt holati: {attempt.status} — javob qabul qilinmaydi.')
 
@@ -269,7 +308,9 @@ class SubmitAnswerView(APIView):
                 },
             )
 
-        return Response(UserAnswerReadSerializer(answer).data, status=status.HTTP_201_CREATED)
+        # No is_correct here: answers can be changed until submit, so revealing it would
+        # let a student try each option until the exam tells them which one is right.
+        return Response(ExamAnswerAckSerializer(answer).data, status=status.HTTP_201_CREATED)
 
 
 class SubmitAttemptView(APIView):
@@ -280,7 +321,8 @@ class SubmitAttemptView(APIView):
 
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
-        if attempt.status == ExamAttempt.Status.SUBMITTED:
+        _expire_if_overdue(attempt)
+        if attempt.status in (ExamAttempt.Status.SUBMITTED, ExamAttempt.Status.EXPIRED):
             return Response(_attempt_payload(request.user, attempt))
         if attempt.status != ExamAttempt.Status.IN_PROGRESS:
             raise ValidationError(f"Attempt holati: {attempt.status} — yakunlab bo'lmaydi.")

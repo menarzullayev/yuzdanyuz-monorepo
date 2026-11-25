@@ -135,7 +135,9 @@ class TestAnswerAndSubmit:
             content_type='application/json',
         )
         assert ans_resp.status_code == 201
-        assert ans_resp.json()['is_correct'] is True
+        # Correctness stays hidden until submit (answers can still be changed).
+        assert 'is_correct' not in ans_resp.json()
+        assert 'auto_correct' not in ans_resp.json()
 
         # Submit
         sub_resp = client.post(reverse('exams:attempt-submit', args=[attempt_id]))

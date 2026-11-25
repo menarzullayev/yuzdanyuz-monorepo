@@ -57,6 +57,7 @@ app.conf.task_routes = {
     'analytics.generate_export': {'queue': 'batch'},
     'analytics.refresh_question_quality': {'queue': 'batch'},
     'exams.publish_scheduled_mocks': {'queue': 'batch'},
+    'exams.expire_overdue_attempts': {'queue': 'batch'},
     'exams.quarantine_check': {'queue': 'batch'},
     'intelligence.check_ai_token_expiry': {'queue': 'batch'},
     'ops.run_health_probe': {'queue': 'batch'},
@@ -93,6 +94,10 @@ app.conf.beat_schedule = {
     # lock (core/locks.py), so a second beat or a manual run cannot double it.
     'exams-publish-scheduled-mocks': {
         'task': 'exams.publish_scheduled_mocks',
+        'schedule': crontab(minute='*/5'),
+    },
+    'exams-expire-overdue-attempts': {
+        'task': 'exams.expire_overdue_attempts',
         'schedule': crontab(minute='*/5'),
     },
     'commerce-auto-renew-subscriptions': {

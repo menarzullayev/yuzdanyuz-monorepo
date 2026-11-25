@@ -29,9 +29,12 @@ from .models import (
 class QuestionVersionInExamSerializer(serializers.ModelSerializer):
     """Exam ichida ko'rsatiladigan QuestionVersion — to'g'ri javob ko'rinmaydi."""
 
+    # SC = one option, MC = several; the exam UI needs it to pick radio vs checkbox.
+    type = serializers.CharField(source='question.type', read_only=True)
+
     class Meta:
         model = QuestionVersion
-        fields = ['id', 'content', 'options']
+        fields = ['id', 'type', 'content', 'options']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -78,7 +81,7 @@ class MockExamDetailSerializer(MockExamListSerializer):
         fields = [*MockExamListSerializer.Meta.fields, 'questions']
 
     def get_questions(self, obj):
-        links = obj.question_links.select_related('question_version').order_by('order')
+        links = obj.question_links.select_related('question_version__question').order_by('order')
         return [
             {
                 'order': link.order,
@@ -97,6 +100,9 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
 
     exam_title = serializers.CharField(source='exam.title', read_only=True)
     duration_minutes = serializers.IntegerField(source='exam.duration_minutes', read_only=True)
+    # Server clock decides; the client only counts down from these.
+    deadline = serializers.DateTimeField(source='time_limit_at', read_only=True)
+    seconds_left = serializers.SerializerMethodField()
 
     class Meta:
         model = ExamAttempt
@@ -113,8 +119,13 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
             'total_points',
             'strikes',
             'cancel_reason',
+            'deadline',
+            'seconds_left',
         ]
         read_only_fields = fields  # Faqat o'qish — modifikatsiya view action'larida
+
+    def get_seconds_left(self, obj) -> int:
+        return obj.seconds_left() if obj.status == ExamAttempt.Status.IN_PROGRESS else 0
 
 
 class StartAttemptResponseSerializer(serializers.Serializer):
@@ -122,6 +133,10 @@ class StartAttemptResponseSerializer(serializers.Serializer):
 
     attempt = ExamAttemptSerializer(read_only=True)
     exam = MockExamDetailSerializer(read_only=True)
+    answers = serializers.SerializerMethodField()
+
+    def get_answers(self, obj) -> list:
+        return ExamAnswerAckSerializer(obj.get('answers') or [], many=True).data
 
 
 # ─── UserAnswer ───────────────────────────────────────────────────────────────
@@ -135,6 +150,15 @@ class UserAnswerSubmitSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserAnswer
         fields = ['question_version', 'selected', 'time_spent_seconds']
+
+
+class ExamAnswerAckSerializer(serializers.ModelSerializer):
+    """What a mock-exam answer returns while the attempt runs: never correctness."""
+
+    class Meta:
+        model = UserAnswer
+        fields = ['id', 'question_version', 'selected', 'time_spent_seconds', 'answered_at']
+        read_only_fields = fields
 
 
 class UserAnswerReadSerializer(serializers.ModelSerializer):

@@ -188,6 +188,10 @@ class MockExamQuestion(RLSRowMixin, models.Model):
 
 
 # ── 3. ExamAttempt ─────────────────────────────────────────────────
+# Answers sent in the last seconds before the deadline may arrive a little late.
+ANSWER_GRACE_SECONDS = 15
+
+
 class ExamAttempt(SoftDeleteMixin, AuditUserMixin, TenantTimestampMixin):
     """
     Bir foydalanuvchi bir MockExam'ni topshirganda. Anti-cheat fields
@@ -318,7 +322,33 @@ class ExamAttempt(SoftDeleteMixin, AuditUserMixin, TenantTimestampMixin):
         """IN_PROGRESS → EXPIRED (duration tugagan, submit qilinmagan)."""
         self._validate_transition(self.Status.EXPIRED)
         self.status = self.Status.EXPIRED
-        self.save(update_fields=['status', 'updated_at'])
+        if self.submitted_at is None:
+            from django.utils import timezone
+
+            self.submitted_at = timezone.now()
+        self.save(update_fields=['status', 'submitted_at', 'updated_at'])
+
+    @property
+    def time_limit_at(self):
+        """When the time allowed by the exam runs out (server clock)."""
+        from datetime import timedelta
+
+        return self.started_at + timedelta(minutes=self.exam.duration_minutes)
+
+    def seconds_left(self, now=None) -> int:
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        return max(0, int((self.time_limit_at - now).total_seconds()))
+
+    def is_overdue(self, now=None) -> bool:
+        """Past the deadline plus a short grace for answers already in flight."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        return now > self.time_limit_at + timedelta(seconds=ANSWER_GRACE_SECONDS)
 
     def open_dispute(self) -> None:
         """{IN_PROGRESS, SUBMITTED} → DISPUTED."""
