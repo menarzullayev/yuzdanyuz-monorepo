@@ -1,7 +1,7 @@
 -r common.txt
 
 # ── WSGI Server ───────────────────────────────────────────────────────────────
-gunicorn==27.0.0               # Production WSGI server
+gunicorn==27.0.1               # Production WSGI server
 
 # Static fayllar uchun WhiteNoise common.txt'ga ko'chirildi (middleware base.py'da).
 
