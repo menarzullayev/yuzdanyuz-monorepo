@@ -7,6 +7,9 @@
 * F13: every Celery worker Deployment mounts the shared media PVC at /app/media.
 * F05: the nginx Deployment fills /var/www/static from the backend image
   (initContainer `copy-static`).
+* F15: web, channels and nginx pods sleep in preStop before SIGTERM, and the grace
+  period covers that sleep plus the server's own drain (gunicorn --graceful-timeout
+  for web).
 
 Usage: check-helm-reliability.py RENDERED.yaml [...]
 Exit 1 with one line per problem.
@@ -118,6 +121,29 @@ def check(path: Path) -> list[str]:
         if not init_vol & nginx_vol:
             errors.append(f'{dep["metadata"]["name"]}: /var/www/static is not the copy-static volume')
 
+    # F15 ────────────────────────────────────────────────────────────────────
+    drain = {'web': 30, 'channels': 0, 'nginx': 0}
+    for dep in deployments:
+        comp = _component(dep)
+        if comp not in drain:
+            continue
+        pod = _pod(dep)
+        name = dep['metadata']['name']
+        main_c = pod['containers'][0]
+        cmd = (((main_c.get('lifecycle') or {}).get('preStop') or {}).get('exec') or {}).get(
+            'command'
+        ) or []
+        if len(cmd) != 2 or cmd[0] != 'sleep' or not str(cmd[1]).isdigit() or int(cmd[1]) < 1:
+            errors.append(f'{name}: no preStop sleep before SIGTERM')
+            continue
+        grace = pod.get('terminationGracePeriodSeconds')
+        need = int(cmd[1]) + drain[comp]
+        if not isinstance(grace, int) or grace <= need:
+            errors.append(
+                f'{name}: terminationGracePeriodSeconds={grace} does not exceed '
+                f'preStop {cmd[1]}s + drain {drain[comp]}s'
+            )
+
     return errors
 
 
@@ -130,7 +156,7 @@ def main() -> int:
         if errors:
             failed = True
         else:
-            print(f'ok   {arg}: pgbouncer wiring, worker media mounts, nginx static')
+            print(f'ok   {arg}: pgbouncer wiring, worker media mounts, nginx static, graceful stop')
     return 1 if failed else 0
 
 

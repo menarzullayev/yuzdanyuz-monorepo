@@ -26,6 +26,7 @@ spec:
         # Force pod restart when ConfigMap content changes
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.web.terminationGracePeriodSeconds }}
       serviceAccountName: {{ include "yuzdanyuz.fullname" . }}
       securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
       {{- with .Values.global.imagePullSecrets }}
@@ -35,6 +36,12 @@ spec:
         - name: web
           image: {{ include "yuzdanyuz.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Endpoint removal reaches the ingress/Service a few seconds after SIGTERM;
+          # keep serving meanwhile so in-flight and just-routed requests finish (F15).
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.web.preStopSleepSeconds }}"]
           args: {{- toYaml .Values.web.args | nindent 12 }}
           ports:
             - name: http

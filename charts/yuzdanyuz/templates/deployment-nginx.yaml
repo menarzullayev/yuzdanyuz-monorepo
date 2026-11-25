@@ -23,6 +23,7 @@ spec:
         {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: nginx
     spec:
+      terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
       securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
@@ -47,6 +48,12 @@ spec:
         - name: nginx
           image: {{ include "yuzdanyuz.nginxImage" . }}
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          # Endpoint removal reaches the ingress/Service a few seconds after SIGTERM;
+          # keep serving meanwhile so in-flight and just-routed requests finish (F15).
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.nginx.preStopSleepSeconds }}"]
           ports:
             - name: http
               containerPort: 8080
