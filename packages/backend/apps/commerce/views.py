@@ -325,12 +325,15 @@ class SubscriptionPlansView(APIView):
         )
 
 
+# Buying or cancelling the org's plan moves money: owner ('*') or a custom role that
+# was explicitly granted it (audit B11).
+BILLING_MANAGE_PERMISSION = 'billing:manage'
+
+
 def _is_org_admin(user, org) -> bool:
     if user.is_superuser or user.is_staff:
         return True
-    return user.memberships.filter(
-        organization=org, role__name__in=['owner', 'admin'], status='active'
-    ).exists()
+    return user.has_org_permission(org, BILLING_MANAGE_PERMISSION)
 
 
 class CurrentSubscriptionView(APIView):

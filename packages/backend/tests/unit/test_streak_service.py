@@ -24,7 +24,7 @@ class TestUpdateOnActivity:
         s = streak_service.update_on_activity(user)
         assert s.current_streak == 1
         assert s.max_streak == 1
-        assert s.last_activity_date == timezone.now().date()
+        assert s.last_activity_date == timezone.localdate()
 
     def test_same_day_call_is_idempotent(self, db, user):
         s1 = streak_service.update_on_activity(user)
@@ -33,7 +33,7 @@ class TestUpdateOnActivity:
         assert s2.current_streak == 1
 
     def test_consecutive_days_increment(self, db, user):
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         streak_service.update_on_activity(user, activity_date=yesterday)
         s = streak_service.update_on_activity(user)
         assert s.current_streak == 2
@@ -41,14 +41,14 @@ class TestUpdateOnActivity:
 
     def test_two_day_gap_resets_streak(self, db, user):
         # 3 days ago activity, then today => gap of >1 day → reset
-        three_days_ago = timezone.now().date() - timedelta(days=3)
+        three_days_ago = timezone.localdate() - timedelta(days=3)
         streak_service.update_on_activity(user, activity_date=three_days_ago)
         s = streak_service.update_on_activity(user)
         assert s.current_streak == 1
 
     def test_max_streak_preserved_after_reset(self, db, user):
         # Build a 3-day streak
-        base = timezone.now().date() - timedelta(days=10)
+        base = timezone.localdate() - timedelta(days=10)
         for i in range(3):
             streak_service.update_on_activity(user, activity_date=base + timedelta(days=i))
         s = UserStreak.objects.get(user=user)
@@ -61,14 +61,14 @@ class TestUpdateOnActivity:
         assert s.max_streak == 3
 
     def test_explicit_activity_date_used(self, db, user):
-        specific = timezone.now().date() - timedelta(days=5)
+        specific = timezone.localdate() - timedelta(days=5)
         s = streak_service.update_on_activity(user, activity_date=specific)
         assert s.last_activity_date == specific
 
     def test_milestone_triggers_wallet_top_up(self, db, user):
         """7-day milestone should call wallet_service.top_up with 50 coins."""
         # Pre-build a 6-day streak landing yesterday so today hits day 7
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         UserStreak.objects.create(
             user=user, current_streak=6, max_streak=6, last_activity_date=yesterday
         )
@@ -88,7 +88,7 @@ class TestUpdateOnActivity:
 
     def test_non_milestone_day_no_reward(self, db, user):
         """Day 2 should not trigger wallet top-up."""
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         UserStreak.objects.create(
             user=user, current_streak=1, max_streak=1, last_activity_date=yesterday
         )
@@ -99,7 +99,7 @@ class TestUpdateOnActivity:
 
     def test_wallet_failure_does_not_break_streak(self, db, user):
         """Reward failure should be logged and swallowed."""
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         UserStreak.objects.create(
             user=user, current_streak=6, max_streak=6, last_activity_date=yesterday
         )
@@ -123,7 +123,7 @@ class TestCheckBrokenStreaks:
             user=user,
             current_streak=5,
             max_streak=5,
-            last_activity_date=timezone.now().date() - timedelta(days=3),
+            last_activity_date=timezone.localdate() - timedelta(days=3),
         )
         queued = streak_service.check_broken_streaks()
         assert queued == 1
@@ -135,7 +135,7 @@ class TestCheckBrokenStreaks:
             user=user,
             current_streak=3,
             max_streak=3,
-            last_activity_date=timezone.now().date() - timedelta(days=1),
+            last_activity_date=timezone.localdate() - timedelta(days=1),
         )
         assert streak_service.check_broken_streaks() == 0
         assert not Notification.objects.filter(user=user).exists()
@@ -145,7 +145,7 @@ class TestCheckBrokenStreaks:
             user=user,
             current_streak=0,
             max_streak=0,
-            last_activity_date=timezone.now().date() - timedelta(days=10),
+            last_activity_date=timezone.localdate() - timedelta(days=10),
         )
         assert streak_service.check_broken_streaks() == 0
 
@@ -154,7 +154,7 @@ class TestCheckBrokenStreaks:
             user=user,
             current_streak=12,
             max_streak=12,
-            last_activity_date=timezone.now().date() - timedelta(days=2),
+            last_activity_date=timezone.localdate() - timedelta(days=2),
         )
         streak_service.check_broken_streaks()
         n = Notification.objects.get(user=user)
@@ -166,7 +166,7 @@ class TestCheckBrokenStreaks:
             user=user,
             current_streak=2,
             max_streak=2,
-            last_activity_date=timezone.now().date() - timedelta(days=2),
+            last_activity_date=timezone.localdate() - timedelta(days=2),
         )
         with patch(
             'apps.engagement.notifications_service.queue',
@@ -175,3 +175,25 @@ class TestCheckBrokenStreaks:
             # Should not raise; returns 0 successful queues
             queued = streak_service.check_broken_streaks()
         assert queued == 0
+
+
+@pytest.mark.unit
+class TestTashkentDayBoundary:
+    """Audit E09: the streak day is the Tashkent calendar day, not the UTC one."""
+
+    def test_activity_after_tashkent_midnight_counts_as_next_day(self, db, user):
+        from datetime import UTC, date, datetime
+
+        # 20:30 UTC on the 26th is 01:30 on the 27th in Tashkent (UTC+5).
+        late = datetime(2026, 11, 26, 20, 30, tzinfo=UTC)
+        with patch('django.utils.timezone.now', return_value=late):
+            s = streak_service.update_on_activity(user)
+        assert s.last_activity_date == date(2026, 11, 27)
+
+    def test_utc_date_would_have_been_wrong(self):
+        from datetime import UTC, date, datetime
+
+        late = datetime(2026, 11, 26, 20, 30, tzinfo=UTC)
+        assert late.date() == date(2026, 11, 26)
+        with patch('django.utils.timezone.now', return_value=late):
+            assert timezone.localdate() == date(2026, 11, 27)

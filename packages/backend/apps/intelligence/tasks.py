@@ -21,6 +21,7 @@ Architecture (Bosqich 5+20):
 import hashlib
 import json
 import logging
+import random
 from datetime import date
 
 from celery import shared_task
@@ -55,6 +56,19 @@ def ai_retry_countdown(exc: Exception) -> int | None:
     if isinstance(exc, ClaudeTimeoutError | TransientProviderError):
         return _TIMEOUT_WAIT
     return None
+
+
+def jittered_ai_countdown(exc: Exception) -> int | None:
+    """``ai_retry_countdown`` plus up to 10% extra, never less (audit F07).
+
+    Every deferred call waits for the same subscription reset, so without a spread
+    they all fire in the same second and hit the limit again. The spread is only
+    upward: firing before the reset would just burn a retry.
+    """
+    base = ai_retry_countdown(exc)
+    if base is None:
+        return None
+    return base + int(random.uniform(0, base * 0.1))  # noqa: S311 - not security
 
 
 def _report_ai_failure(exc: Exception, what: str, obj_id: str) -> None:
@@ -210,7 +224,7 @@ def generate_ai_tutor_feedback(self, feedback_id: str) -> dict:
         AI_TUTOR_CALLS.labels(task_type='tutor', status='ok').inc()
         return {'status': 'ready', 'feedback_id': str(fb.id)}
     except Exception as e:
-        countdown = ai_retry_countdown(e)
+        countdown = jittered_ai_countdown(e)
         if countdown is not None and self.request.retries < AI_RETRY_MAX:
             logger.warning('AI Tutor for %s deferred %ss: %s', feedback_id, countdown, e)
             AI_TUTOR_CALLS.labels(task_type='tutor', status='deferred').inc()
@@ -399,7 +413,7 @@ def evaluate_openended_submission(self, submission_id: str) -> dict:
             'score': float(sub.ai_score),
         }
     except Exception as e:
-        countdown = ai_retry_countdown(e)
+        countdown = jittered_ai_countdown(e)
         if countdown is not None and self.request.retries < AI_RETRY_MAX:
             logger.warning('Open-ended %s deferred %ss: %s', submission_id, countdown, e)
             AI_TUTOR_CALLS.labels(task_type='openended', status='deferred').inc()

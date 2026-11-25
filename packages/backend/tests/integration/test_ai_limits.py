@@ -214,3 +214,21 @@ class TestTokenExpiryCheck:
         # An expired AI token must not stop migrate/runserver (that needs an Error).
         settings.CLAUDE_CODE_OAUTH_TOKEN_EXPIRES = _expires_in(-30)
         assert all(not m.is_serious() for m in checks.ai_token_expiry_check(None))
+
+
+class TestRetryJitter:
+    """Audit F07: deferred AI calls spread out after a limit reset, never earlier."""
+
+    def test_jitter_only_adds_time(self):
+        from apps.intelligence import tasks
+
+        exc = claude_cli.ClaudeTimeoutError('m')
+        values = {tasks.jittered_ai_countdown(exc) for _ in range(200)}
+        assert min(values) >= 120
+        assert max(values) <= 132
+        assert len(values) > 1
+
+    def test_non_retryable_stays_none(self):
+        from apps.intelligence import tasks
+
+        assert tasks.jittered_ai_countdown(claude_cli.ClaudeAuthError('m')) is None

@@ -16,6 +16,8 @@ from core import health as health_views
 
 sitemaps = {'questions': PublicQuestionsSitemap}
 
+handler500 = 'core.exceptions.server_error'
+
 
 def ping_view(request):
     return HttpResponse('pong')

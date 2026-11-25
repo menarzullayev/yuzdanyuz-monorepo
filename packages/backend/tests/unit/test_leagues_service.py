@@ -75,7 +75,7 @@ class TestGetOrCreateMembership:
         assert m1.id == m2.id
 
     def test_explicit_week_start_used(self, db, user, league_catalog):
-        target = timezone.now().date() - timedelta(days=14)
+        target = timezone.localdate() - timedelta(days=14)
         # Snap to Monday of that week
         target = target - timedelta(days=target.weekday())
         m = leagues_service.get_or_create_membership(user, week_start=target)
@@ -85,7 +85,7 @@ class TestGetOrCreateMembership:
     def test_promotion_carries_to_new_week(self, db, user, league_catalog):
         """If previous membership has next_league set, new week starts there."""
         bronze, silver = league_catalog[0], league_catalog[1]
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         LeagueMembership.objects.create(
             user=user,
             league=bronze,
@@ -101,7 +101,7 @@ class TestGetOrCreateMembership:
     def test_no_promotion_keeps_same_league(self, db, user, league_catalog):
         """If prev membership has no next_league, stay in same league."""
         silver = league_catalog[1]
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         LeagueMembership.objects.create(
             user=user,
             league=silver,
@@ -145,7 +145,7 @@ class TestWeeklyRecalc:
     def test_single_league_no_promotion_or_demotion(self, db, user, user2):
         """One-league catalog has no next/prev → nothing promoted/demoted."""
         only = League.objects.create(name='Only', slug='only', rank_order=1)
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         LeagueMembership.objects.create(
             user=user,
             league=only,
@@ -164,7 +164,7 @@ class TestWeeklyRecalc:
 
     def test_top_promoted_and_rewarded(self, db, user, user2, league_catalog):
         bronze = league_catalog[0]
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         m_top = LeagueMembership.objects.create(
             user=user,
             league=bronze,
@@ -196,7 +196,7 @@ class TestWeeklyRecalc:
 
     def test_bottom_demoted(self, db, user, user2, league_catalog):
         silver = league_catalog[1]
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         m_bottom = LeagueMembership.objects.create(
             user=user,
             league=silver,
@@ -228,7 +228,7 @@ class TestWeeklyRecalc:
 
     def test_wallet_failure_does_not_abort_recalc(self, db, user, league_catalog):
         bronze = league_catalog[0]
-        prev_mon = timezone.now().date() - timedelta(days=timezone.now().date().weekday() + 7)
+        prev_mon = timezone.localdate() - timedelta(days=timezone.localdate().weekday() + 7)
         LeagueMembership.objects.create(
             user=user,
             league=bronze,
@@ -243,3 +243,16 @@ class TestWeeklyRecalc:
             result = leagues_service.weekly_recalc()
         # Promote still recorded even if wallet failed
         assert result['promoted'] >= 1
+
+
+@pytest.mark.unit
+def test_week_rolls_over_at_tashkent_midnight(db):
+    """Audit E09: Sunday 19:30 UTC is already Monday 00:30 in Tashkent."""
+    from datetime import UTC, date, datetime
+    from unittest.mock import patch
+
+    sunday_evening_utc = datetime(2026, 11, 29, 19, 30, tzinfo=UTC)
+    with patch('django.utils.timezone.now', return_value=sunday_evening_utc):
+        monday, sunday = leagues_service._current_week_bounds()
+    assert monday == date(2026, 11, 30)
+    assert sunday == date(2026, 12, 6)

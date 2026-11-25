@@ -63,7 +63,7 @@ def populated_referrals(db, user, user2):
 def populated_league(db, user, user2):
     """League + 2 ta membership."""
     league = League.objects.create(name='Bronza', slug='bronza', rank_order=1, color_hex='#cd7f32')
-    week_start = timezone.now().date() - timedelta(days=timezone.now().weekday())
+    week_start = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
     week_end = week_start + timedelta(days=6)
     LeagueMembership.objects.create(
         user=user, league=league, period_start=week_start, period_end=week_end, points_earned=50

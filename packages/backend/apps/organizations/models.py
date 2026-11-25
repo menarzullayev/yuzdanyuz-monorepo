@@ -39,6 +39,7 @@ SYSTEM_ROLES = {
             'members:manage',
             'members:view',
             'analytics:view',
+            'analytics:business',
             'groups:*',
             'lessons:*',
         ],
