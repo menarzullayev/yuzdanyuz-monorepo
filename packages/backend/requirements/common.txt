@@ -49,7 +49,7 @@ pypdf==7.0.1                   # Task 3: PDF bulk import parser (text-based PDFs
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
 anthropic==2.8.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
-httpx2==2.16.0                 # anthropic 2.x HTTP layer (Sentry instruments it natively)
+httpx2==2.16.2                 # anthropic 2.x HTTP layer (Sentry instruments it natively)
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)
