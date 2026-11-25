@@ -142,3 +142,36 @@ class TestEdgeConfigs:
         assert 'Content-Security-Policy' in text
         assert "frame-ancestors 'none'" in text
         assert "object-src 'none'" in text
+
+
+class TestPermissionsPolicy:
+    """Audit C15: nginx (Django, files) and Next.js send the same Permissions-Policy."""
+
+    @staticmethod
+    def _policy(text: str, pattern: str) -> str:
+        import re
+
+        m = re.search(pattern, text)
+        assert m, pattern
+        return m.group(1)
+
+    def _nginx(self):
+        snippet = (REPO / 'docker/nginx/security-headers.conf').read_text()
+        return self._policy(snippet, r'add_header Permissions-Policy "([^"]+)" always;')
+
+    def _nextjs(self):
+        text = (REPO / 'packages/frontend-web/next.config.ts').read_text()
+        return self._policy(text, r"key: 'Permissions-Policy',\s*value:\s*'([^']+)'")
+
+    def test_both_edges_send_the_same_policy(self):
+        assert self._nginx() == self._nextjs()
+
+    def test_unused_features_are_off(self):
+        policy = self._nginx()
+        for feature in ('camera', 'geolocation', 'payment', 'usb', 'display-capture'):
+            assert f'{feature}=()' in policy, feature
+
+    def test_microphone_only_for_own_origin(self):
+        policy = self._nginx()
+        assert 'microphone=(self)' in policy
+        assert 'microphone=*' not in policy

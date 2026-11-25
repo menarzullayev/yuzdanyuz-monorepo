@@ -25,6 +25,17 @@ fi
 echo "image: $image"
 echo "pod user (from values.yaml): $uid:$gid"
 
+# Sentry release (audit G06): CI passes the commit as a build arg; when it says which
+# commit to expect, the image must carry exactly that one.
+if [ -n "${EXPECTED_GIT_SHA:-}" ]; then
+  got="$(docker run --rm --entrypoint printenv "$image" GIT_COMMIT_SHA || true)"
+  if [ "$got" != "$EXPECTED_GIT_SHA" ]; then
+    echo "FAIL: image GIT_COMMIT_SHA='$got', expected '$EXPECTED_GIT_SHA'" >&2
+    exit 1
+  fi
+  echo "ok: GIT_COMMIT_SHA=$got"
+fi
+
 # core/settings/prod.py refuses to start without its REQUIRED_ENV keys; the smoke
 # test never reaches a database or broker, so placeholders are enough.
 run() {

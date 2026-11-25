@@ -40,6 +40,9 @@ mutate worker-no-media '[c.pop("volumeMounts", None) for d in docs if d["kind"] 
 mutate app-skips-pgbouncer '[d["data"].update(DB_HOST="postgres-primary") for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-env")]'
 mutate session-pooling '[d["data"].update({"pgbouncer.ini": d["data"]["pgbouncer.ini"].replace("pool_mode = transaction", "pool_mode = session")}) for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-pgbouncer")]'
 mutate migrate-through-pooler '[c.pop("env", None) for d in docs if d["kind"] == "Job" and comp(d) == "migrate" for c in d["spec"]["template"]["spec"]["containers"]]'
+mutate web-no-prestop '[c.pop("lifecycle", None) for d in docs if d["kind"] == "Deployment" and comp(d) == "web" for c in d["spec"]["template"]["spec"]["containers"]]'
+mutate web-short-grace '[d["spec"]["template"]["spec"].update(terminationGracePeriodSeconds=30) for d in docs if d["kind"] == "Deployment" and comp(d) == "web"]'
+mutate channels-no-grace '[d["spec"]["template"]["spec"].pop("terminationGracePeriodSeconds", None) for d in docs if d["kind"] == "Deployment" and comp(d) == "channels"]'
 mutate nginx-no-static '[d["spec"]["template"]["spec"].pop("initContainers", None) for d in docs if d["kind"] == "Deployment" and comp(d) == "nginx"]'
 
 expect as-rendered 0 "pgbouncer wiring, worker media mounts, nginx static"
@@ -48,6 +51,9 @@ expect app-skips-pgbouncer 1 "is not the PgBouncer Service"
 expect session-pooling 1 "pool_mode is not transaction"
 expect migrate-through-pooler 1 "migrate Job goes through PgBouncer"
 expect nginx-no-static 1 "no copy-static initContainer"
+expect web-no-prestop 1 "yuzdanyuz-web: no preStop sleep"
+expect web-short-grace 1 "yuzdanyuz-web: terminationGracePeriodSeconds=30 does not exceed"
+expect channels-no-grace 1 "yuzdanyuz-channels: terminationGracePeriodSeconds=None"
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures case(s) failed"; exit 1

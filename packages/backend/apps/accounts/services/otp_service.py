@@ -95,6 +95,13 @@ def _increment_send_count(phone: str, ip: str | None = None) -> None:
 # ── Asosiy funksiyalar ────────────────────────────────────────
 
 
+def sms_circuit_breaker():
+    """Shared breaker for the SMS gateway: 5 failures in a minute → fail fast for 60 s (F08)."""
+    from core.circuit_breaker import CircuitBreaker
+
+    return CircuitBreaker('sms-gateway', threshold=5, window=60, cooldown=60)
+
+
 def send_otp(raw_phone: str, *, ip: str | None = None) -> str:
     """
     Telefon raqamga OTP yuboradi.
@@ -115,11 +122,21 @@ def send_otp(raw_phone: str, *, ip: str | None = None) -> str:
     _check_send_rate(phone)
     _check_ip_rate(ip)
 
+    breaker = sms_circuit_breaker()
+    if not breaker.allow():
+        raise OTPError(
+            "SMS xizmati vaqtincha ishlamayapti. Bir necha daqiqadan so'ng urinib ko'ring."
+        )
+
     otp, code = OTPCode.create_for_phone(phone)
     text = _otp_text(code)
 
     backend = get_sms_backend()
     sent = backend.send(phone, text)
+    if sent:
+        breaker.record_success()
+    else:
+        breaker.record_failure()
 
     # ISSUE-104: business metric (cost tracking)
     from django.conf import settings as _settings

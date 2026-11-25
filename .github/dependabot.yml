@@ -94,3 +94,23 @@ updates:
       actions:
         patterns:
           - "*"
+
+  # Base images are pinned by digest (audit H01); this keeps the digests fresh.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - dependencies
+      - docker
+    ignore:
+      # The backend stays on Python 3.12 (see the pip entry above for Django).
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # A Postgres major upgrade needs a dump/restore of the backups, not a tag bump.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]

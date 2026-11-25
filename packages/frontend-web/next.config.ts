@@ -29,6 +29,13 @@ const securityHeaders = [
   { key: 'Content-Security-Policy', value: csp },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  // Audit C15: same list as docker/nginx/security-headers.conf. Microphone
+  // stays on for our own origin (Speaking answers); everything else is off.
+  {
+    key: 'Permissions-Policy',
+    value:
+      'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), hid=(), midi=(), magnetometer=(), gyroscope=(), accelerometer=(), display-capture=(), browsing-topics=()',
+  },
 ];
 
 const config: NextConfig = {

@@ -271,9 +271,11 @@ def mock_sms_backend(monkeypatch):
             return True
 
     # Patch get_sms_backend to return mock
-    from apps.accounts.services import sms_backend
+    from apps.accounts.services import otp_service, sms_backend
 
     monkeypatch.setattr(sms_backend, 'get_sms_backend', lambda: MockSMSBackend())
+    # otp_service imported the name itself, so the module attribute alone is not enough.
+    monkeypatch.setattr(otp_service, 'get_sms_backend', lambda: MockSMSBackend())
     return sent_messages
 
 

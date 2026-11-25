@@ -23,6 +23,9 @@ nginx:
     tag: ""                         # defaults to image.tag (built from the same commit)
     pullPolicy: IfNotPresent
   replicas: 2
+  # SIGTERM arrives after the preStop sleep; nginx then drains open connections.
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
 
 # Backend containers pass the entrypoint mode as `args`, never `command`: a k8s
 # `command` replaces the image ENTRYPOINT (tini + /entrypoint.sh) and the pod would
@@ -37,6 +40,9 @@ probes:
 web:
   replicas: 3
   args: ["web"]
+  # preStop sleep + gunicorn --graceful-timeout (30 s) must fit in the grace period (F15).
+  preStopSleepSeconds: 10
+  terminationGracePeriodSeconds: 45
   env:
     GUNICORN_WORKERS: "4"
     GUNICORN_THREADS: "2"
@@ -58,6 +64,10 @@ web:
 channels:
   replicas: 2
   args: ["asgi"]
+  # Exam SSE streams (up to 240 s) are cut on rollout; EventSource reconnects on its
+  # own, so the grace period only has to cover the preStop sleep and open handshakes.
+  preStopSleepSeconds: 10
+  terminationGracePeriodSeconds: 40
   resources:
     requests: { cpu: "100m", memory: "256Mi" }
     limits:   { cpu: "500m", memory: "512Mi" }

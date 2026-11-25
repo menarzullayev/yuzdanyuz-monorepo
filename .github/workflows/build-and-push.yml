@@ -109,6 +109,8 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT_SHA=${{ env.SOURCE_SHA }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
           provenance: false   # disable until we fully wire up cosign / SLSA
@@ -117,6 +119,7 @@ jobs:
         if: github.event_name == 'pull_request' && matrix.image == 'yuzdanyuz-backend'
         env:
           IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          EXPECTED_GIT_SHA: ${{ env.SOURCE_SHA }}
         run: scripts/smoke-backend-image.sh "$IMAGE"
 
   helm-lint:
