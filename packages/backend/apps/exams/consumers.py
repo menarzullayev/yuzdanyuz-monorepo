@@ -183,7 +183,15 @@ class ExamAttemptConsumer(AsyncJsonWebsocketConsumer):
         from .models import ExamAttempt
 
         with unscoped_context():
-            ExamAttempt.objects.filter(pk=self.attempt_id).update(
+            # Only a running attempt may be closed here: a submit that raced the last
+            # heartbeat must keep its SUBMITTED status.
+            updated = ExamAttempt.objects.filter(
+                pk=self.attempt_id, status=ExamAttempt.Status.IN_PROGRESS
+            ).update(
                 status=ExamAttempt.Status.EXPIRED if status_value == 'expired' else status_value,
                 submitted_at=timezone.now(),
             )
+        if updated and status_value == 'expired':
+            from .tasks import finalize_attempt_score
+
+            finalize_attempt_score.delay(str(self.attempt_id))

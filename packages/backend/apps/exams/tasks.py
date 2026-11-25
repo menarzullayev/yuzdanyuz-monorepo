@@ -213,3 +213,43 @@ def finalize_attempt_score(attempt_id: str):
             'max_points': max_points,
             'score': float(attempt.score),
         }
+
+
+@shared_task(name='exams.expire_overdue_attempts')
+@single_run('exams.expire_overdue_attempts', expire=240)
+def expire_overdue_attempts():
+    """Close attempts whose time ran out while nobody was connected, and score them.
+
+    A student who closes the tab never submits; without this the attempt would stay
+    IN_PROGRESS forever, unscored and blocking a new start on the same mock.
+    """
+    from django.db import transaction
+
+    from apps.exams.models import ExamAttempt
+
+    now = timezone.now()
+    expired = []
+    with unscoped_context():
+        candidates = (
+            ExamAttempt.objects.filter(status=ExamAttempt.Status.IN_PROGRESS)
+            .select_related('exam')
+            .only('id', 'status', 'started_at', 'submitted_at', 'exam__duration_minutes')
+        )
+        for attempt in candidates.iterator(chunk_size=500):
+            if not attempt.is_overdue(now):
+                continue
+            with transaction.atomic():
+                locked = (
+                    ExamAttempt.objects.select_for_update()
+                    .select_related('exam')
+                    .get(pk=attempt.pk)
+                )
+                if locked.status != ExamAttempt.Status.IN_PROGRESS:
+                    continue
+                locked.expire()
+            expired.append(str(attempt.pk))
+    for attempt_id in expired:
+        finalize_attempt_score.delay(attempt_id)
+    if expired:
+        logger.info('expire_overdue_attempts: closed %d attempts', len(expired))
+    return {'expired': len(expired)}
