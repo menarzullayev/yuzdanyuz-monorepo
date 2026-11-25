@@ -18,4 +18,7 @@ class JWTAuthMiddleware:
             user = authenticate(request, token=token)
             if user is not None:
                 request.user = user
+                # DRF's JWTCookieAuthentication protects these requests with the Origin
+                # check instead of Django's CSRF token, which the SPA never sends.
+                request.jwt_cookie_auth = True
         return self.get_response(request)

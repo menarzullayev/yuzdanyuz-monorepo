@@ -49,3 +49,25 @@ class CookieJWTAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request):
         return 'Cookie'
+
+
+class JWTCookieAuthentication(BaseAuthentication):
+    """Default DRF authentication for requests signed in by the JWT cookie.
+
+    ``JWTAuthMiddleware`` marks them; they carry no Django CSRF token (the Next.js app
+    never fetches one), so DRF's SessionAuthentication used to reject every POST with
+    "CSRF cookie not set". They get the same protection as the /api/auth/ views: the
+    SameSite cookie plus a same-origin ``Origin`` check. Session-authenticated requests
+    (admin, server-rendered pages) are left to SessionAuthentication and its CSRF check.
+    """
+
+    def authenticate(self, request):
+        if not getattr(request._request, 'jwt_cookie_auth', False):
+            return None
+        user = request._request.user
+        if not origin_allowed(request):
+            raise PermissionDenied('Origin not allowed.', code='origin_not_allowed')
+        return (user, None)
+
+    def authenticate_header(self, request):
+        return 'Cookie'

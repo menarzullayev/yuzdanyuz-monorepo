@@ -232,7 +232,7 @@ class TestGradingQueue:
         ]
         for url in urls:
             assert _client(world['student']).get(url).status_code == 403
-            assert Client().get(url).status_code == 403
+            assert Client().get(url).status_code == 401  # anonymous: 401 lets the SPA refresh
         grade = reverse('intelligence:grading-grade', args=[sub.id])
         assert _post(_client(world['student']), grade, {'score': 100}).status_code == 403
         sub.refresh_from_db()

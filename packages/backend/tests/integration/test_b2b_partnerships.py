@@ -150,7 +150,7 @@ class TestStaffCrm:
     def test_anonymous_and_non_staff_cannot_read(self, db, org):
         self._app()
         url = reverse('partnerships-v1:application-list')
-        assert Client().get(url).status_code == 403
+        assert Client().get(url).status_code == 401  # anonymous: 401 lets the SPA refresh
         owner = make_user('own', org, 'owner')
         assert client_for(owner).get(url).status_code == 403
 
