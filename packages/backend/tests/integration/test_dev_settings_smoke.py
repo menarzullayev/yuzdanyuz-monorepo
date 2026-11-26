@@ -10,7 +10,7 @@ PROBE = """
 import django
 django.setup()
 from django.test import Client
-r = Client().get('/api/auth/me/')
+r = Client().get('/ping/')  # no database: the toolbar middleware runs on every request
 print('STATUS', r.status_code)
 """
 
@@ -28,4 +28,4 @@ def test_dev_settings_answer_requests():
         text=True,
         check=False,
     )
-    assert 'STATUS 401' in out.stdout, out.stdout[-500:] + out.stderr[-2000:]
+    assert 'STATUS 200' in out.stdout, out.stdout[-500:] + out.stderr[-2000:]
