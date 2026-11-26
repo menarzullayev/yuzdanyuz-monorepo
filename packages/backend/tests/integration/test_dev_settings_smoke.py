@@ -19,7 +19,7 @@ def test_dev_settings_answer_requests():
     """The E2E job runs core.settings.dev; a toolbar without its URLs made every request 500."""
     import os
 
-    env = {**os.environ, 'DJANGO_SETTINGS_MODULE': 'core.settings.dev'}
+    env = {**os.environ, 'DJANGO_SETTINGS_MODULE': 'core.settings.dev', 'DJANGO_ENV': 'dev'}
     out = subprocess.run(  # noqa: S603 - fixed argv
         [sys.executable, '-c', PROBE],
         cwd=BASE,
