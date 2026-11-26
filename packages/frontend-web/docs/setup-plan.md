@@ -9,6 +9,7 @@
 ## 📋 Executive Summary
 
 Monorepo structure setup uchun:
+
 ```
 /home/hsm/apps/yuzdanyuz-monorepo/
 ├── packages/
@@ -19,6 +20,7 @@ Monorepo structure setup uchun:
 ```
 
 **Why Monorepo?**
+
 - ✅ Code sharing between web + mobile
 - ✅ Single CI/CD pipeline
 - ✅ Professional industry standard
@@ -31,6 +33,7 @@ Monorepo structure setup uchun:
 ### Phase 1: Environment Check & Setup (15-30 min)
 
 #### Step 1.1: Verify Node.js Installation
+
 ```bash
 # Check if Node.js exists
 node --version
@@ -46,6 +49,7 @@ npm --version   # Should be 10.x+
 ```
 
 #### Step 1.2: Create Monorepo Structure
+
 ```bash
 # Create main monorepo folder
 mkdir -p /home/hsm/apps/yuzdanyuz-monorepo
@@ -59,6 +63,7 @@ npm init -y
 ```
 
 #### Step 1.3: Backup & Move Django Backend
+
 ```bash
 # Backup original (just in case)
 cp -r /home/hsm/apps/yuzdanyuz /home/hsm/apps/yuzdanyuz-backup-$(date +%s)
@@ -77,6 +82,7 @@ ls -la /home/hsm/apps/yuzdanyuz-monorepo/packages/backend/manage.py
 ### Phase 2: Shared Package Setup (30-45 min)
 
 #### Step 2.1: Initialize Shared Package
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz-monorepo/packages/shared
 
@@ -106,6 +112,7 @@ npm install
 ```
 
 #### Step 2.2: Setup TypeScript Configuration
+
 ```bash
 cat > tsconfig.json << 'EOF'
 {
@@ -129,6 +136,7 @@ EOF
 ```
 
 #### Step 2.3: Create Shared API Client
+
 ```bash
 mkdir -p src/{api,auth,types,utils,hooks}
 
@@ -283,6 +291,7 @@ npm run build
 ### Phase 3: Next.js Frontend Setup (1-1.5 hours)
 
 #### Step 3.1: Create Next.js 15 Project
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz-monorepo/packages/frontend-web
 
@@ -305,6 +314,7 @@ npm install \
 ```
 
 #### Step 3.2: Setup Environment Variables
+
 ```bash
 cat > .env.local << 'EOF'
 # API Configuration
@@ -321,6 +331,7 @@ EOF
 ```
 
 #### Step 3.3: Create Directory Structure
+
 ```bash
 mkdir -p src/{app,components,services,hooks,lib,types,styles}
 
@@ -332,6 +343,7 @@ mkdir -p src/{middleware,contexts,stores}
 ```
 
 #### Step 3.4: Setup API Service Layer
+
 ```bash
 cat > src/services/auth.ts << 'EOF'
 import { apiClient } from '@yuzdanyuz/shared/api/client';
@@ -378,6 +390,7 @@ EOF
 ```
 
 #### Step 3.5: Create Auth Hooks
+
 ```bash
 cat > src/hooks/useAuth.ts << 'EOF'
 import { useCallback, useEffect, useState } from 'react';
@@ -418,6 +431,7 @@ EOF
 ### Phase 4: Core Pages & Components (1-1.5 hours)
 
 #### Step 4.1: Create Layout
+
 ```bash
 cat > src/app/layout.tsx << 'EOF'
 import type { Metadata } from 'next';
@@ -445,6 +459,7 @@ EOF
 ```
 
 #### Step 4.2: Create Core Pages
+
 ```bash
 # Home/Dashboard page
 mkdir -p src/app/{login,dashboard,profile}
@@ -588,6 +603,7 @@ EOF
 ### Phase 5: PWA Setup (30-45 min)
 
 #### Step 5.1: Add PWA Support
+
 ```bash
 npm install next-pwa
 
@@ -605,6 +621,7 @@ EOF
 ```
 
 #### Step 5.2: Create Manifest
+
 ```bash
 cat > public/manifest.json << 'EOF'
 {
@@ -633,6 +650,7 @@ EOF
 ```
 
 #### Step 5.3: Update Layout with PWA Meta Tags
+
 ```bash
 cat >> src/app/layout.tsx << 'EOF'
 // Add to <head>:
@@ -650,6 +668,7 @@ EOF
 ### Phase 6: Environment & Deployment (30-45 min)
 
 #### Step 6.1: Update Production Scripts
+
 ```bash
 cat > /home/hsm/run-production-all.sh << 'EOF'
 #!/bin/bash
@@ -699,6 +718,7 @@ chmod +x /home/hsm/run-production-all.sh
 ```
 
 #### Step 6.2: Build & Deploy
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz-monorepo/packages/frontend-web
 
@@ -716,12 +736,14 @@ npm run start  # Runs on :3000
 ## 📊 Implementation Checklist
 
 ### Phase 1: Environment ✅
+
 - [ ] Node.js v20+ installed
 - [ ] Monorepo folder structure created
 - [ ] Django backend moved
 - [ ] Git initialized
 
 ### Phase 2: Shared Package ✅
+
 - [ ] TypeScript configured
 - [ ] API client created
 - [ ] Types defined
@@ -729,6 +751,7 @@ npm run start  # Runs on :3000
 - [ ] Package built
 
 ### Phase 3: Next.js Setup ✅
+
 - [ ] Next.js 15 project created
 - [ ] Environment variables configured
 - [ ] Directory structure organized
@@ -736,18 +759,21 @@ npm run start  # Runs on :3000
 - [ ] Hooks implemented
 
 ### Phase 4: Pages & Components ✅
+
 - [ ] Layout created
 - [ ] Login page created
 - [ ] Dashboard page created
 - [ ] Auth flow tested
 
 ### Phase 5: PWA ✅
+
 - [ ] PWA configured
 - [ ] Manifest created
 - [ ] Meta tags added
 - [ ] Offline support enabled
 
 ### Phase 6: Deployment ✅
+
 - [ ] Production scripts created
 - [ ] Build tested
 - [ ] Both services running together
@@ -776,6 +802,7 @@ npm run start  # Runs on :3000
 ## 📝 Next: React Native Setup
 
 After Next.js is complete and tested:
+
 1. Initialize React Native project in `packages/frontend-mobile/`
 2. Setup shared code imports
 3. Create iOS + Android builds

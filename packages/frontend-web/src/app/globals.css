@@ -1,11 +1,750 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* =============================================================================
+   YuzDanYuz Frontend Globals — Tailwind CSS v4 + shadcn/ui compatible
+   Single source of truth: ~/.claude/skills/yuzdanyuz-design/colors_and_type.css
+   ============================================================================= */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@import 'tailwindcss';
+
+<<<<<<< Updated upstream
+@import "tw-animate-css";
+
+@import "shadcn/tailwind.css";
+=======
+@import 'tw-animate-css';
+
+@import 'shadcn/tailwind.css';
+>>>>>>> Stashed changes
+
+/* Dark mode triggered by `.dark` class on <html> or [data-theme="dark"] */
+@custom-variant dark (&:where(.dark, .dark *, [data-theme='dark'], [data-theme='dark'] *));
+
+/* =============================================================================
+   LIGHT THEME — plain CSS variables (shadcn components read these directly)
+   ============================================================================= */
+:root {
+  /* -------- Brand ramps --------------------------------------------------- */
+  --yy-indigo-50: #eef2ff;
+  --yy-indigo-100: #e0e7ff;
+  --yy-indigo-200: #c7d2fe;
+  --yy-indigo-300: #a5b4fc;
+  --yy-indigo-400: #818cf8;
+  --yy-indigo-500: #6366f1; /* PRIMARY */
+  --yy-indigo-600: #4f46e5; /* hover */
+  --yy-indigo-700: #4338ca; /* active */
+  --yy-indigo-800: #3730a3;
+  --yy-indigo-900: #312e81;
+
+  --yy-amber-50: #fffbeb;
+  --yy-amber-100: #fef3c7;
+  --yy-amber-200: #fde68a;
+  --yy-amber-300: #fcd34d;
+  --yy-amber-400: #fbbf24;
+  --yy-amber-500: #f59e0b; /* SECONDARY — streak, league */
+  --yy-amber-600: #d97706;
+  --yy-amber-700: #b45309;
+
+  /* -------- Neutrals (slate — cool, blue-leaning) ------------------------ */
+  --yy-slate-0: #ffffff;
+  --yy-slate-50: #f8fafc;
+  --yy-slate-100: #f1f5f9;
+  --yy-slate-200: #e2e8f0;
+  --yy-slate-300: #cbd5e1;
+  --yy-slate-400: #94a3b8;
+  --yy-slate-500: #64748b;
+  --yy-slate-600: #475569;
+  --yy-slate-700: #334155;
+  --yy-slate-800: #1e293b;
+  --yy-slate-900: #0f172a;
+  --yy-slate-950: #020617;
+
+  /* -------- Semantic ---------------------------------------------------- */
+  --yy-success-50: #ecfdf5;
+  --yy-success-500: #10b981;
+  --yy-success-600: #059669;
+
+  --yy-warning-50: #fffbeb;
+  --yy-warning-500: #f59e0b;
+  --yy-warning-600: #d97706;
+
+  --yy-error-50: #fef2f2;
+  --yy-error-500: #ef4444;
+  --yy-error-600: #dc2626;
+
+  --yy-info-50: #eff6ff;
+  --yy-info-500: #3b82f6;
+  --yy-info-600: #2563eb;
+
+  /* -------- League colors ---------------------------------------------- */
+  --yy-league-bronze: #cd7f32;
+  --yy-league-silver: #c0c0c0;
+  --yy-league-gold: #f59e0b;
+  --yy-league-diamond: #60a5fa;
+
+  /* -------- shadcn semantic surface aliases (BRAND OVERRIDE) ---------- */
+  --background: var(--yy-slate-0);
+  --foreground: var(--yy-slate-900);
+
+  --card: var(--yy-slate-0);
+  --card-foreground: var(--yy-slate-900);
+
+  --popover: var(--yy-slate-0);
+  --popover-foreground: var(--yy-slate-900);
+
+  --primary: var(--yy-indigo-500); /* brand */
+  --primary-foreground: var(--yy-slate-0);
+
+  --secondary: var(--yy-slate-100);
+  --secondary-foreground: var(--yy-slate-900);
+
+  --muted: var(--yy-slate-100);
+  --muted-foreground: var(--yy-slate-500);
+
+  --accent: var(--yy-amber-500); /* achievement only — never primary CTA */
+  --accent-foreground: var(--yy-slate-900);
+
+  --destructive: var(--yy-error-500);
+  --destructive-foreground: var(--yy-slate-0);
+
+  --border: var(--yy-slate-200);
+  --input: var(--yy-slate-200);
+  --ring: var(--yy-indigo-500);
+
+  /* shadcn sidebar tokens (B2B admin shell) */
+  --sidebar: var(--yy-slate-50);
+  --sidebar-foreground: var(--yy-slate-900);
+  --sidebar-primary: var(--yy-indigo-500);
+  --sidebar-primary-foreground: var(--yy-slate-0);
+  --sidebar-accent: var(--yy-slate-100);
+  --sidebar-accent-foreground: var(--yy-slate-900);
+  --sidebar-border: var(--yy-slate-200);
+  --sidebar-ring: var(--yy-indigo-500);
+
+  /* Chart palette (analytics dashboards) */
+  --chart-1: var(--yy-indigo-500);
+  --chart-2: var(--yy-amber-500);
+  --chart-3: var(--yy-success-500);
+  --chart-4: var(--yy-info-500);
+  --chart-5: var(--yy-error-500);
+
+  /* Foreground hierarchy */
+  --fg-1: var(--yy-slate-900);
+  --fg-2: var(--yy-slate-600);
+  --fg-3: var(--yy-slate-400);
+  --fg-inv: var(--yy-slate-0);
+
+  /* Surfaces */
+  --surface-app: var(--yy-slate-50);
+  --surface-card: var(--yy-slate-0);
+  --surface-raised: var(--yy-slate-0);
+  --surface-sunken: var(--yy-slate-100);
+
+  /* Radii (shadcn default) */
+  --radius: 0.5rem; /* 8px — md */
+}
+
+/* =============================================================================
+   DARK THEME — full parity, not an afterthought
+   ============================================================================= */
+.dark,
+[data-theme='dark'] {
+  --background: #0a0a0a;
+  --foreground: var(--yy-slate-50);
+
+  --card: #171717;
+  --card-foreground: var(--yy-slate-50);
+
+  --popover: #171717;
+  --popover-foreground: var(--yy-slate-50);
+
+  --primary: var(--yy-indigo-400); /* lift for legibility */
+  --primary-foreground: var(--yy-slate-900);
+
+  --secondary: #262626;
+  --secondary-foreground: var(--yy-slate-50);
+
+  --muted: #262626;
+  --muted-foreground: var(--yy-slate-400);
+
+  --accent: var(--yy-amber-400);
+  --accent-foreground: var(--yy-slate-900);
+
+  --destructive: var(--yy-error-500);
+  --destructive-foreground: var(--yy-slate-0);
+
+  --border: #262626;
+  --input: #262626;
+  --ring: var(--yy-indigo-400);
+
+  --fg-1: var(--yy-slate-50);
+  --fg-2: var(--yy-slate-300);
+  --fg-3: var(--yy-slate-500);
+  --fg-inv: var(--yy-slate-900);
+
+  --surface-app: #0a0a0a;
+  --surface-card: #171717;
+  --surface-raised: #1f1f1f;
+  --surface-sunken: #0a0a0a;
+
+  /* Sidebar (dark) */
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: var(--yy-slate-50);
+  --sidebar-primary: var(--yy-indigo-400);
+  --sidebar-primary-foreground: var(--yy-slate-900);
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: var(--yy-slate-50);
+  --sidebar-border: #262626;
+  --sidebar-ring: var(--yy-indigo-400);
+}
+
+/* =============================================================================
+   TAILWIND v4 @theme — wires CSS vars into utility generators
+   Use `inline` so dark mode reactively updates (Tailwind dereferences each render).
+   ============================================================================= */
+@theme inline {
+  /* Brand ramps as Tailwind colors (e.g. bg-yy-indigo-500) */
+  --color-yy-indigo-50: var(--yy-indigo-50);
+  --color-yy-indigo-100: var(--yy-indigo-100);
+  --color-yy-indigo-200: var(--yy-indigo-200);
+  --color-yy-indigo-300: var(--yy-indigo-300);
+  --color-yy-indigo-400: var(--yy-indigo-400);
+  --color-yy-indigo-500: var(--yy-indigo-500);
+  --color-yy-indigo-600: var(--yy-indigo-600);
+  --color-yy-indigo-700: var(--yy-indigo-700);
+  --color-yy-indigo-800: var(--yy-indigo-800);
+  --color-yy-indigo-900: var(--yy-indigo-900);
+
+  --color-yy-amber-50: var(--yy-amber-50);
+  --color-yy-amber-100: var(--yy-amber-100);
+  --color-yy-amber-200: var(--yy-amber-200);
+  --color-yy-amber-300: var(--yy-amber-300);
+  --color-yy-amber-400: var(--yy-amber-400);
+  --color-yy-amber-500: var(--yy-amber-500);
+  --color-yy-amber-600: var(--yy-amber-600);
+  --color-yy-amber-700: var(--yy-amber-700);
+
+  --color-yy-slate-0: var(--yy-slate-0);
+  --color-yy-slate-50: var(--yy-slate-50);
+  --color-yy-slate-100: var(--yy-slate-100);
+  --color-yy-slate-200: var(--yy-slate-200);
+  --color-yy-slate-300: var(--yy-slate-300);
+  --color-yy-slate-400: var(--yy-slate-400);
+  --color-yy-slate-500: var(--yy-slate-500);
+  --color-yy-slate-600: var(--yy-slate-600);
+  --color-yy-slate-700: var(--yy-slate-700);
+  --color-yy-slate-800: var(--yy-slate-800);
+  --color-yy-slate-900: var(--yy-slate-900);
+  --color-yy-slate-950: var(--yy-slate-950);
+
+  --color-yy-success-50: var(--yy-success-50);
+  --color-yy-success-500: var(--yy-success-500);
+  --color-yy-success-600: var(--yy-success-600);
+
+  --color-yy-warning-50: var(--yy-warning-50);
+  --color-yy-warning-500: var(--yy-warning-500);
+  --color-yy-warning-600: var(--yy-warning-600);
+
+  --color-yy-error-50: var(--yy-error-50);
+  --color-yy-error-500: var(--yy-error-500);
+  --color-yy-error-600: var(--yy-error-600);
+
+  --color-yy-info-50: var(--yy-info-50);
+  --color-yy-info-500: var(--yy-info-500);
+  --color-yy-info-600: var(--yy-info-600);
+
+  --color-yy-league-bronze: var(--yy-league-bronze);
+  --color-yy-league-silver: var(--yy-league-silver);
+  --color-yy-league-gold: var(--yy-league-gold);
+  --color-yy-league-diamond: var(--yy-league-diamond);
+
+  /* shadcn semantic aliases (e.g. bg-primary, text-foreground) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-fg-1: var(--fg-1);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-inv: var(--fg-inv);
+
+  --color-surface-app: var(--surface-app);
+  --color-surface-card: var(--surface-card);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+
+  /* Sidebar (B2B admin) */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Chart palette */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Typography */
+  --font-sans: var(--font-sans);
+  --font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 28px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
+  --text-4xl: 36px;
+  --text-4xl--line-height: 40px;
+  --text-5xl: 48px;
+  --text-5xl--line-height: 52px;
+  --text-6xl: 60px;
+  --text-6xl--line-height: 64px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Spacing scale — override Tailwind default rem-based to design tokens */
+  --spacing-0: 0;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+  --spacing-20: 80px;
+  --spacing-24: 96px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-DEFAULT: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 8px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 10px 24px rgb(0 0 0 / 0.06), 0 4px 8px rgb(0 0 0 / 0.04);
+<<<<<<< Updated upstream
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.10), 0 8px 16px rgb(0 0 0 / 0.06);
+=======
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.1), 0 8px 16px rgb(0 0 0 / 0.06);
+>>>>>>> Stashed changes
+  --shadow-inner: inset 0 1px 2px rgb(0 0 0 / 0.04);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 350ms;
+
+  /* Containers */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
+  --container-2xl: 1536px;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* =============================================================================
+   BASE STYLES — wired to tokens
+   ============================================================================= */
 html {
-  scroll-behavior: smooth;
+  font-family: var(--font-sans);
+  color: var(--fg-1);
+  background: var(--background);
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+<<<<<<< Updated upstream
+=======
+}
+
+.font-mono,
+code,
+kbd,
+samp,
+pre,
+.num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* =============================================================================
+   SEMANTIC TYPOGRAPHY CLASSES — preserve from original tokens.css
+   Use these instead of raw Tailwind sizes when possible (brand consistency).
+   ============================================================================= */
+.t-display-1 {
+  font-size: var(--text-6xl);
+  line-height: var(--text-6xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.t-display-2 {
+  font-size: var(--text-5xl);
+  line-height: var(--text-5xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.t-h1 {
+  font-size: var(--text-4xl);
+  line-height: var(--text-4xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.t-h2 {
+  font-size: var(--text-3xl);
+  line-height: var(--text-3xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.t-h3 {
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
+  font-weight: 600;
+}
+
+.t-h4 {
+  font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
+  font-weight: 600;
+}
+
+.t-h5 {
+  font-size: var(--text-lg);
+  line-height: var(--text-lg--line-height);
+  font-weight: 600;
+}
+
+.t-h6 {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 600;
+}
+
+.t-body {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 400;
+}
+
+.t-body-sm {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 400;
+}
+
+.t-caption {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 400;
+  color: var(--fg-2);
+}
+
+.t-overline {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.t-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.t-num {
+  font-family: var(--font-mono);
+  font-feature-settings:
+    'tnum' 1,
+    'ss02';
+}
+
+/* =============================================================================
+   FOCUS RING — universal accessibility
+   ============================================================================= */
+.yy-focus-ring:focus-visible,
+:where(button, a, [role='button'], input, textarea, select):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+>>>>>>> Stashed changes
+}
+
+.font-mono,
+code,
+kbd,
+samp,
+pre,
+.num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* =============================================================================
+   SEMANTIC TYPOGRAPHY CLASSES — preserve from original tokens.css
+   Use these instead of raw Tailwind sizes when possible (brand consistency).
+   ============================================================================= */
+.t-display-1 {
+  font-size: var(--text-6xl);
+  line-height: var(--text-6xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.t-display-2 {
+  font-size: var(--text-5xl);
+  line-height: var(--text-5xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.t-h1 {
+  font-size: var(--text-4xl);
+  line-height: var(--text-4xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.t-h2 {
+  font-size: var(--text-3xl);
+  line-height: var(--text-3xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.t-h3 {
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
+  font-weight: 600;
+}
+
+.t-h4 {
+  font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
+  font-weight: 600;
+}
+
+.t-h5 {
+  font-size: var(--text-lg);
+  line-height: var(--text-lg--line-height);
+  font-weight: 600;
+}
+
+.t-h6 {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 600;
+}
+
+.t-body {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 400;
+}
+
+.t-body-sm {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 400;
+}
+
+.t-caption {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 400;
+  color: var(--fg-2);
+}
+
+.t-overline {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.t-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.t-num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'ss02';
+}
+
+/* =============================================================================
+   FOCUS RING — universal accessibility
+   ============================================================================= */
+.yy-focus-ring:focus-visible,
+:where(button, a, [role='button'], input, textarea, select):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }

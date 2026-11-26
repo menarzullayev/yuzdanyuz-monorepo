@@ -1,0 +1,62 @@
+{
+  "common": {
+    "brand": "YuzDanYuz",
+    "tagline": "Миллий Сертификат",
+    "loading": "Юкланмоқда...",
+    "error": "Хато юз берди",
+    "retry": "Қайта уриниш",
+    "cancel": "Бекор қилиш",
+    "save": "Сақлаш",
+    "delete": "Ўчириш",
+    "back": "Орқага",
+    "next": "Кейинги",
+    "submit": "Юбориш",
+    "search": "Қидириш",
+    "close": "Ёпиш"
+  },
+  "auth": {
+    "login": "Кириш",
+    "logout": "Чиқиш",
+    "signup": "Рўйхатдан ўтиш",
+    "phoneLabel": "Телефон рақам",
+    "phonePlaceholder": "+998 90 123 45 67",
+    "passwordLabel": "Парол",
+    "otpLabel": "Тасдиқлаш коди",
+    "forgotPassword": "Паролни унутдингизми?",
+    "sessionExpired": "Сессия тугаган. Қайта киринг."
+  },
+  "nav": {
+    "home": "Бош саҳифа",
+    "exams": "Имтиҳонлар",
+    "leaderboard": "Рейтинг",
+    "profile": "Профил",
+    "settings": "Созламалар",
+    "tutor": "AI Ёрдамчи"
+  },
+  "home": {
+    "greeting": "Ассалому алайкум",
+    "nextExam": "Кейинги имтиҳон",
+    "streak": "Серия",
+    "league": "Лига",
+    "smokeTest": "Frontend foundation — PHASE 0 якуни"
+  },
+  "exam": {
+    "start": "Имтиҳонни бошлаш",
+    "submit": "Топшириш",
+    "timeLeft": "Вақт",
+    "questionsLeft": "Қолган саволлар",
+    "submitConfirm": "Имтиҳонни топширасизми? Жавоблар ўзгартириб бўлмайди.",
+    "antiCheatWarning": "Имтиҳон вақтида бошқа ойнага ўтдингиз. Бу огоҳлантириш ҳам ёзиб қўйилди."
+  },
+  "result": {
+    "score": "Балл",
+    "correct": "Тўғри",
+    "total": "Жами"
+  },
+  "error": {
+    "rateLimit": "Жуда кўп сўров",
+    "rateLimitDescription": "{seconds} сониядан кейин қайта уриниб кўринг.",
+    "server": "Сервер хатоси",
+    "network": "Тармоқ уланмади. Қайта уриниб кўринг."
+  }
+}

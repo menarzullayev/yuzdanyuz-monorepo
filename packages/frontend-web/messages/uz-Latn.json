@@ -1,0 +1,62 @@
+{
+  "common": {
+    "brand": "YuzDanYuz",
+    "tagline": "Milliy Sertifikat",
+    "loading": "Yuklanmoqda...",
+    "error": "Xato yuz berdi",
+    "retry": "Qayta urinish",
+    "cancel": "Bekor qilish",
+    "save": "Saqlash",
+    "delete": "O'chirish",
+    "back": "Orqaga",
+    "next": "Keyingi",
+    "submit": "Yuborish",
+    "search": "Qidirish",
+    "close": "Yopish"
+  },
+  "auth": {
+    "login": "Kirish",
+    "logout": "Chiqish",
+    "signup": "Ro'yxatdan o'tish",
+    "phoneLabel": "Telefon raqam",
+    "phonePlaceholder": "+998 90 123 45 67",
+    "passwordLabel": "Parol",
+    "otpLabel": "Tasdiqlash kodi",
+    "forgotPassword": "Parolni unutdingizmi?",
+    "sessionExpired": "Sessiya tugagan. Qayta kiring."
+  },
+  "nav": {
+    "home": "Bosh sahifa",
+    "exams": "Imtihonlar",
+    "leaderboard": "Reyting",
+    "profile": "Profil",
+    "settings": "Sozlamalar",
+    "tutor": "AI Yordamchi"
+  },
+  "home": {
+    "greeting": "Assalomu alaykum",
+    "nextExam": "Keyingi imtihon",
+    "streak": "Seriya",
+    "league": "Liga",
+    "smokeTest": "Frontend foundation — PHASE 0 yakuni"
+  },
+  "exam": {
+    "start": "Imtihonni boshlash",
+    "submit": "Topshirish",
+    "timeLeft": "Vaqt",
+    "questionsLeft": "Qolgan savollar",
+    "submitConfirm": "Imtihonni topshirasizmi? Javoblar o'zgartirib bo'lmaydi.",
+    "antiCheatWarning": "Imtihon vaqtida boshqa oynaga o'tdingiz. Bu ogohlantirish ham yozib qo'yildi."
+  },
+  "result": {
+    "score": "Ball",
+    "correct": "To'g'ri",
+    "total": "Jami"
+  },
+  "error": {
+    "rateLimit": "Juda ko'p so'rov",
+    "rateLimitDescription": "{seconds} soniyadan keyin qayta urinib ko'ring.",
+    "server": "Server xatosi",
+    "network": "Tarmoq ulanmadi. Qayta urinib ko'ring."
+  }
+}

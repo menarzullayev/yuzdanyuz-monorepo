@@ -1,0 +1,62 @@
+{
+  "common": {
+    "brand": "YuzDanYuz",
+    "tagline": "Национальный Сертификат",
+    "loading": "Загрузка...",
+    "error": "Произошла ошибка",
+    "retry": "Повторить",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "delete": "Удалить",
+    "back": "Назад",
+    "next": "Далее",
+    "submit": "Отправить",
+    "search": "Поиск",
+    "close": "Закрыть"
+  },
+  "auth": {
+    "login": "Войти",
+    "logout": "Выйти",
+    "signup": "Регистрация",
+    "phoneLabel": "Номер телефона",
+    "phonePlaceholder": "+998 90 123 45 67",
+    "passwordLabel": "Пароль",
+    "otpLabel": "Код подтверждения",
+    "forgotPassword": "Забыли пароль?",
+    "sessionExpired": "Сессия истекла. Войдите снова."
+  },
+  "nav": {
+    "home": "Главная",
+    "exams": "Экзамены",
+    "leaderboard": "Рейтинг",
+    "profile": "Профиль",
+    "settings": "Настройки",
+    "tutor": "AI Помощник"
+  },
+  "home": {
+    "greeting": "Здравствуйте",
+    "nextExam": "Следующий экзамен",
+    "streak": "Серия",
+    "league": "Лига",
+    "smokeTest": "Frontend foundation — PHASE 0 завершён"
+  },
+  "exam": {
+    "start": "Начать экзамен",
+    "submit": "Отправить",
+    "timeLeft": "Время",
+    "questionsLeft": "Осталось вопросов",
+    "submitConfirm": "Отправить экзамен? Ответы изменить нельзя.",
+    "antiCheatWarning": "Вы переключились на другое окно во время экзамена. Это предупреждение записано."
+  },
+  "result": {
+    "score": "Балл",
+    "correct": "Верно",
+    "total": "Всего"
+  },
+  "error": {
+    "rateLimit": "Слишком много запросов",
+    "rateLimitDescription": "Повторите через {seconds} секунд.",
+    "server": "Ошибка сервера",
+    "network": "Нет соединения. Повторите."
+  }
+}

@@ -9,6 +9,7 @@
 ## 📦 What Was Created
 
 ### 1. Monorepo Structure
+
 ```
 /home/hsm/apps/yuzdanyuz-monorepo/
 ├── packages/
@@ -63,6 +64,7 @@
 ## ✨ What's Working
 
 ### Backend API (Django)
+
 - ✅ Port 8013
 - ✅ All auth endpoints ready
 - ✅ JWT token management
@@ -70,6 +72,7 @@
 - ✅ Redis available
 
 ### Frontend Web (Next.js)
+
 - ✅ Port 3000
 - ✅ TypeScript configured
 - ✅ Tailwind CSS ready
@@ -79,6 +82,7 @@
 - ✅ Auth hooks ready
 
 ### Shared Package (TypeScript)
+
 - ✅ API client (axios with interceptors)
 - ✅ JWT utilities (decode, verify, storage)
 - ✅ Type definitions (User, Auth, OTP, etc.)
@@ -89,17 +93,20 @@
 ## 🚀 How to Run
 
 ### Option 1: Run Both Together
+
 ```bash
 /home/hsm/run-production-stack.sh
 ```
 
 Then open:
+
 - **Frontend**: http://127.0.0.1:3000/
 - **Backend API**: http://127.0.0.1:8013/
 
 ### Option 2: Run Separately
 
 **Terminal 1 - Django Backend**
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz-monorepo/packages/backend
 source venv/bin/activate
@@ -107,6 +114,7 @@ python manage.py runserver 127.0.0.1:8013
 ```
 
 **Terminal 2 - Next.js Frontend**
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz-monorepo/packages/frontend-web
 npm run dev
@@ -117,23 +125,27 @@ npm run dev
 ## 🧪 Testing
 
 ### 1. Test Backend is Running
+
 ```bash
 curl http://127.0.0.1:8013/accounts/login/
 # Should return HTML
 ```
 
 ### 2. Test Frontend is Running
+
 ```bash
 curl http://127.0.0.1:3000/
 # Should return Next.js app HTML
 ```
 
 ### 3. Test Login Flow
+
 1. Go to http://127.0.0.1:3000/login
 2. Enter test credentials
 3. Should authenticate and redirect to /dashboard
 
 ### 4. Test API Integration
+
 - Frontend sends POST to `/accounts/api/auth/email/`
 - Backend returns JWT tokens
 - Tokens stored in cookies
@@ -144,6 +156,7 @@ curl http://127.0.0.1:3000/
 ## 📝 Project Configuration Files
 
 ### Environment Variables (.env.local)
+
 ```
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8013
 NEXT_PUBLIC_APP_NAME=YuzDanYuz
@@ -153,12 +166,14 @@ NEXT_PUBLIC_DEBUG=false
 ```
 
 ### TypeScript (tsconfig.json)
+
 - Target: ES2020
 - Module: ESNext
 - Strict mode enabled
 - Path aliases configured
 
 ### Next.js Config
+
 - App directory enabled
 - Tailwind CSS enabled
 - TypeScript enabled
@@ -169,6 +184,7 @@ NEXT_PUBLIC_DEBUG=false
 ## 🎯 What's Next
 
 ### Immediate (1-2 hours)
+
 - [ ] Import design components from `/design/claudeDesign/`
 - [ ] Create more pages (profile, OTP login, etc.)
 - [ ] Wire up all auth flows
@@ -176,6 +192,7 @@ NEXT_PUBLIC_DEBUG=false
 - [ ] Test account linking endpoints
 
 ### Short-term (2-4 hours)
+
 - [ ] Add PWA configuration (service workers)
 - [ ] Add Telegram Mini App support
 - [ ] Create dashboard widgets
@@ -183,6 +200,7 @@ NEXT_PUBLIC_DEBUG=false
 - [ ] Test on mobile browsers
 
 ### Medium-term (React Native)
+
 - [ ] Setup React Native in `frontend-mobile/`
 - [ ] Share API client between web + mobile
 - [ ] Build iOS app
@@ -193,29 +211,29 @@ NEXT_PUBLIC_DEBUG=false
 
 ## 📊 Current Status
 
-| Component | Status | Port | Coverage |
-|-----------|--------|------|----------|
-| Django Backend | ✅ Ready | 8013 | Production |
-| Next.js Frontend | ✅ Ready | 3000 | Development |
-| TypeScript Shared | ✅ Built | - | 100% |
-| PostgreSQL | ✅ Connected | 5992 | - |
-| Redis | ✅ Available | - | - |
-| React Native | 🔵 Future | - | Placeholder |
-| PWA | 🔵 Next | - | Planned |
-| TMA | 🔵 Next | - | Planned |
+| Component         | Status       | Port | Coverage    |
+| ----------------- | ------------ | ---- | ----------- |
+| Django Backend    | ✅ Ready     | 8013 | Production  |
+| Next.js Frontend  | ✅ Ready     | 3000 | Development |
+| TypeScript Shared | ✅ Built     | -    | 100%        |
+| PostgreSQL        | ✅ Connected | 5992 | -           |
+| Redis             | ✅ Available | -    | -           |
+| React Native      | 🔵 Future    | -    | Placeholder |
+| PWA               | 🔵 Next      | -    | Planned     |
+| TMA               | 🔵 Next      | -    | Planned     |
 
 ---
 
 ## 🔗 Key Files
 
-| File | Purpose |
-|------|---------|
-| `/home/hsm/FRONTEND_SETUP_PLAN.md` | Detailed implementation guide |
-| `/home/hsm/run-production-stack.sh` | Start both services |
-| `/home/hsm/run-production-debug.sh` | Debug Django only |
-| `packages/frontend-web/src/services/auth.ts` | API client for auth |
-| `packages/shared/src/api/client.ts` | Shared axios instance |
-| `packages/shared/src/auth/jwt.ts` | JWT utilities |
+| File                                         | Purpose                       |
+| -------------------------------------------- | ----------------------------- |
+| `/home/hsm/FRONTEND_SETUP_PLAN.md`           | Detailed implementation guide |
+| `/home/hsm/run-production-stack.sh`          | Start both services           |
+| `/home/hsm/run-production-debug.sh`          | Debug Django only             |
+| `packages/frontend-web/src/services/auth.ts` | API client for auth           |
+| `packages/shared/src/api/client.ts`          | Shared axios instance         |
+| `packages/shared/src/auth/jwt.ts`            | JWT utilities                 |
 
 ---
 
@@ -232,6 +250,7 @@ NEXT_PUBLIC_DEBUG=false
 ## 🛠️ Troubleshooting
 
 ### Issue: Next.js won't start
+
 ```bash
 # Clear cache and reinstall
 rm -rf packages/frontend-web/node_modules/.next
@@ -240,12 +259,14 @@ npm run dev
 ```
 
 ### Issue: API calls failing
+
 - Check Django is running on :8013
 - Check CORS configuration in Django
 - Check network tab in browser DevTools
 - Check `/home/hsm/apps/yuzdanyuz-monorepo/packages/backend` is correct path
 
 ### Issue: Login not working
+
 - Ensure test user exists in Django
 - Check credentials are correct
 - Check Django auth endpoints respond

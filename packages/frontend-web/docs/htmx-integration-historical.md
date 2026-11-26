@@ -9,9 +9,11 @@
 ## What We Created
 
 ### 1. Professional Tailwind Configuration ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/tailwind.config.js`
 
 Updated with Claude Design colors:
+
 - **Brand**: `#6366F1` (Indigo)
 - **Plum**: `#8B5CF6` (Purple)
 - **Aqua**: `#06B6D4` (Cyan)
@@ -20,9 +22,11 @@ Updated with Claude Design colors:
 - **Surfaces**: Paper (#FBFAFF), Paper-soft (#F5F4FB), Line (#E8E5F4)
 
 ### 2. Main Login/Register Template ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/templates/accounts/login_register.html`
 
 **Features**:
+
 - **Desktop Layout**: Split-panel design (form + art panel)
 - **Mobile Layout**: Single column, stacked
 - **Tab-based Navigation**: Kirish/Ro'yxatdan o'tish tabs
@@ -32,9 +36,11 @@ Updated with Claude Design colors:
 - **Dark Mode Support**: Toggle button included
 
 ### 3. Login Form Partial ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/templates/accounts/partials/login_form.html`
 
 **Auth Methods**:
+
 - ✅ Telegram Deep Link (with polling)
 - ✅ Google OAuth
 - ✅ Phone OTP (HTMX swap)
@@ -45,9 +51,11 @@ Updated with Claude Design colors:
 - ✅ Error message display
 
 ### 4. Register Form Partial ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/templates/accounts/partials/register_form.html`
 
 **Features**:
+
 - ✅ OAuth signup (Google, Phone OTP)
 - ✅ Email signup
 - ✅ Username signup (with validation)
@@ -57,9 +65,11 @@ Updated with Claude Design colors:
 - ✅ Error message display
 
 ### 5. Django Views ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/apps/accounts/views/login_views.py`
 
 **New Views**:
+
 - `LoginRegisterView` - Main page at `/accounts/login-register/`
 - `LoginFormView` - HTMX partial for login form
 - `RegisterFormView` - HTMX partial for register form
@@ -68,15 +78,18 @@ Updated with Claude Design colors:
 - `RegisterView` - POST handler for registration
 
 **Features**:
+
 - Email/Username registration with validation
 - Automatic token creation on successful registration
 - Device fingerprinting for security
 - HTMX redirect on success (HX-Redirect header)
 
 ### 6. Updated URLs ✅
+
 **File**: `/home/hsm/apps/yuzdanyuz/apps/accounts/urls.py`
 
 **New Routes**:
+
 ```
 /accounts/login-register/          → Main page
 /accounts/api/forms/login/         → Login form partial
@@ -127,18 +140,21 @@ Updated with Claude Design colors:
 The colors we added to `tailwind.config.js` need to be compiled into `static/css/tailwind.css`.
 
 **Option A: Using npx (Recommended)**
+
 ```bash
 cd /home/hsm/apps/yuzdanyuz
 npx tailwindcss -i static/css/input.css -o static/css/tailwind.css
 ```
 
 **Option B: Using npm (if tailwindcss installed globally)**
+
 ```bash
 npm install -g tailwindcss
 tailwindcss -i static/css/input.css -o static/css/tailwind.css
 ```
 
 **Option C: Watch mode (for development)**
+
 ```bash
 npx tailwindcss -i static/css/input.css -o static/css/tailwind.css --watch
 ```
@@ -219,17 +235,17 @@ python manage.py runserver 0.0.0.0:8001
 
 ## Color Palette (Claude Design)
 
-| Color | Hex | Usage |
-|-------|-----|-------|
+| Color     | Hex     | Usage                           |
+| --------- | ------- | ------------------------------- |
 | Brand-500 | #6366F1 | Primary buttons, links, accents |
-| Plum-600 | #7C3AED | Secondary buttons, gradients |
-| Aqua-500 | #06B6D4 | Success states, highlights |
-| Ink-900 | #0B1020 | Text, dark backgrounds |
-| Paper | #FBFAFF | Background |
-| Line | #E8E5F4 | Borders, dividers |
-| OK | #10B981 | Success messages |
-| Warn | #F59E0B | Warning messages |
-| Bad | #EF4444 | Error messages |
+| Plum-600  | #7C3AED | Secondary buttons, gradients    |
+| Aqua-500  | #06B6D4 | Success states, highlights      |
+| Ink-900   | #0B1020 | Text, dark backgrounds          |
+| Paper     | #FBFAFF | Background                      |
+| Line      | #E8E5F4 | Borders, dividers               |
+| OK        | #10B981 | Success messages                |
+| Warn      | #F59E0B | Warning messages                |
+| Bad       | #EF4444 | Error messages                  |
 
 ---
 

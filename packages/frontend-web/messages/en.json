@@ -1,0 +1,62 @@
+{
+  "common": {
+    "brand": "YuzDanYuz",
+    "tagline": "National Certificate",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "search": "Search",
+    "close": "Close"
+  },
+  "auth": {
+    "login": "Log in",
+    "logout": "Log out",
+    "signup": "Sign up",
+    "phoneLabel": "Phone number",
+    "phonePlaceholder": "+998 90 123 45 67",
+    "passwordLabel": "Password",
+    "otpLabel": "Verification code",
+    "forgotPassword": "Forgot password?",
+    "sessionExpired": "Session expired. Please log in again."
+  },
+  "nav": {
+    "home": "Home",
+    "exams": "Exams",
+    "leaderboard": "Leaderboard",
+    "profile": "Profile",
+    "settings": "Settings",
+    "tutor": "AI Tutor"
+  },
+  "home": {
+    "greeting": "Hello",
+    "nextExam": "Next exam",
+    "streak": "Streak",
+    "league": "League",
+    "smokeTest": "Frontend foundation — PHASE 0 complete"
+  },
+  "exam": {
+    "start": "Start exam",
+    "submit": "Submit",
+    "timeLeft": "Time",
+    "questionsLeft": "Questions left",
+    "submitConfirm": "Submit exam? Answers cannot be changed.",
+    "antiCheatWarning": "You switched to another window during the exam. This warning is recorded."
+  },
+  "result": {
+    "score": "Score",
+    "correct": "Correct",
+    "total": "Total"
+  },
+  "error": {
+    "rateLimit": "Too many requests",
+    "rateLimitDescription": "Please retry in {seconds} seconds.",
+    "server": "Server error",
+    "network": "Network unreachable. Please retry."
+  }
+}
