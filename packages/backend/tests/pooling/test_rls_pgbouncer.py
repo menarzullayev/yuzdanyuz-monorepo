@@ -81,7 +81,7 @@ def test_interleaved_tenants_see_only_their_rows(org, org2, release_pool):
         cur.execute(
             f"""
             DO $$ BEGIN CREATE ROLE {APP_ROLE} LOGIN;
-            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;
             """
         )
         cur.execute(f'GRANT SELECT ON webhooks_webhookendpoint TO {APP_ROLE}')
@@ -142,7 +142,7 @@ def test_unscoped_bypass_never_reaches_another_client(org, org2, release_pool):
         cur.execute(
             f"""
             DO $$ BEGIN CREATE ROLE {APP_ROLE} LOGIN;
-            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;
             """
         )
         cur.execute(f'GRANT SELECT ON webhooks_webhookendpoint TO {APP_ROLE}')
