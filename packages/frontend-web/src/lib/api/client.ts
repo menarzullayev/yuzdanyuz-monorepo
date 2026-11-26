@@ -8,15 +8,17 @@ interface Options {
   query?: Record<string, string | number | undefined>;
   /** Do not try refresh + retry on 401 (login, refresh itself, anonymous checks). */
   noRefresh?: boolean;
+  /** API prefix; the auth endpoints are the default. */
+  base?: string;
 }
 
 // Same-origin: next.config rewrites /api/* to the backend, so cookies are first-party and
 // there is no CORS. There is no CSRF token to fetch: the backend relies on SameSite=Lax and
 // rejects foreign Origin headers on state-changing requests (docs/auth-api.md).
-const BASE = '/api/auth';
+const AUTH_BASE = '/api/auth';
 
 async function send(path: string, opts: Options): Promise<Response> {
-  const url = new URL(BASE + path, 'http://local');
+  const url = new URL((opts.base ?? AUTH_BASE) + path, 'http://local');
   for (const [k, v] of Object.entries(opts.query ?? {})) {
     if (v !== undefined) url.searchParams.set(k, String(v));
   }
