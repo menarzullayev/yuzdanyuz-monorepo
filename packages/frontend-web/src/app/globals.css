@@ -152,8 +152,8 @@ html[data-font="dyslexia"] h1, html[data-font="dyslexia"] h2, html[data-font="dy
 .btn-primary:hover:not(:disabled) { background: var(--c-main-hover); }
 .btn-ghost { background: transparent; color: var(--c-ink); border-color: var(--c-border); }
 .btn-ghost:hover:not(:disabled) { border-color: var(--c-main); }
-.btn-telegram { background: #2aabee; color: #fff; }
-.btn-telegram:hover:not(:disabled) { background: #1d97d8; }
+.btn-telegram { background: #1774b0; color: #fff; } /* 5.05:1 with white (WCAG AA); #2aabee was 2.57 */
+.btn-telegram:hover:not(:disabled) { background: #0f6aa3; }
 .btn-danger { background: transparent; color: var(--c-danger); border-color: var(--c-danger); }
 
 .card {

@@ -89,6 +89,13 @@ urlpatterns = [
     ),
 ]
 
+if settings.DEBUG and 'debug_toolbar' in settings.INSTALLED_APPS:
+    # dev.py turns the toolbar on whenever it is installed; without its URLs every
+    # request fails with "'djdt' is not a registered namespace".
+    from debug_toolbar.toolbar import debug_toolbar_urls
+
+    urlpatterns += debug_toolbar_urls()
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static('/static/', document_root=settings.STATICFILES_DIRS[0])
