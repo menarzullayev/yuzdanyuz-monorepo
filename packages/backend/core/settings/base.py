@@ -529,13 +529,12 @@ BILLING_WEEK_TZ = os.getenv('BILLING_WEEK_TZ', 'Asia/Tashkent')
 #   if flag_enabled('ENABLE_REAL_PAYMENTS', request=request):
 #       ... real charge ...
 FLAGS = {
-    # Existing env-based booleans wrapped as flags (no behavior change, just a layer of indirection)
-    'ENABLE_AI_PARSER': [
-        {'condition': 'boolean', 'value': ENABLE_AI_PARSER},
-    ],
-    'ENABLE_REAL_PAYMENTS': [
-        {'condition': 'boolean', 'value': ENABLE_REAL_PAYMENTS},
-    ],
+    # Runtime kill switches (audit H05), read through core.feature_flags.feature_on: the
+    # environment value above decides whether the feature may run at all, these flags
+    # (on by default) let staff switch it off at /admin/flags/ without a restart.
+    'ENABLE_AI_PARSER': [{'condition': 'boolean', 'value': True}],
+    'ENABLE_REAL_PAYMENTS': [{'condition': 'boolean', 'value': True}],
+    'ENABLE_SMS_OTP': [{'condition': 'boolean', 'value': True}],
     # ISSUE-505 demo: A/B test placeholder (off by default; flip on per-user/percentage in admin)
     'EXPERIMENTAL_NEW_DASHBOARD': [
         {'condition': 'boolean', 'value': False},

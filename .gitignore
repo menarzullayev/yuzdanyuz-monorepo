@@ -75,3 +75,6 @@ monitoring/alertmanager/telegram-chat-id
 # Load test outputs (loadtest/seed_loadtest.py, k6 summary, ZAP reports)
 loadtest/out/
 loadtest/zap.yaml
+test-results/
+playwright-report/
+packages/frontend-web/e2e/.auth/
