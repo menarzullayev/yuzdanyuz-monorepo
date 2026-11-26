@@ -38,8 +38,8 @@ pgbouncer:
 env:
   DJANGO_ENV: prod
   LOG_LEVEL: INFO
-  OTEL_ENABLED: "true"
   SENTRY_TRACES_SAMPLE_RATE: "0.05"   # 5% in prod (cost-sensitive)
+  SENTRY_PROFILES_SAMPLE_RATE: "0.2"  # G09: profile 20% of the traced 5% (docs/operations/profiling.md)
 
 ingress:
   hosts:

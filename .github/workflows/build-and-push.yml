@@ -212,6 +212,9 @@ jobs:
           }
           # Only immutable CI-built tags deploy (audit H02).
           expect_fail "image.tag is empty"
+          # G05: a collector without a trace backend would accept spans and drop them.
+          expect_fail "otelCollector.enabled=true needs otelCollector.tracesEndpoint" \
+            --set image.tag=sha-0123456789abcdef0123456789abcdef01234567 --set otelCollector.enabled=true
           expect_fail 'image tag "latest" is mutable' --set image.tag=latest
           expect_fail 'image tag "main" is mutable' --set image.tag=main
           T=(--set image.tag=sha-0123456789abcdef0123456789abcdef01234567)

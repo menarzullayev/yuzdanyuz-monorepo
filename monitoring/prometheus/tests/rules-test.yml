@@ -110,3 +110,60 @@ tests:
           - exp_labels: {alertname: CeleryCriticalTaskFailed, severity: critical, component: celery, namespace: prod, name: exams.finalize_attempt_score}
             exp_annotations:
               summary: "critical task exams.finalize_attempt_score failed (exam score / payment not finalized)"
+
+  - name: G08 SMS balance low vs healthy
+    interval: 1m
+    input_series:
+      - series: 'yz_sms_balance_uzs{backend="eskiz"}'
+        values: '20000x15'
+      - series: 'yz_sms_balance_uzs{backend="playmobile"}'
+        values: '900000x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: SmsBalanceLow
+        exp_alerts:
+          - exp_labels: {alertname: SmsBalanceLow, severity: warning, component: sms, backend: eskiz}
+            exp_annotations:
+              summary: "SMS balance on eskiz is 20000 UZS; OTP sign-in stops at 0"
+
+  - name: G08 AI quota and auth
+    interval: 1m
+    input_series:
+      - series: 'yz_ai_cli_calls_total{outcome="rate_limit"}'
+        values: '0+1x60'
+      - series: 'yz_ai_cli_calls_total{outcome="auth"}'
+        values: '0x10 1x50'
+      - series: 'yz_ai_cli_calls_total{outcome="ok"}'
+        values: '0+6x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: AiSubscriptionRateLimited
+        exp_alerts:
+          - exp_labels: {alertname: AiSubscriptionRateLimited, severity: warning, component: ai}
+            exp_annotations:
+              summary: "60 AI calls hit the subscription limit in the last hour (grading is deferred)"
+      - eval_time: 15m
+        alertname: AiAuthFailing
+        exp_alerts:
+          - exp_labels: {alertname: AiAuthFailing, severity: critical, component: ai}
+            exp_annotations:
+              summary: "AI calls fail with an auth error: renew CLAUDE_CODE_OAUTH_TOKEN"
+      - eval_time: 60m
+        alertname: AiCallVolumeHigh
+        exp_alerts:
+          - exp_labels: {alertname: AiCallVolumeHigh, severity: warning, component: ai}
+            exp_annotations:
+              summary: "421 AI calls in an hour: above the planned subscription budget"
+
+  - name: G08 quiet when healthy
+    interval: 1m
+    input_series:
+      - series: 'yz_sms_balance_uzs{backend="eskiz"}'
+        values: '900000x15'
+      - series: 'yz_ai_cli_calls_total{outcome="ok"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - {eval_time: 60m, alertname: SmsBalanceLow, exp_alerts: []}
+      - {eval_time: 60m, alertname: AiSubscriptionRateLimited, exp_alerts: []}
+      - {eval_time: 60m, alertname: AiAuthFailing, exp_alerts: []}
+      - {eval_time: 60m, alertname: AiCallVolumeHigh, exp_alerts: []}

@@ -69,7 +69,8 @@ MAX_STRIKES = 3
 
 def _get_user_attempt_or_404(user, attempt_id):
     """Foydalanuvchi o'z attempt'ini olishi yoki 404."""
-    attempt = get_object_or_404(ExamAttempt, pk=attempt_id)
+    # exam is read on every call (deadline, status checks): one query instead of two.
+    attempt = get_object_or_404(ExamAttempt.objects.select_related('exam'), pk=attempt_id)
     if attempt.user_id != user.id:
         raise PermissionDenied('Bu sizning attempt emas.')
     return attempt

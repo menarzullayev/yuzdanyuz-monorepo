@@ -1,0 +1,106 @@
+{{- /* G05: OpenTelemetry collector for the backend's traces (web -> Celery). Optional:
+the pods only export when otelCollector.enabled (configmap.yaml turns OTEL_ENABLED on). */ -}}
+{{- if .Values.otelCollector.enabled }}
+{{- if not .Values.otelCollector.tracesEndpoint }}
+{{- fail "otelCollector.enabled=true needs otelCollector.tracesEndpoint (OTLP gRPC of Tempo, Jaeger or a hosted backend)" }}
+{{- end }}
+{{- $name := printf "%s-otel-collector" (include "yuzdanyuz.fullname" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+data:
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 25
+      batch: {}
+      filter/probes:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["http.target"] == "/health/"'
+            - 'attributes["http.target"] == "/health/ready/"'
+            - 'attributes["http.target"] == "/metrics"'
+    exporters:
+      otlp:
+        endpoint: {{ .Values.otelCollector.tracesEndpoint | quote }}
+        tls:
+          insecure: {{ .Values.otelCollector.insecure }}
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/probes, batch]
+          exporters: [otlp]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "yuzdanyuz.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  template:
+    metadata:
+      labels:
+        {{- include "yuzdanyuz.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: otel-collector
+      annotations:
+        checksum/config: {{ .Values.otelCollector.tracesEndpoint | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: otel-collector
+          image: {{ .Values.otelCollector.image | quote }}
+          args: ["--config=/conf/collector.yaml"]
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+          resources: {{- toYaml .Values.otelCollector.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: conf
+              mountPath: /conf
+              readOnly: true
+      volumes:
+        - name: conf
+          configMap:
+            name: {{ $name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yuzdanyuz.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  selector:
+    {{- include "yuzdanyuz.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+{{- end }}

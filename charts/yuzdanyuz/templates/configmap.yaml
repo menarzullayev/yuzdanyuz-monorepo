@@ -4,8 +4,16 @@ metadata:
   name: {{ include "yuzdanyuz.fullname" . }}-env
   labels: {{- include "yuzdanyuz.labels" . | nindent 4 }}
 data:
+{{- $otel := .Values.otelCollector.enabled }}
 {{- range $key, $value := .Values.env }}
+  {{- if and $otel (eq $key "OTEL_ENABLED") }}
+  OTEL_ENABLED: "true"
+  {{- else }}
   {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- if $otel }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ printf "http://%s-otel-collector:4317" (include "yuzdanyuz.fullname" .) | quote }}
 {{- end }}
   ALLOWED_HOSTS: {{ include "yuzdanyuz.allowedHosts" . | quote }}
   {{- $proxies := concat .Values.trustedProxy.clusterCidrs .Values.trustedProxy.extraCidrs }}
