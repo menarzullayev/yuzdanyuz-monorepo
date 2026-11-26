@@ -63,7 +63,7 @@ def _ensure_app_role():
         cur.execute(
             f"""
             DO $$ BEGIN CREATE ROLE {APP_ROLE} NOLOGIN;
-            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;
             """
         )
         cur.execute(f'GRANT SELECT ON webhooks_webhookendpoint TO {APP_ROLE}')
