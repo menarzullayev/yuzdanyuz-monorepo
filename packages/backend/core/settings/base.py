@@ -234,7 +234,7 @@ REST_FRAMEWORK = {
     ],
     'EXCEPTION_HANDLER': 'core.exceptions.unified_exception_handler',
     # ISSUE-201: drf-spectacular schema generator
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'core.schema.AutoSchema',
 }
 
 # ISSUE-201: drf-spectacular config
