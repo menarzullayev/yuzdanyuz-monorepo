@@ -73,11 +73,10 @@ export function PrefsMenu({ initial }: { initial: Prefs }) {
         aria-controls="prefs-panel"
         onClick={() => setOpen((o) => !o)}
       >
-        <span aria-hidden>Aa</span>
+        {/* Visible text first, so the accessible name starts with what is shown (WCAG 2.5.3). */}
+        <span>Aa</span>
+        <span className="hidden sm:inline">{LOCALE_LABELS[locale]}</span>
         <span className="sr-only">{t('title')}</span>
-        <span aria-hidden className="hidden sm:inline">
-          {LOCALE_LABELS[locale]}
-        </span>
       </button>
       {open && (
         <div
