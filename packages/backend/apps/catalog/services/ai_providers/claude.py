@@ -1,7 +1,5 @@
 import json
 
-import anthropic
-
 from .base import SYSTEM_PROMPT, BaseAIProvider
 
 # Models that accept server-side refusal fallback (`fallbacks: "default"`).
@@ -21,6 +19,11 @@ class AnthropicProvider(BaseAIProvider):
     """Anthropic Claude — any Messages API model (claude-sonnet-5-5, claude-opus-5-5, ...)."""
 
     def __init__(self, api_key: str, model: str, **_):
+        # Imported here, not at module level: the SDK takes ~1.2 s to import and this
+        # module is reached from core.urls, so every worker paid it on its first request
+        # (profiled, audit G09).
+        import anthropic
+
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
 

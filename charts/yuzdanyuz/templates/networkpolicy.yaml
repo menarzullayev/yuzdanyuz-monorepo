@@ -101,6 +101,17 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    {{- if .Values.otelCollector.enabled }}
+    # OTLP traces to the chart's collector (G05)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "yuzdanyuz.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    {{- end }}
     # Outbound HTTPS — Sentry, Anthropic, Telegram, Payme/Click, Google OAuth
     - to:
         - ipBlock:

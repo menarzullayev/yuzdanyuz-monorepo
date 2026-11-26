@@ -224,3 +224,40 @@ groups:
           component: redis
         annotations:
           summary: "Redis memory usage >90% ({{ $value | humanizePercentage }})"
+
+  # G08: spend and quota. AI runs on one Claude subscription (limits, not invoices) and
+  # SMS is prepaid, so "cost" alerts watch quota exhaustion and balance.
+  - name: yuzdanyuz.cost
+    rules:
+      - alert: SmsBalanceLow
+        expr: min by (backend) (yz_sms_balance_uzs) < 50000
+        for: 10m
+        labels:
+          severity: warning
+          component: sms
+        annotations:
+          summary: "SMS balance on {{ $labels.backend }} is {{ $value }} UZS; OTP sign-in stops at 0"
+
+      - alert: AiSubscriptionRateLimited
+        expr: sum(increase(yz_ai_cli_calls_total{outcome="rate_limit"}[1h])) > 5
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "{{ $value }} AI calls hit the subscription limit in the last hour (grading is deferred)"
+
+      - alert: AiAuthFailing
+        expr: sum(increase(yz_ai_cli_calls_total{outcome="auth"}[15m])) > 0
+        labels:
+          severity: critical
+          component: ai
+        annotations:
+          summary: "AI calls fail with an auth error: renew CLAUDE_CODE_OAUTH_TOKEN"
+
+      - alert: AiCallVolumeHigh
+        expr: sum(increase(yz_ai_cli_calls_total[1h])) > 300
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "{{ $value }} AI calls in an hour: above the planned subscription budget"
