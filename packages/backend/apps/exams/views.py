@@ -27,6 +27,7 @@ real-time hal qiladi. Bu view'lar HTTP fallback va admin/UI uchun.
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -211,6 +212,17 @@ class StartAttemptView(APIView):
       - Foydalanuvchi shu mock'ga kirish huquqiga ega (PublicOrTenantManager)
     """
 
+    @extend_schema(
+        tags=['exams'],
+        request=None,
+        responses={
+            201: StartAttemptResponseSerializer,
+            402: OpenApiResponse(description='Plan or access key required'),
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, mock_id):
         now = timezone.now()
         mock = get_object_or_404(MockExam, pk=mock_id)
@@ -253,6 +265,15 @@ class StartAttemptView(APIView):
 class AttemptDetailView(APIView):
     """GET /api/exams/attempts/{id}/  — joriy attempt holati"""
 
+    @extend_schema(
+        tags=['exams'],
+        responses={
+            200: ExamAttemptSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def get(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
         _expire_if_overdue(attempt)
@@ -267,6 +288,17 @@ class SubmitAnswerView(APIView):
     Bitta savolga javob (yangi yoki update — answer per question unique).
     """
 
+    @extend_schema(
+        tags=['exams'],
+        request=UserAnswerSubmitSerializer,
+        responses={
+            201: ExamAnswerAckSerializer,
+            409: OpenApiResponse(description='attempt_expired: the time limit has passed'),
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
         if _expire_if_overdue(attempt):
@@ -319,6 +351,16 @@ class SubmitAttemptView(APIView):
     Yakunlash + finalize_attempt_score.delay(). Idempotent.
     """
 
+    @extend_schema(
+        tags=['exams'],
+        request=None,
+        responses={
+            200: ExamAttemptSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
         _expire_if_overdue(attempt)
@@ -345,6 +387,16 @@ class AntiCheatEventView(APIView):
     3 ta strike → attempt CANCELLED (auto).
     """
 
+    @extend_schema(
+        tags=['exams'],
+        request=AntiCheatEventCreateSerializer,
+        responses={
+            200: ExamAttemptSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
         if attempt.status != ExamAttempt.Status.IN_PROGRESS:
@@ -385,6 +437,16 @@ class AntiCheatEventView(APIView):
 class FileDisputeView(APIView):
     """POST /api/exams/attempts/{id}/dispute/  — savol shikoyati"""
 
+    @extend_schema(
+        tags=['exams'],
+        request=QuestionDisputeCreateSerializer,
+        responses={
+            201: QuestionDisputeReadSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, attempt_id):
         attempt = _get_user_attempt_or_404(request.user, attempt_id)
 
@@ -451,6 +513,16 @@ class PracticeAnswerView(APIView):
     Bitta savolga javob — practice session'lar dinamik, savol mock'ka bog'liq emas.
     """
 
+    @extend_schema(
+        tags=['practice'],
+        request=UserAnswerSubmitSerializer,
+        responses={
+            201: UserAnswerReadSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, session_id):
         session = _get_user_session_or_404(request.user, session_id)
         if session.status != PracticeSession.Status.IN_PROGRESS:
@@ -485,6 +557,16 @@ class PracticeFinishView(APIView):
     Sessiyani yakunlash — correct_count va total_count'ni hisoblaydi.
     """
 
+    @extend_schema(
+        tags=['practice'],
+        request=None,
+        responses={
+            200: PracticeSessionSerializer,
+            400: OpenApiResponse(description='Validation error envelope'),
+            403: OpenApiResponse(description='Not your attempt'),
+            404: OpenApiResponse(description='Not found'),
+        },
+    )
     def post(self, request, session_id):
         session = _get_user_session_or_404(request.user, session_id)
         if session.status == PracticeSession.Status.COMPLETED:
