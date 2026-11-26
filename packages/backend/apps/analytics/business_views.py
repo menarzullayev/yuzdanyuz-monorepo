@@ -198,4 +198,10 @@ class OrgReportView(APIView):
             return resp
         if export == 'html':
             return HttpResponse(org_report.to_html(report), content_type='text/html; charset=utf-8')
-        raise ValidationError({'export': 'csv|html'})
+        if export == 'pdf':
+            resp = HttpResponse(org_report.to_pdf(report), content_type='application/pdf')
+            resp['Content-Disposition'] = (
+                f'attachment; filename="report-{org.slug}-{report["month"]}.pdf"'
+            )
+            return resp
+        raise ValidationError({'export': 'csv|html|pdf'})

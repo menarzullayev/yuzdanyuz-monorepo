@@ -118,7 +118,7 @@ def forward(apps, schema_editor):
             cur.execute(
                 sql.SQL(
                     'DO $$ BEGIN CREATE ROLE {} NOLOGIN BYPASSRLS; '
-                    'EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+                    'EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$'
                 ).format(r)
             )
         elif not found[0] or found[1]:

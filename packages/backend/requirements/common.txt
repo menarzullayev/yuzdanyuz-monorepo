@@ -45,11 +45,12 @@ django-htmx==1.29.0            # Task 1+: HTMX request detection middleware
 Pillow==13.0.0                 # Task 3: Rasm ishlash, watermark
 openpyxl==3.1.5                # Task 3: Excel/CSV bulk import parser
 python-docx==1.2.0             # Task 3: Word (.docx) bulk import parser
-pypdf==7.0.1                   # Task 3: PDF bulk import parser (text-based PDFs)
+pypdf==7.1.1                   # Task 3: PDF bulk import parser (text-based PDFs)
+reportlab==5.1.0               # Monthly org report as PDF (analytics/org_report.py)
 
 # ── AI / LLM ──────────────────────────────────────────────────────────────────
-anthropic==2.8.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
-httpx2==2.16.0                 # anthropic 2.x HTTP layer (Sentry instruments it natively)
+anthropic==2.12.0               # Task 3, 6: AI parser (bulk import) + AI tutor feedback
+httpx2==2.16.2                 # anthropic 2.x HTTP layer (Sentry instruments it natively)
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.28.1                  # Task 2, 7: Async HTTP (Payme, Click, Telegram)

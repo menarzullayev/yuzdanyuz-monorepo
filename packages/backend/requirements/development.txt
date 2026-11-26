@@ -12,11 +12,11 @@ pytest-asyncio==1.5.0          # Async view va channel testlari
 pytest-cov==7.1.0              # Coverage reporting plugin
 pytest-xdist==3.8.0            # Parallel test execution (-n auto, 1.8x+ speedup)
 factory-boy==3.3.3             # Test fixture (User, Org, Question factory)
-coverage==7.17.3               # Test qamrovi hisoboti
+coverage==7.17.4               # Test qamrovi hisoboti
 fakeredis==2.40.0              # Redis mock for tests (conftest mock_redis fixture)
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
-ruff==0.17.5                   # Linter + formatter (flake8 + isort o'rniga)
+ruff==0.17.6                   # Linter + formatter (flake8 + isort o'rniga)
 pre-commit==4.7.0              # Git hooks framework (commit + push validation)
 
 # ── Dev Utilities ─────────────────────────────────────────────────────────────

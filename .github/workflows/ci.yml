@@ -101,7 +101,8 @@ jobs:
           cache-dependency-path: packages/backend/requirements/*.txt
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpq-dev
+        # fonts-dejavu-core: the same TrueType font the image ships (watermark, PDF report)
+        run: sudo apt-get update && sudo apt-get install -y libpq-dev fonts-dejavu-core
 
       - name: Install Python dependencies
         run: pip install -r requirements/development.txt
