@@ -5,6 +5,7 @@ faqat kod va manifestlar tayyor. Har bir fayl alohida bosqichni tushuntiradi.
 
 ## Bosqichlar
 
+0. **[runbook.md](runbook.md)** — birinchi deploy checklist'i, smoke (`scripts/smoke-deploy.sh`) va lokal repetitsiya natijasi
 1. **[docker.md](docker.md)** — Local dev stack (`docker compose up`) va image build
 2. **[k8s.md](k8s.md)** — Kubernetes manifestlari va Helm chart
 3. **[argocd.md](argocd.md)** — GitOps deployment (Argo CD)
