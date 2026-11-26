@@ -28,6 +28,7 @@ from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -44,6 +45,7 @@ from . import (
     subscription_service,
     wallet_service,
 )
+from . import schemas as S
 from .models import (
     OrganizationSubscription,
     PaymentIntent,
@@ -76,6 +78,7 @@ class SpendRequestSerializer(serializers.Serializer):
 
 
 class WalletView(APIView):
+    @extend_schema(tags=['wallet'], responses={200: S.wallet, **S.ERRORS})
     def get(self, request):
         wallet = wallet_service.get_or_create_wallet(request.user)
         return Response(
@@ -88,6 +91,7 @@ class WalletView(APIView):
 
 
 class WalletTransactionsView(APIView):
+    @extend_schema(tags=['wallet'], responses={200: S.wallet_transactions, **S.ERRORS})
     def get(self, request):
         wallet = wallet_service.get_or_create_wallet(request.user)
         # ISSUE-101: explicit ordering bilan -created_at index'idan foydalanish.
@@ -115,6 +119,11 @@ class WalletTransactionsView(APIView):
 class TopUpView(APIView):
     """POST /api/wallet/topup/  body: {provider: 'payme'|'click', amount_uzs: int}"""
 
+    @extend_schema(
+        tags=['wallet'],
+        request=TopUpRequestSerializer,
+        responses={201: S.topup_response, 503: S._ERROR, **S.ERRORS},
+    )
     def post(self, request):
         ser = TopUpRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -152,6 +161,11 @@ class TopUpView(APIView):
 class SpendView(APIView):
     """POST /api/wallet/spend/  body: {coins: int, description: str}"""
 
+    @extend_schema(
+        tags=['wallet'],
+        request=SpendRequestSerializer,
+        responses={201: S.spend_response, 402: S._ERROR, **S.ERRORS},
+    )
     def post(self, request):
         ser = SpendRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -287,6 +301,9 @@ def _process_webhook(provider_name: str, request) -> Response:
 class PaymeWebhookView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=['payments'], request=S.webhook_request, responses={200: S.webhook_ack}, auth=[]
+    )
     def post(self, request):
         return _process_webhook('payme', request)
 
@@ -295,6 +312,9 @@ class PaymeWebhookView(APIView):
 class ClickWebhookView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=['payments'], request=S.webhook_request, responses={200: S.webhook_ack}, auth=[]
+    )
     def post(self, request):
         return _process_webhook('click', request)
 
@@ -303,6 +323,7 @@ class ClickWebhookView(APIView):
 
 
 class SubscriptionPlansView(APIView):
+    @extend_schema(tags=['subscriptions'], responses={200: S.plans, **S.ERRORS})
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True, audience='organization')
         return Response(
@@ -339,6 +360,7 @@ def _is_org_admin(user, org) -> bool:
 class CurrentSubscriptionView(APIView):
     """GET /api/subscriptions/current/  (org tenant context'idan)"""
 
+    @extend_schema(tags=['subscriptions'], responses={200: S.current_subscription, **S.ERRORS})
     def get(self, request):
         org = getattr(request, 'org', None)
         if org is None:
@@ -352,6 +374,11 @@ class CurrentSubscriptionView(APIView):
 class SubscribeView(APIView):
     """POST /api/subscriptions/subscribe/  body: {plan_slug, payment_provider}"""
 
+    @extend_schema(
+        tags=['subscriptions'],
+        request=S.subscribe_request,
+        responses={201: S.subscribe_response, 404: S._ERROR, 503: S._ERROR, **S.ERRORS},
+    )
     def post(self, request):
         org = getattr(request, 'org', None)
         if org is None:
@@ -407,6 +434,11 @@ class SubscribeView(APIView):
 
 
 class CancelSubscriptionView(APIView):
+    @extend_schema(
+        tags=['subscriptions'],
+        request=S.cancel_request,
+        responses={200: S.subscription_wrapper, 404: S._ERROR, **S.ERRORS},
+    )
     def post(self, request):
         org = getattr(request, 'org', None)
         if org is None:
@@ -439,6 +471,7 @@ def _serialize_subscription(sub: OrganizationSubscription) -> dict:
 
 
 class AffiliateCodeView(APIView):
+    @extend_schema(tags=['affiliate'], responses={200: S.affiliate_code, **S.ERRORS})
     def get(self, request):
         code = affiliate_service.get_or_create_code(request.user)
         return Response(
@@ -451,6 +484,7 @@ class AffiliateCodeView(APIView):
 
 
 class AffiliateStatsView(APIView):
+    @extend_schema(tags=['affiliate'], responses={200: S.affiliate_stats, **S.ERRORS})
     def get(self, request):
         wallet = wallet_service.get_or_create_wallet(request.user)
         # ISSUE-101: 2 ta alohida query (count + iterate-sum) o'rniga bitta aggregate.

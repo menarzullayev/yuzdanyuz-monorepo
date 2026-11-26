@@ -115,6 +115,10 @@ jobs:
       - name: Django system check
         run: python manage.py check --fail-level WARNING
 
+      # D04: the schema must build and validate; undocumented endpoints may only decrease.
+      - name: OpenAPI schema gate
+        run: python scripts/check_api_schema.py
+
       - name: Pytest — unit tests
         run: python -m pytest tests/unit/ apps/*/tests.py --tb=short -q -n auto --cov=apps --cov=core --cov-append --cov-report=
 

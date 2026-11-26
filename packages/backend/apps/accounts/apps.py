@@ -8,3 +8,4 @@ class AccountsConfig(AppConfig):
     def ready(self):
         import apps.accounts.checks  # noqa: F401
         import apps.accounts.signals  # noqa: F401
+        import core.schema  # noqa: F401  (registers the OpenAPI cookie-auth extensions)
