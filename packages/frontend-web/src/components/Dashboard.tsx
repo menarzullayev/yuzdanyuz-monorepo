@@ -32,6 +32,12 @@ export function Dashboard() {
         </div>
       )}
       <div className="flex flex-wrap gap-3">
+        <Link href="/exams" className="btn btn-primary">
+          {t('exams')}
+        </Link>
+        <Link href="/certificates" className="btn btn-ghost">
+          {t('certificates')}
+        </Link>
         <Link href="/settings/security" className="btn btn-ghost">
           {t('security')}
         </Link>
