@@ -66,6 +66,7 @@ EXPECTED_TASKS = {
     # apps/exams/tasks.py
     'finalize_attempt_score': 'tenant',  # attempt.organization context
     'publish_scheduled_mocks': 'unscoped',  # cross-tenant beat task
+    'send_certificate_notice': 'unscoped',  # one certificate by id, read only
     'expire_overdue_attempts': 'unscoped',  # cross-tenant beat task
     'quarantine_check': 'tenant',  # question_version.organization
     # apps/commerce/tasks.py

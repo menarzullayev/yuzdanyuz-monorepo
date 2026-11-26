@@ -27,8 +27,7 @@ from .sitting_models import (
 
 logger = logging.getLogger(__name__)
 
-# Sent after a certificate row is committed. Telegram delivery is deliberately NOT done here:
-# another session is reworking Telegram auth. Receivers get `certificate=<Certificate>`.
+# Sent after a certificate row is committed. Receivers get `certificate=<Certificate>`.
 certificate_issued = Signal()
 
 # No 0/O/1/I/L: numbers are read aloud and typed by hand.
@@ -36,12 +35,16 @@ _NUMBER_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 
 def notify_certificate_issued(certificate: Certificate) -> None:
-    """Hook point for student notification.
+    """Emit ``certificate_issued`` and queue the student's Telegram message.
 
-    TODO(telegram): deliver the certificate message once the Telegram auth rework lands.
-    For now only the `certificate_issued` signal is emitted.
+    Students without a linked Telegram get nothing (the bot is the only channel). The
+    send runs in a Celery task so publishing results never waits on api.telegram.org.
     """
     certificate_issued.send(sender=Certificate, certificate=certificate)
+    if getattr(certificate.user, 'telegram_id', None):
+        from .tasks import send_certificate_notice
+
+        send_certificate_notice.delay(str(certificate.pk))
 
 
 def generate_certificate_number(year: int) -> str:

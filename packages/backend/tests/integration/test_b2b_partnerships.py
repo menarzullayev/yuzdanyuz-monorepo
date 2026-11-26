@@ -214,3 +214,44 @@ class TestStaffCrm:
         assert c.get(url, {'q': 'alph'}).json()['count'] == 1
         summary = c.get(reverse('partnerships-v1:application-summary')).json()
         assert summary['by_status']['new'] == 1 and summary['by_status']['contacted'] == 1
+
+
+@pytest.mark.integration
+class TestApplicationTelegramAlert:
+    """A new public application is announced in the ops admin chats (HTML-escaped)."""
+
+    @pytest.fixture
+    def outbox(self, monkeypatch, settings):
+        from apps.accounts.services import bot_sender
+        from apps.ops.services import bot_config
+
+        settings.OPS_ADMIN_CHAT_IDS = [111, 222]
+        bot_config.invalidate()
+        sent = []
+        monkeypatch.setattr(
+            bot_sender, 'send_message', lambda chat, text: sent.append((chat, text)) or True
+        )
+        yield sent
+        bot_config.invalidate()
+
+    def test_new_application_alerts_every_admin_chat(
+        self, db, anon, outbox, django_capture_on_commit_callbacks
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            assert apply(anon, name='Ilm <b>Markazi</b>').status_code == 201
+        assert sorted(chat for chat, _ in outbox) == [111, 222]
+        text = outbox[0][1]
+        assert 'Yangi hamkorlik arizasi' in text
+        assert 'Ilm &lt;b&gt;Markazi&lt;/b&gt;' in text and '<b>Markazi' not in text
+        assert '+998901234567' in text
+
+    def test_honeypot_and_duplicates_are_silent(
+        self, db, anon, outbox, django_capture_on_commit_callbacks
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            apply(anon, website='http://spam.example')
+        assert outbox == []
+        with django_capture_on_commit_callbacks(execute=True):
+            apply(anon)
+            apply(anon)  # same phone, same day -> 409, no second alert
+        assert len(outbox) == 2  # one application x two chats
