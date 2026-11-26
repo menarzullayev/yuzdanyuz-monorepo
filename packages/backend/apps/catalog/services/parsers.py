@@ -5,7 +5,6 @@ import re
 import docx
 import openpyxl
 import pypdf
-from django.conf import settings
 
 from apps.catalog.models import ImportBatch, QuestionDraft
 
@@ -32,7 +31,9 @@ def _validate(q_data: dict) -> bool:
 
 def _ai_enabled() -> bool:
     """ENABLE_AI_PARSER feature flag — settings yoki env orqali boshqariladi."""
-    return getattr(settings, 'ENABLE_AI_PARSER', True)
+    from core.feature_flags import feature_on
+
+    return feature_on('ENABLE_AI_PARSER')
 
 
 class DocxParserService:

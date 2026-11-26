@@ -37,3 +37,20 @@ def is_enabled(flag_name: str, *, request=None, **kwargs: Any) -> bool:
     except Exception:
         # Unknown flag / misconfigured condition → safe default
         return False
+
+
+def feature_on(name: str, *, request=None, **kwargs: Any) -> bool:
+    """Env switch AND runtime kill switch (audit H05).
+
+    ``settings.<name>`` (from the environment) decides whether a feature may run at all;
+    the django-flags flag of the same name, on by default, lets staff turn it OFF at
+    runtime from /admin/flags/ (add a *required* boolean ``False`` condition) without a
+    config change or restart. A flag can never switch on what the environment left off:
+    real payments without provider keys, AI parsing without a backend, SMS without a
+    gateway.
+    """
+    from django.conf import settings
+
+    if not getattr(settings, name, False):
+        return False
+    return is_enabled(name, request=request, **kwargs)
