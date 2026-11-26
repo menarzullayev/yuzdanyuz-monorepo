@@ -940,13 +940,53 @@ class TestOrgReportAPI:
         assert resp.status_code == 200 and resp['Content-Type'].startswith('text/html')
         assert b'Test Org' in resp.content
 
+    def test_pdf_export(self, report_data, org):
+        import io
+
+        from pypdf import PdfReader
+
+        # Uzbek Latin (ʻ) and Cyrillic must come out as text, not missing glyphs.
+        u = _user('pdfname', first_name='Gʻulom', last_name='Тошматов')
+        _member(u, org, 'student')
+        _attempt(
+            org,
+            u,
+            _exam(org, u, 'PDF'),
+            at(date(2026, 10, 21)),
+            score='95',
+            status='submitted',
+            submitted=at(date(2026, 10, 21)),
+        )
+        resp = self._owner(org).get(reverse(self.URL), {'month': '2026-10', 'export': 'pdf'})
+        assert resp.status_code == 200
+        assert resp['Content-Type'] == 'application/pdf'
+        assert 'report-test-org-2026-10.pdf' in resp['Content-Disposition']
+        assert resp.content.startswith(b'%PDF-')
+        text = ''.join(p.extract_text() for p in PdfReader(io.BytesIO(resp.content)).pages)
+        assert 'Test Org' in text and '2026-10' in text
+        assert 'Summary' in text and 'Top students' in text and 'Certificates' in text
+        assert 'Gʻulom' in text and 'Тошматов' in text
+
+    def test_pdf_without_font_fails_loudly(self, report_data, org, monkeypatch):
+        from django.core.exceptions import ImproperlyConfigured
+        from reportlab.pdfbase import pdfmetrics
+
+        monkeypatch.setattr(org_report, 'PDF_FONT_DIRS', ('/nonexistent',))
+        monkeypatch.setattr(pdfmetrics, 'getRegisteredFontNames', list)
+        with pytest.raises(ImproperlyConfigured, match='fonts-dejavu-core'):
+            org_report.to_pdf(org_report.build_report(org, OCT))
+
+    def test_unknown_export_rejected(self, report_data, org):
+        resp = self._owner(org).get(reverse(self.URL), {'month': '2026-10', 'export': 'docx'})
+        assert resp.status_code == 400
+
     @pytest.mark.parametrize(
         'params',
         [
             {'month': '2026-13'},
             {'month': 'oct'},
             {'month': '2999-01'},
-            {'export': 'pdf'},
+            {'export': 'docx'},
             {'pass_score': 101},
         ],
     )
@@ -962,7 +1002,7 @@ class TestOrgReportAPI:
     def test_org_admin_cannot_see_other_org(self, report_data, org, org2):
         c = self._owner(org)
         # NEGATIVE: explicit foreign org id is rejected for json and exports alike
-        for extra in ({}, {'export': 'csv'}, {'export': 'html'}):
+        for extra in ({}, {'export': 'csv'}, {'export': 'html'}, {'export': 'pdf'}):
             resp = c.get(reverse(self.URL), {'month': '2026-10', 'org': str(org2.id), **extra})
             assert resp.status_code == 403
 
