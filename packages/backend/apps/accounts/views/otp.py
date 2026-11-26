@@ -5,7 +5,6 @@ POST /api/auth/otp/send/    — telefon raqamga SMS yuboradi
 POST /api/auth/otp/verify/  — kodni tekshiradi, JWT cookie qaytaradi
 """
 
-from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -20,6 +19,7 @@ from apps.accounts.services.otp_service import (
 from apps.accounts.services.phone_utils import PhoneValidationError
 from apps.accounts.services.token_service import attach_session, issue_login
 from apps.accounts.views.schemas import OTPVerifySchema, PhoneSchema, parse_json_body
+from core.feature_flags import feature_on
 from core.utils.client_ip import get_client_ip
 
 
@@ -35,7 +35,7 @@ class OTPSendView(View):
     """
 
     def post(self, request):
-        if not settings.ENABLE_SMS_OTP:
+        if not feature_on('ENABLE_SMS_OTP', request=request):
             return _disabled_response()
         data, error = parse_json_body(request, PhoneSchema)
         if error is not None:
@@ -71,7 +71,7 @@ class OTPVerifyView(View):
     """
 
     def post(self, request):
-        if not settings.ENABLE_SMS_OTP:
+        if not feature_on('ENABLE_SMS_OTP', request=request):
             return _disabled_response()
         data, error = parse_json_body(request, OTPVerifySchema)
         if error is not None:

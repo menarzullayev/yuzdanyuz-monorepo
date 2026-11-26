@@ -46,7 +46,13 @@ def stub_allowed() -> bool:
 
 
 def payments_available() -> bool:
-    return _is_real_mode() or stub_allowed()
+    """May a NEW charge start? The runtime kill switch stops new checkouts only;
+    webhooks for charges already in flight keep their real-mode verification."""
+    if _is_real_mode():
+        from core.feature_flags import feature_on
+
+        return feature_on('ENABLE_REAL_PAYMENTS')
+    return stub_allowed()
 
 
 def _to_uzs(raw, divisor: Decimal) -> Decimal | None:
