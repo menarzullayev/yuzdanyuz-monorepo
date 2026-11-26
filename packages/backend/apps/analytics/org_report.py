@@ -20,8 +20,8 @@ Month = calendar month in settings.TIME_ZONE. Definitions:
   certificates      exams.Certificate rows issued in the month: issued = all, valid = not
                     revoked and not expired now, revoked, expired.
 
-PDF is deferred (no PDF library in requirements); CSV (UTF-8 with BOM for Excel) and a
-printable HTML page are provided instead.
+Exports: CSV (UTF-8 with BOM for Excel), a printable HTML page and a PDF (reportlab,
+DejaVu Sans so Uzbek Latin, Cyrillic and Karakalpak letters render).
 """
 
 from __future__ import annotations
@@ -282,3 +282,104 @@ def to_html(report: dict) -> str:
         f'<h2>Summary</h2>{metrics}<h2>By exam type</h2>{types}'
         f'<h2>Top students</h2>{top}<h2>Certificates</h2>{certs}</body></html>'
     )
+
+
+# DejaVu ships in the backend image and the CI runner (fonts-dejavu-core). The base-14
+# PDF fonts have no glyphs for ʻ/ʼ or Cyrillic, so they are not an acceptable fallback.
+PDF_FONT_DIRS = ('/usr/share/fonts/truetype/dejavu',)
+PDF_FONT = 'DejaVuSans'
+PDF_FONT_BOLD = 'DejaVuSans-Bold'
+
+
+def _register_pdf_fonts() -> None:
+    from pathlib import Path
+
+    from django.core.exceptions import ImproperlyConfigured
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    if PDF_FONT in pdfmetrics.getRegisteredFontNames():
+        return
+    for directory in PDF_FONT_DIRS:
+        regular, bold = Path(directory, f'{PDF_FONT}.ttf'), Path(directory, f'{PDF_FONT_BOLD}.ttf')
+        if regular.exists() and bold.exists():
+            pdfmetrics.registerFont(TTFont(PDF_FONT, str(regular)))
+            pdfmetrics.registerFont(TTFont(PDF_FONT_BOLD, str(bold)))
+            return
+    raise ImproperlyConfigured('DejaVu Sans not found: install fonts-dejavu-core for PDF reports')
+
+
+def to_pdf(report: dict) -> bytes:
+    """The same sections as to_html, as an A4 PDF."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    _register_pdf_fonts()
+    styles = getSampleStyleSheet()
+    for name in ('Title', 'Heading2', 'Normal'):
+        styles[name].fontName = PDF_FONT_BOLD if name != 'Normal' else PDF_FONT
+
+    def cell(v):
+        return '–' if v is None else str(v)
+
+    def table(head, rows):
+        t = Table([head, *[[cell(c) for c in r] for r in rows]], hAlign='LEFT')
+        t.setStyle(
+            TableStyle(
+                [
+                    ('FONTNAME', (0, 0), (-1, -1), PDF_FONT),
+                    ('FONTNAME', (0, 0), (-1, 0), PDF_FONT_BOLD),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ]
+            )
+        )
+        return t
+
+    prev, d = report['previous'], report['deltas']
+    story = [
+        Paragraph(escape(f'{report["organization_name"]} — {report["month"]}'), styles['Title']),
+        Paragraph('Summary', styles['Heading2']),
+        table(
+            ['metric', 'this month', 'previous month', 'delta'],
+            [
+                [k, report[k], prev[k], d[k]]
+                for k in ('attempts', 'active_students', 'avg_score', 'pass_rate_percent')
+            ],
+        ),
+        Paragraph('By exam type', styles['Heading2']),
+        table(
+            ['exam type', 'attempts', 'avg score', 'pass rate %'],
+            [
+                [r['exam_type'], r['attempts'], r['avg_score'], r['pass_rate_percent']]
+                for r in report['by_exam_type']
+            ],
+        ),
+        Paragraph('Top students', styles['Heading2']),
+        table(
+            ['#', 'student', 'attempts', 'avg score'],
+            [
+                [i, s['name'], s['attempts'], s['avg_score']]
+                for i, s in enumerate(report['top_students'], 1)
+            ],
+        ),
+        Paragraph('Certificates', styles['Heading2']),
+        table(['status', 'count'], [[k, v] for k, v in report['certificates'].items()]),
+        Spacer(1, 4 * mm),
+    ]
+    buf = io.BytesIO()
+    SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        title=f'{report["organization_name"]} {report["month"]}',
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    ).build(story)
+    return buf.getvalue()
