@@ -520,3 +520,67 @@ class TestCrossTenant:
         assert resp.status_code == 404
         with tenant_context(env.org):
             assert Certificate.objects.get(pk=cert.pk).revoked_at is None
+
+
+class TestCertificateTelegramNotice:
+    """Published certificates reach students with a linked Telegram, via the bot."""
+
+    def _publish(self, env, django_capture_on_commit_callbacks, monkeypatch, tg_for):
+        from apps.accounts.models import CustomUser
+        from apps.accounts.services import bot_sender
+
+        for i, s in enumerate(env.students):
+            if i in tg_for:
+                CustomUser.objects.filter(pk=s.pk).update(telegram_id=900_000 + i)
+        sent = []
+        monkeypatch.setattr(
+            bot_sender, 'send_message', lambda chat, text: sent.append((chat, text)) or True
+        )
+        env.run_to('calculate')
+        with django_capture_on_commit_callbacks(execute=True):
+            assert env.act('publish').status_code == 200
+        return sent
+
+    def test_only_certificate_holders_with_telegram_are_messaged(
+        self, env, django_capture_on_commit_callbacks, monkeypatch
+    ):
+        sent = self._publish(
+            env,
+            django_capture_on_commit_callbacks,
+            monkeypatch,
+            tg_for=set(range(len(env.students))),
+        )
+        with tenant_context(env.org):
+            certs = {
+                c.user.telegram_id: c for c in Certificate.objects.select_related('user').all()
+            }
+        assert certs, 'fixture must produce certificates'
+        assert sorted(chat for chat, _ in sent) == sorted(certs)
+        for chat, text in sent:
+            cert = certs[chat]
+            assert cert.number in text and cert.grade in text
+            assert '/certificates' in text
+
+    def test_students_without_telegram_get_nothing(
+        self, env, django_capture_on_commit_callbacks, monkeypatch
+    ):
+        assert (
+            self._publish(env, django_capture_on_commit_callbacks, monkeypatch, tg_for=set()) == []
+        )
+
+    def test_revoked_certificate_is_not_announced(self, env, monkeypatch):
+        from apps.accounts.models import CustomUser
+        from apps.accounts.services import bot_sender
+        from apps.exams.tasks import send_certificate_notice
+
+        env.run_to('publish')
+        with tenant_context(env.org):
+            cert = Certificate.objects.select_related('user').first()
+        CustomUser.objects.filter(pk=cert.user_id).update(telegram_id=777)
+        Certificate.global_objects.filter(pk=cert.pk).update(revoked_at=timezone.now())
+        sent = []
+        monkeypatch.setattr(
+            bot_sender, 'send_message', lambda chat, text: sent.append(chat) or True
+        )
+        assert send_certificate_notice(str(cert.pk)) is False
+        assert sent == []

@@ -9,6 +9,11 @@ class OrganizationsConfig(AppConfig):
         from core import db_rls
 
         from . import signals  # noqa: F401
+        from .hooks import alert_staff_about_application, partnership_application_created
+
+        partnership_application_created.connect(
+            alert_staff_about_application, dispatch_uid='partnership-telegram-alert'
+        )
 
         # RLS org variable rides on every statement inside a tenant context (E05)
         db_rls.connect_signal()

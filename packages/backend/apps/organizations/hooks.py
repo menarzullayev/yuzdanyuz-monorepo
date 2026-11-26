@@ -33,3 +33,34 @@ def notify_partnership_application_created(application) -> None:
                 log.error('partnership hook %r failed: %s', receiver, result)
 
     transaction.on_commit(_send)
+
+
+APPLICATION_TEXT = (
+    '<b>Yangi hamkorlik arizasi</b>\n'
+    'Turi: {type}\n'
+    'Nomi: {name}\n'
+    "Mas'ul: {contact}\n"
+    'Telefon: {phone}\n'
+    'Hudud: {region}\n'
+    "O'quvchilar: {students}"
+)
+
+
+def render_application_alert(application) -> str:
+    from apps.ops.services.alerts import esc
+
+    return APPLICATION_TEXT.format(
+        type=esc(application.get_applicant_type_display()),
+        name=esc(application.name),
+        contact=esc(application.contact_person),
+        phone=esc(application.phone),
+        region=esc(application.region),
+        students=esc(application.students_count),
+    )
+
+
+def alert_staff_about_application(sender, application, **kwargs) -> None:
+    """Receiver: tell the admin chats (ops bot settings) about a new application."""
+    from apps.ops.services.alerts import alert_admin
+
+    alert_admin(render_application_alert(application))

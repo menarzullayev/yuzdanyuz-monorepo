@@ -253,3 +253,49 @@ def expire_overdue_attempts():
     if expired:
         logger.info('expire_overdue_attempts: closed %d attempts', len(expired))
     return {'expired': len(expired)}
+
+
+CERTIFICATE_TEXT = (
+    '<b>{brand}</b>: tabriklaymiz! Sizga sertifikat berildi.\n'
+    'Raqam: <code>{number}</code>\n'
+    'Daraja: {grade}\n'
+    'Ball: {score}\n'
+    '{valid}'
+    'Sertifikatlaringiz: {link}'
+)
+
+
+def render_certificate_notice(certificate) -> str:
+    import html
+
+    from django.conf import settings
+
+    def esc(v):
+        return html.escape(str(v), quote=False)
+
+    valid = (
+        f'Amal qilish muddati: {certificate.valid_until:%d.%m.%Y}\n'
+        if certificate.valid_until
+        else ''
+    )
+    return CERTIFICATE_TEXT.format(
+        brand=esc(settings.PROJECT_BRAND_NAME),
+        number=esc(certificate.number),
+        grade=esc(certificate.grade),
+        score=esc(certificate.scaled_score),
+        valid=valid,
+        link=esc(f'{settings.FRONTEND_BASE_URL}/certificates'),
+    )
+
+
+@shared_task(name='exams.send_certificate_notice', ignore_result=True)
+def send_certificate_notice(certificate_id: str) -> bool:
+    """Tell the student about a newly issued certificate through the bot."""
+    from apps.accounts.services.bot_sender import send_message
+    from apps.exams.sitting_models import Certificate
+
+    with unscoped_context():
+        cert = Certificate.objects.select_related('user').filter(pk=certificate_id).first()
+    if cert is None or cert.revoked_at or not getattr(cert.user, 'telegram_id', None):
+        return False
+    return send_message(cert.user.telegram_id, render_certificate_notice(cert))
