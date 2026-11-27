@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
@@ -39,6 +40,12 @@ const securityHeaders = [
 ];
 
 const config: NextConfig = {
+  // Container image (docker/Dockerfile.frontend) builds with NEXT_OUTPUT=standalone: a
+  // self-contained server.js with only the traced node_modules. The workspace root is the
+  // tracing root because npm hoists dependencies there.
+  ...(process.env.NEXT_OUTPUT === 'standalone'
+    ? { output: 'standalone' as const, outputFileTracingRoot: path.join(__dirname, '../..') }
+    : {}),
   // Django routes end with a slash; keep it intact when proxying /api/*.
   skipTrailingSlashRedirect: true,
   async headers() {

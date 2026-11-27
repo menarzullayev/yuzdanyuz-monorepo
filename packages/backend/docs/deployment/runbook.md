@@ -3,8 +3,9 @@
 Bu hujjat checklist. Batafsil tushuntirish yonidagi hujjatlarda, bu yerda faqat tartib va
 tekshiruvlar. Har bandni bajargach belgilang; birorta tekshiruv yiqilsa — to'xtang.
 
-Holat (2026-11-26): kod va Helm chart tayyor, server hali tanlanmagan. Lokal
-"prod-repetitsiya" o'tkazildi (pastda), real serverga hech narsa deploy qilinmagan.
+Holat (2026-11-27): birinchi prod bitta Windows ish stantsiyasida, `docker compose` +
+Cloudflare Tunnel, `https://mashqgoh.bugvector.uz` — [compose-single-host.md](compose-single-host.md).
+Bepul rejim (to'lovlar o'chiq), zaxira hali yo'q. Kubernetes (Helm chart) — keyingi server uchun.
 
 ## 0. Qarorlar (deploydan oldin, egasi bilan)
 
