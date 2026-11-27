@@ -3,6 +3,13 @@
 Versions follow [Semantic Versioning](https://semver.org/); entries after 0.1.0 are written
 by release-please from Conventional Commits (`.github/workflows/release-please.yml`).
 
+## [0.2.0](https://github.com/menarzullayev/yuzdanyuz-monorepo/compare/v0.1.0...v0.2.0) (2026-11-27)
+
+
+### Features
+
+* **deploy:** single-host production compose stack behind Cloudflare Tunnel ([#100](https://github.com/menarzullayev/yuzdanyuz-monorepo/issues/100)) ([41fd933](https://github.com/menarzullayev/yuzdanyuz-monorepo/commit/41fd93343886258e88ef5feb23a04492f910564a))
+
 ## 0.1.0 (2026-11-26)
 
 First tagged version: the state of `main` after the production-readiness audit work.
